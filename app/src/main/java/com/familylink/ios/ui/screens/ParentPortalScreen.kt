@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.ui.cupertino.CupertinoButton
 import com.familylink.ios.ui.cupertino.CupertinoCard
@@ -106,6 +107,31 @@ fun ParentPortalScreen(
                     onMinus = { prefs.bedtimeEndMin = wrap(prefs.bedtimeEndMin - 30); v++ },
                     onPlus = { prefs.bedtimeEndMin = wrap(prefs.bedtimeEndMin + 30); v++ }
                 )
+            }
+            CupertinoRow(title = "Beruhigender Ton") {
+                CupertinoSwitch(checked = prefs.bedtimeSoundEnabled) { prefs.bedtimeSoundEnabled = it; v++ }
+            }
+        }
+
+        // ---- blocked apps today ----
+        SectionHeader("Heute gesperrte Apps")
+        val blocked = prefs.getBlockedToday()
+        val perApp = prefs.getPerAppSeconds()
+        CupertinoCard {
+            if (blocked.isEmpty()) {
+                Text(
+                    "Heute wurde noch keine App gesperrt.",
+                    fontSize = 15.sp, color = Cupertino.SecondaryLabel,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                blocked.entries.sortedByDescending { it.value }.forEach { (pkg, _) ->
+                    val label = InstalledApps.labelFor(context, pkg)
+                    val used = perApp[pkg] ?: 0
+                    CupertinoRow(title = label, subtitle = "Genutzt: ${TimeFmt.hm(used)}") {
+                        Text("Gesperrt", color = Cupertino.Red, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
 

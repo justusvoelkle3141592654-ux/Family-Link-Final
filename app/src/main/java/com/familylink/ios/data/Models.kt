@@ -15,14 +15,3 @@ data class ManagedApp(
     /** Only used for LIMIT apps; minutes per day. */
     val limitMinutes: Int = 30
 )
-
-/** Live snapshot the UI and lock logic read from. */
-data class UsageSnapshot(
-    val globalUsedSeconds: Int,
-    val globalLimitSeconds: Int,
-    val bedtimeActive: Boolean,
-    val limitsDisabled: Boolean,
-    val perAppUsedSeconds: Map<String, Int>
-) {
-    val globalRemainingSeconds: Int get() = (globalLimitSeconds - globalUsedSeconds).coerceAtLeast(0)
-}

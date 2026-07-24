@@ -28,4 +28,12 @@ object InstalledApps {
 
     fun isSystem(info: ApplicationInfo): Boolean =
         (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
+    /** Human-readable label for a package, falling back to the package name. */
+    fun labelFor(context: Context, pkg: String): String = try {
+        val pm = context.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    } catch (_: PackageManager.NameNotFoundException) {
+        pkg
+    }
 }

@@ -26,11 +26,13 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_OFF_UNTIL = "off_until_epoch"         // Aus-Button target time
         private const val K_LAST_PORTAL = "last_portal_epoch"
         private const val K_SETUP_DONE = "setup_done"
+        private const val K_BEDTIME_SOUND = "bedtime_sound_enabled"
 
-        // daily state keys
+        // daily state keys (cache of the real UsageStats numbers, written by the service)
         private const val K_USAGE_DAY = "usage_day"              // yyyyDDD marker
         private const val K_GLOBAL_USED = "global_used_sec"
         private const val K_PERAPP_USED = "perapp_used_json"
+        private const val K_BLOCKED_TODAY = "blocked_today_json" // pkg -> lastBlocked epoch
 
         const val DEFAULT_GLOBAL_LIMIT_MIN = 60
         const val MAX_GLOBAL_LIMIT_MIN = 120
@@ -104,6 +106,10 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         return if (s <= e) nowMinutes in s until e else (nowMinutes >= s || nowMinutes < e)
     }
 
+    var bedtimeSoundEnabled: Boolean
+        get() = sp.getBoolean(K_BEDTIME_SOUND, true)
+        set(v) = sp.edit().putBoolean(K_BEDTIME_SOUND, v).apply()
+
     // ---- Aus-Button (temporary disable until 23:00) ------------------------
 
     /** Disable all limits until 23:00 of the current day. */
@@ -167,9 +173,12 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     fun limitMinutesOf(pkg: String): Int =
         getCategories()[pkg]?.second ?: 30
 
-    // ---- Daily usage state -------------------------------------------------
+    // ---- Daily usage cache -------------------------------------------------
+    // These are a cache of the real UsageStats numbers, refreshed by MonitorService every
+    // couple of seconds. The UI reads them so it never has to query UsageStats on the main
+    // thread. Everything resets automatically at midnight via the day marker.
 
-    /** Rolls the counters over when the calendar day changes (tracking starts at 00:00). */
+    /** Rolls the cache over when the calendar day changes (tracking starts at 00:00). */
     private fun ensureToday() {
         val today = dayMarker()
         if (sp.getInt(K_USAGE_DAY, -1) != today) {
@@ -177,15 +186,24 @@ class Prefs private constructor(private val sp: SharedPreferences) {
                 .putInt(K_USAGE_DAY, today)
                 .putInt(K_GLOBAL_USED, 0)
                 .putString(K_PERAPP_USED, "{}")
+                .putString(K_BLOCKED_TODAY, "{}")
                 .apply()
         }
     }
 
-    var globalUsedSeconds: Int
-        get() { ensureToday(); return sp.getInt(K_GLOBAL_USED, 0) }
-        set(v) { ensureToday(); sp.edit().putInt(K_GLOBAL_USED, v.coerceAtLeast(0)).apply() }
+    /** Called by the monitor service with the freshly measured usage numbers. */
+    fun cacheUsage(globalUsedSeconds: Int, perAppSeconds: Map<String, Int>) {
+        ensureToday()
+        val obj = JSONObject()
+        for ((pkg, sec) in perAppSeconds) obj.put(pkg, sec)
+        sp.edit()
+            .putInt(K_GLOBAL_USED, globalUsedSeconds.coerceAtLeast(0))
+            .putString(K_PERAPP_USED, obj.toString())
+            .apply()
+    }
 
-    fun addGlobalSeconds(delta: Int) { globalUsedSeconds = globalUsedSeconds + delta }
+    val globalUsedSeconds: Int
+        get() { ensureToday(); return sp.getInt(K_GLOBAL_USED, 0) }
 
     fun getPerAppSeconds(): Map<String, Int> {
         ensureToday()
@@ -197,11 +215,23 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     fun perAppSeconds(pkg: String): Int = getPerAppSeconds()[pkg] ?: 0
 
-    fun addPerAppSeconds(pkg: String, delta: Int) {
+    // ---- Blocked apps (today) ---------------------------------------------
+
+    /** Record that [pkg] was blocked now (limit reached). Shown in the parent portal. */
+    fun recordBlocked(pkg: String) {
         ensureToday()
-        val obj = JSONObject(sp.getString(K_PERAPP_USED, "{}") ?: "{}")
-        obj.put(pkg, obj.optInt(pkg, 0) + delta)
-        sp.edit().putString(K_PERAPP_USED, obj.toString()).apply()
+        val obj = JSONObject(sp.getString(K_BLOCKED_TODAY, "{}") ?: "{}")
+        obj.put(pkg, System.currentTimeMillis())
+        sp.edit().putString(K_BLOCKED_TODAY, obj.toString()).apply()
+    }
+
+    /** Map of package -> last-blocked epoch millis for today. */
+    fun getBlockedToday(): Map<String, Long> {
+        ensureToday()
+        val obj = JSONObject(sp.getString(K_BLOCKED_TODAY, "{}") ?: "{}")
+        val out = HashMap<String, Long>()
+        obj.keys().forEach { out[it] = obj.getLong(it) }
+        return out
     }
 
     // ---- helpers -----------------------------------------------------------

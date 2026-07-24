@@ -24,11 +24,19 @@ erreicht.
 | **System Alert Window** | Sperrbildschirm über allen Apps | `lock/LockOverlayManager.kt` |
 
 ### 2. Zeit-Limits & Sperr-Logik (`data/LimitEngine.kt`, `data/Prefs.kt`)
-- **Globales Limit:** Standard **1 Std**, maximal **2 Std**/Tag.
+- **Echte Nutzungsmessung:** Die Zeit wird direkt aus dem **`UsageStatsManager`** des
+  Betriebssystems gelesen (`util/UsageStatsTracker.kt`) – nicht mehr über einen selbst
+  gebauten Zähler. Dadurch ist die Messung **präzise, überlebt einen Neustart des Dienstes**
+  und startet garantiert um 00:00 Uhr.
+- **Globales Limit:** Standard **1 Std**, maximal **2 Std**/Tag = Summe der Zeit aller
+  `Standard`-Apps.
 - **App-Kategorien:** `Plus` (immer erlaubt, zählt nie) · `Limit` (eigenes Tageslimit) ·
   `Standard` (teilt sich das globale Guthaben).
-- **Präzision:** Der `MonitorService` misst **jede Sekunde** → Sperre greift binnen ~1 s.
-- **Ruhezeit (Bedtime):** konfigurierbares Fenster (Standard 20:00–06:00), sperrt komplett.
+- **Präzision:** Der `MonitorService` prüft alle ~1,5 s → Sperre greift binnen ~2 s.
+- **Gesperrte Apps:** werden protokolliert und im Eltern-Portal unter „Heute gesperrte Apps"
+  mit genutzter Zeit angezeigt.
+- **Ruhezeit (Bedtime):** konfigurierbares Fenster (Standard 20:00–06:00), sperrt komplett;
+  optional mit **beruhigendem Ton** (gebündelte Ambient-Audiodatei, `res/raw/`).
 - **Aus-Button:** deaktiviert alle Limits **bis 23:00 Uhr** des aktuellen Tages.
 
 ### 3. iOS-Design (`ui/`)

@@ -51,6 +51,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    androidResources {
+        // Keep the bedtime ambient audio uncompressed so it streams/loops smoothly.
+        noCompress += "wav"
+    }
 }
 
 dependencies {

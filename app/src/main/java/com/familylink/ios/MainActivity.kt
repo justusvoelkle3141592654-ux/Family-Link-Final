@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
         }
+        // Self-heal: make sure the guard is running every time the app is opened.
+        if (Prefs.get(this).setupDone) MonitorService.start(this)
         setContent {
             FamilyLinkTheme {
                 Box(Modifier.fillMaxSize().background(Cupertino.SystemBackground)) {

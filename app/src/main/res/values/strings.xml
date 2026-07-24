@@ -7,5 +7,5 @@
     <string name="device_admin_description">Verhindert die Deinstallation der Kindersicherung. Sperrt das Gerät bei der Aktivierung nicht.</string>
     <string name="monitor_channel_name">Family Link Schutz</string>
     <string name="monitor_notification_title">Family Link ist aktiv</string>
-    <string name="monitor_notification_text">Nutzungszeit wird überwacht.</string>
+    <string name="monitor_notification_text">Nutzungszeit wird gemessen und überwacht.</string>
 </resources>

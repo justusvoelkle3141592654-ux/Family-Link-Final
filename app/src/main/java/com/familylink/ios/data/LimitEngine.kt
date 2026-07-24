@@ -9,63 +9,54 @@ sealed class LockDecision {
 }
 
 /**
- * Decides, for a given foreground package, whether the device should be locked.
- * Also owns the "count this second of usage" accounting so the rules stay in one place.
+ * Pure decision logic. It is fed a real usage map (package -> foreground seconds today,
+ * from [com.familylink.ios.util.UsageStatsTracker]) and decides whether to lock.
+ *
+ *  - Global budget  = sum of foreground time of all STANDARD apps today.
+ *  - LIMIT apps      = checked against their own per-app daily limit.
+ *  - PLUS apps       = always allowed, never counted.
  */
 class LimitEngine(private val prefs: Prefs) {
 
-    /**
-     * Attribute [elapsedSeconds] of foreground time to [pkg] and return the resulting decision.
-     * Call this once per sampling tick from the monitor service.
-     */
-    fun account(pkg: String?, elapsedSeconds: Int): LockDecision {
-        // The Aus-Button wins over everything until 23:00.
-        if (prefs.limitsDisabled()) return LockDecision.Allowed
+    /** Sum of today's usage across STANDARD-category apps (the shared global budget). */
+    fun computeGlobalUsedSeconds(usage: Map<String, Int>): Int {
+        val cats = prefs.getCategories()
+        var total = 0
+        for ((pkg, sec) in usage) {
+            if (pkg == OWN_PACKAGE || isExempt(pkg)) continue
+            val cat = cats[pkg]?.first ?: AppCategory.STANDARD
+            if (cat == AppCategory.STANDARD) total += sec
+        }
+        return total
+    }
 
-        // Bedtime locks the whole device regardless of app category.
+    fun decide(pkg: String?, usage: Map<String, Int>): LockDecision {
+        // Aus-Button wins over everything until 23:00.
+        if (prefs.limitsDisabled()) return LockDecision.Allowed
+        // Bedtime locks the whole device.
         if (prefs.isBedtime()) return LockDecision.Bedtime
 
         if (pkg == null) return LockDecision.Allowed
-
-        // Never touch our own app, the launcher, the dialer, or system UI.
         if (pkg == OWN_PACKAGE || isExempt(pkg)) return LockDecision.Allowed
 
-        when (prefs.categoryOf(pkg)) {
-            AppCategory.PLUS -> {
-                // Always allowed, never counts.
-                return LockDecision.Allowed
-            }
+        return when (prefs.categoryOf(pkg)) {
+            AppCategory.PLUS -> LockDecision.Allowed
+
             AppCategory.LIMIT -> {
-                if (elapsedSeconds > 0) prefs.addPerAppSeconds(pkg, elapsedSeconds)
-                val used = prefs.perAppSeconds(pkg)
+                val used = usage[pkg] ?: 0
                 val limit = prefs.limitMinutesOf(pkg) * 60
-                if (used >= limit) {
-                    return LockDecision.AppLimitReached(pkg, used, limit)
-                }
-                return LockDecision.Allowed
+                if (used >= limit) LockDecision.AppLimitReached(pkg, used, limit)
+                else LockDecision.Allowed
             }
+
             AppCategory.STANDARD -> {
-                if (elapsedSeconds > 0) prefs.addGlobalSeconds(elapsedSeconds)
-                val used = prefs.globalUsedSeconds
+                val used = computeGlobalUsedSeconds(usage)
                 val limit = prefs.globalLimitMinutes * 60
-                if (used >= limit) {
-                    return LockDecision.GlobalLimitReached(used, limit)
-                }
-                return LockDecision.Allowed
+                if (used >= limit) LockDecision.GlobalLimitReached(used, limit)
+                else LockDecision.Allowed
             }
         }
     }
-
-    /** Re-evaluate without adding time (used for periodic re-checks, e.g. bedtime tick). */
-    fun evaluate(pkg: String?): LockDecision = account(pkg, 0)
-
-    fun snapshot(): UsageSnapshot = UsageSnapshot(
-        globalUsedSeconds = prefs.globalUsedSeconds,
-        globalLimitSeconds = prefs.globalLimitMinutes * 60,
-        bedtimeActive = prefs.isBedtime(),
-        limitsDisabled = prefs.limitsDisabled(),
-        perAppUsedSeconds = prefs.getPerAppSeconds()
-    )
 
     private fun isExempt(pkg: String): Boolean =
         pkg in SYSTEM_EXEMPT || pkg.startsWith("com.android.systemui")
@@ -73,18 +64,20 @@ class LimitEngine(private val prefs: Prefs) {
     companion object {
         const val OWN_PACKAGE = "com.familylink.ios"
 
-        // Launcher / phone / settings-launcher surfaces should never be locked out,
-        // otherwise the child cannot answer a call or reach the emergency dialer.
+        // Launcher / phone / settings surfaces must never be locked, so the child can always
+        // reach the home screen and the emergency dialer.
         private val SYSTEM_EXEMPT = setOf(
             "com.android.systemui",
             "com.android.launcher",
             "com.android.launcher3",
             "com.google.android.apps.nexuslauncher",
+            "com.sec.android.app.launcher",
             "com.android.dialer",
             "com.google.android.dialer",
             "com.android.phone",
             "com.android.emergency",
-            "com.android.server.telecom"
+            "com.android.server.telecom",
+            "com.android.settings"
         )
     }
 }
