@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple shield glyph centered in the adaptive-icon safe zone -->
+    <group android:scaleX="0.55" android:scaleY="0.55" android:pivotX="54" android:pivotY="54">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,20 L84,32 L84,56 C84,74 71,86 54,92 C37,86 24,74 24,56 L24,32 Z" />
+        <path
+            android:fillColor="#0A84FF"
+            android:pathData="M46,58 L40,52 L35,57 L46,68 L72,42 L67,37 Z" />
+    </group>
+</vector>

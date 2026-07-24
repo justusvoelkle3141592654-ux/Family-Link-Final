@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Family Link</string>
+    <string name="accessibility_label">Family Link Schutz</string>
+    <string name="accessibility_description">Überwacht die aktive App, misst die Nutzungszeit und verhindert Umgehungsversuche (Gastprofil, abgesicherter Modus). Es werden keine Inhalte an Dritte gesendet.</string>
+    <string name="device_admin_label">Family Link Geräteschutz</string>
+    <string name="device_admin_description">Verhindert die Deinstallation der Kindersicherung. Sperrt das Gerät bei der Aktivierung nicht.</string>
+    <string name="monitor_channel_name">Family Link Schutz</string>
+    <string name="monitor_notification_title">Family Link ist aktiv</string>
+    <string name="monitor_notification_text">Nutzungszeit wird überwacht.</string>
+</resources>

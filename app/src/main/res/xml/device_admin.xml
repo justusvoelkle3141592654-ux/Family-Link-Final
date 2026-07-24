@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Device-admin policy set.
+  IMPORTANT: we intentionally do NOT declare <force-lock/> as an auto-applied policy so that
+  simply *enabling* the admin never locks the screen (see spec: "Aktivierung darf das Gerät
+  nicht sofort sperren"). The admin exists only to block uninstall while it is active.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <watch-login />
+        <force-lock />
+    </uses-policies>
+</device-admin>
