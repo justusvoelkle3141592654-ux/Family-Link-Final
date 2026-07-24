@@ -38,6 +38,14 @@ class DeviceAdmin : DeviceAdminReceiver() {
             return dpm.isAdminActive(componentName(context))
         }
 
+        /** Lock the screen immediately (anti-tamper). No-op if the admin isn't active. */
+        fun lockNow(context: Context) {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            if (dpm.isAdminActive(componentName(context))) {
+                runCatching { dpm.lockNow() }
+            }
+        }
+
         /** Intent that opens the system "activate device admin" prompt. */
         fun enableIntent(context: Context): Intent =
             Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {

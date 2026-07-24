@@ -2,18 +2,19 @@ package com.familylink.ios.service
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
+import com.familylink.ios.admin.DeviceAdmin
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.util.ForegroundTracker
 
 /**
  * Second line of defence and a latency booster.
  *
- * Measurement now comes from UsageStats (see MonitorService), so this service is optional for
- * counting. What it adds:
- *  1. Instant foreground hints: on a window switch we update [ForegroundTracker] and ask the
- *     monitor to re-check immediately, so the lock appears the moment a limited app opens.
- *  2. Best-effort anti-bypass: guest/user switch, power menu (safe mode) and the quick-settings
- *     shade while a lock is active. (A device-owner install upgrades these to hard blocks.)
+ *  1. Instant foreground hints for the monitor service.
+ *  2. Anti-tamper: if the user opens the device-admin deactivation screen or this app's App-Info
+ *     page, lock the screen immediately (DevicePolicyManager.lockNow).
+ *  3. Anti-bypass: block the pop-up / split-screen (multi-window) view while a lock is active,
+ *     plus guest/user-switch, the power menu and the quick-settings shade.
  */
 class AppAccessibilityService : AccessibilityService() {
 
@@ -29,18 +30,57 @@ class AppAccessibilityService : AccessibilityService() {
         event ?: return
         val pkg = event.packageName?.toString() ?: return
 
+        // 2 — anti-tamper: lock immediately on admin-deactivation or our App-Info page.
+        if (handleAdminTamper(pkg, event)) return
+
+        // 3 — anti-bypass surfaces.
         if (handlePotentialBypass(pkg, event)) return
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            // Block multi-window / pop-up (split screen) while a lock is active.
+            if (isGuarding() && hasMultipleAppWindows()) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                return
+            }
             ForegroundTracker.update(pkg)
             MonitorService.recheck(this)
         }
     }
 
+    private fun isGuarding(): Boolean =
+        prefs.isBedtime() || prefs.getBlockedToday().isNotEmpty()
+
+    private fun hasMultipleAppWindows(): Boolean = try {
+        windows.count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } >= 2
+    } catch (_: Throwable) {
+        false
+    }
+
+    /** @return true if this was an admin/App-Info tamper attempt we locked on. */
+    private fun handleAdminTamper(pkg: String, event: AccessibilityEvent): Boolean {
+        if (!pkg.contains("settings")) return false
+        // Never auto-lock during setup, or while the parent has authorised settings access
+        // (portal release / our own permission + admin-enable flows).
+        if (!prefs.setupDone || prefs.settingsUnlocked()) return false
+        val text = (event.text?.joinToString(" ") ?: "").lowercase() + " " +
+            (event.contentDescription?.toString()?.lowercase() ?: "")
+
+        val adminScreen = text.contains("geräteadministrator") || text.contains("geräte-admin") ||
+            text.contains("device admin") || text.contains("device administrator")
+        val ourAppInfo = (text.contains("family link")) &&
+            (text.contains("deinstallier") || text.contains("uninstall") ||
+                text.contains("beenden erzwingen") || text.contains("stopp erzwingen") ||
+                text.contains("force stop") || text.contains("app-info") || text.contains("app info"))
+
+        if (adminScreen || ourAppInfo) {
+            DeviceAdmin.lockNow(this)
+            return true
+        }
+        return false
+    }
+
     /** @return true if the event was a bypass attempt we handled (caller should stop). */
     private fun handlePotentialBypass(pkg: String, event: AccessibilityEvent): Boolean {
-        // Only inspect events from the surfaces that can be used to bypass; skip everything
-        // else immediately so normal app usage stays cheap.
         if (pkg != "android" && pkg != "com.android.systemui") return false
 
         val text = (event.text?.joinToString(" ") ?: "").lowercase() +
@@ -54,10 +94,9 @@ class AppAccessibilityService : AccessibilityService() {
             return true
         }
 
-        val looksLikePowerMenu = (pkg == "android" || pkg == "com.android.systemui") &&
-            (text.contains("ausschalten") || text.contains("neu starten") ||
-                text.contains("power off") || text.contains("restart") ||
-                text.contains("abgesicherter modus") || text.contains("safe mode"))
+        val looksLikePowerMenu = text.contains("ausschalten") || text.contains("neu starten") ||
+            text.contains("power off") || text.contains("restart") ||
+            text.contains("abgesicherter modus") || text.contains("safe mode")
         if (looksLikePowerMenu) {
             performGlobalAction(GLOBAL_ACTION_BACK)
             return true
@@ -66,8 +105,7 @@ class AppAccessibilityService : AccessibilityService() {
         if (pkg == "com.android.systemui") {
             val shade = text.contains("schnelleinstellungen") || text.contains("quick settings") ||
                 event.className?.toString()?.contains("QuickSettings", true) == true
-            // Only fight the shade while a lock is actually in force.
-            if (shade && (prefs.isBedtime() || prefs.getBlockedToday().isNotEmpty())) {
+            if (shade && isGuarding()) {
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 return true
             }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,9 +16,8 @@ import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.theme.FamilyLinkTheme
 
 /**
- * The block screen (Listen-Ansicht) — a normal, leavable screen, not a screen lock. Hosts the
- * block list (with the Plus-Apps filter that can launch apps) and the parent-protected time
- * extension flow.
+ * The block screen. During the day it is a leavable list screen; during bedtime it becomes a
+ * hard lock: no allowed apps, no close/portal, and BACK is swallowed.
  */
 class BlockActivity : ComponentActivity() {
 
@@ -25,15 +25,20 @@ class BlockActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Zeitlimit erreicht"
         val detail = intent.getStringExtra(EXTRA_DETAIL) ?: "Diese App ist gerade gesperrt."
+        val bedtime = intent.getBooleanExtra(EXTRA_BEDTIME, false)
 
         setContent {
             FamilyLinkTheme {
+                // During bedtime the screen cannot be dismissed with BACK.
+                if (bedtime) BackHandler(enabled = true) { /* swallow */ }
+
                 var screen by remember { mutableStateOf("block") }
                 when (screen) {
                     "extend" -> ExtendTimeScreen(onClose = { screen = "block" })
                     else -> BlockListScreen(
                         reasonTitle = title,
                         reasonDetail = detail,
+                        bedtime = bedtime,
                         onLaunchApp = { pkg -> launchApp(pkg) },
                         onExtend = { screen = "extend" },
                         onOpenPortal = { openPortal() },
@@ -61,9 +66,7 @@ class BlockActivity : ComponentActivity() {
 
     private fun openPortal() {
         runCatching {
-            startActivity(
-                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         finish()
     }
@@ -71,11 +74,13 @@ class BlockActivity : ComponentActivity() {
     companion object {
         const val EXTRA_TITLE = "title"
         const val EXTRA_DETAIL = "detail"
+        const val EXTRA_BEDTIME = "bedtime"
 
-        fun launch(context: Context, title: String, detail: String) {
+        fun launch(context: Context, title: String, detail: String, bedtime: Boolean) {
             val i = Intent(context, BlockActivity::class.java).apply {
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_DETAIL, detail)
+                putExtra(EXTRA_BEDTIME, bedtime)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or

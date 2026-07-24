@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Device-admin policy set — intentionally MINIMAL.
+  Device-admin policy set.
 
-  The admin exists for exactly one purpose: while it is active the OS refuses to uninstall the
-  app (tamper resistance). It grants NO destructive capability:
-    * NO <wipe-data/>       -> the app can never factory-reset or erase the device.
-    * NO <watch-login/>     -> failed-password attempts are not monitored.
-    * NO auto <force-lock/> -> enabling the admin never locks the screen.
-  We therefore declare an empty policy list; being an active admin alone blocks uninstall.
+  Purpose: block uninstall while active AND allow the app to lock the screen on demand
+  (used only as an anti-tamper reaction when someone opens the admin-deactivation screen or
+  this app's App-Info page).
+
+  It grants NO destructive capability:
+    * NO <wipe-data/>   -> the app can never factory-reset or erase the device.
+    * NO <watch-login/> -> failed-password attempts are not monitored.
+  Enabling the admin never locks the screen by itself (see DeviceAdmin.onEnabled).
 -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-policies>
+        <force-lock />
     </uses-policies>
 </device-admin>

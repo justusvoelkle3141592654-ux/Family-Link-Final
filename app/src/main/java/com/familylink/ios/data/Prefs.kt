@@ -153,6 +153,22 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     fun limitsDisabled(now: Long = System.currentTimeMillis()): Boolean = now < offUntilEpoch
 
+    // ---- Temporary system-settings release (granted from the portal) ------
+
+    private val kSettingsUntil = "settings_until_epoch"
+
+    /** Open the device system settings for [minutes] minutes. */
+    fun unlockSettings(minutes: Int) {
+        sp.edit().putLong(kSettingsUntil, System.currentTimeMillis() + minutes * 60_000L).apply()
+    }
+
+    fun lockSettingsNow() = sp.edit().putLong(kSettingsUntil, 0).apply()
+
+    fun settingsUnlocked(now: Long = System.currentTimeMillis()): Boolean =
+        now < sp.getLong(kSettingsUntil, 0)
+
+    val settingsUnlockedUntil: Long get() = sp.getLong(kSettingsUntil, 0)
+
     // The parent portal is openable anytime with the PIN — the weekly restriction was removed.
 
     // ---- App categories ----------------------------------------------------

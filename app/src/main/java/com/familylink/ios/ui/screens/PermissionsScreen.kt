@@ -68,25 +68,32 @@ fun PermissionsScreen(
             fontSize = 15.sp, color = Cupertino.SecondaryLabel
         )
 
+        // Opening any settings page from our own flow authorises settings access briefly, so the
+        // lock never fights our own permission / admin screens.
+        val openAuthorized: (android.content.Intent) -> Unit = { intent ->
+            com.familylink.ios.data.Prefs.get(context).unlockSettings(3)
+            runCatching { context.startActivity(intent) }
+        }
+
         SectionHeader("Erforderlich")
         CupertinoCard {
             PermRow(
                 title = "Nutzungszugriff",
                 subtitle = "Misst die App-Zeit ab 00:00 Uhr",
                 granted = usage
-            ) { runCatching { context.startActivity(Permissions.usageAccessIntent()) } }
+            ) { openAuthorized(Permissions.usageAccessIntent()) }
             Divider()
             PermRow(
                 title = "Über anderen Apps anzeigen",
                 subtitle = "Damit die Sperr-Liste angezeigt werden kann",
                 granted = overlay
-            ) { runCatching { context.startActivity(Permissions.overlayIntent(context)) } }
+            ) { openAuthorized(Permissions.overlayIntent(context)) }
             Divider()
             PermRow(
                 title = "Bedienungshilfe",
                 subtitle = "Überwachung & Schutz vor Umgehung",
                 granted = accessibility
-            ) { runCatching { context.startActivity(Permissions.accessibilityIntent()) } }
+            ) { openAuthorized(Permissions.accessibilityIntent()) }
         }
 
         SectionHeader("Empfohlen")
@@ -95,7 +102,7 @@ fun PermissionsScreen(
                 title = "Geräteadministrator",
                 subtitle = "Verhindert die Deinstallation (sperrt nicht)",
                 granted = admin
-            ) { runCatching { context.startActivity(DeviceAdmin.enableIntent(context)) } }
+            ) { openAuthorized(DeviceAdmin.enableIntent(context)) }
         }
 
         Spacer(Modifier.height(28.dp))

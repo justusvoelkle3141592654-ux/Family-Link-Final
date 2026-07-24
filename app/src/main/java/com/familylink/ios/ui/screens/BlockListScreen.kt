@@ -59,6 +59,7 @@ import kotlinx.coroutines.delay
 fun BlockListScreen(
     reasonTitle: String,
     reasonDetail: String,
+    bedtime: Boolean,
     onLaunchApp: (String) -> Unit,
     onExtend: () -> Unit,
     onOpenPortal: () -> Unit,
@@ -68,7 +69,7 @@ fun BlockListScreen(
     val prefs = remember { Prefs.get(context) }
     var showPlus by remember { mutableStateOf(false) }
 
-    if (showPlus) {
+    if (showPlus && !bedtime) {
         val apps = remember { InstalledApps.load(context) }
         val plusApps = remember { apps.filter { prefs.categoryOf(it.packageName) == AppCategory.PLUS } }
         PlusAppsView(plusApps = plusApps, onLaunchApp = onLaunchApp, onBack = { showPlus = false })
@@ -94,38 +95,39 @@ fun BlockListScreen(
 
         Spacer(Modifier.weight(1f))
 
-        BigButton("Zugelassen + Apps", Cupertino.Green) { showPlus = true }
-        Spacer(Modifier.height(12.dp))
-        BigButton("Verlängerung", Cupertino.Blue) { onExtend() }
-
-        Spacer(Modifier.height(24.dp))
+        // During bedtime this is a hard lock: no allowed apps, no extension, no close/portal.
+        if (!bedtime) {
+            BigButton("Zugelassen + Apps", Cupertino.Green) { showPlus = true }
+            Spacer(Modifier.height(12.dp))
+            BigButton("Verlängerung", Cupertino.Blue) { onExtend() }
+            Spacer(Modifier.height(24.dp))
+        }
 
         // Phone is always available.
         Box(
-            Modifier.size(60.dp).clip(CircleShape).background(Cupertino.SystemBackground)
+            Modifier.size(60.dp).clip(CircleShape).background(Color(0x1A34C759))
                 .clickable {
                     val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     runCatching { context.startActivity(dial) }
                 },
             contentAlignment = Alignment.Center
         ) {
-            Box(
-                Modifier.size(60.dp).clip(CircleShape).background(Color(0x1A34C759)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Phone, contentDescription = "Telefon", tint = Cupertino.Green, modifier = Modifier.size(26.dp))
-            }
+            Icon(Icons.Filled.Phone, contentDescription = "Telefon", tint = Cupertino.Green, modifier = Modifier.size(26.dp))
         }
         Spacer(Modifier.height(6.dp))
         Text("Telefon", fontSize = 13.sp, color = Cupertino.SecondaryLabel)
 
         Spacer(Modifier.height(16.dp))
-        Row {
-            Text("Startbildschirm", fontSize = 15.sp, color = Cupertino.Blue,
-                modifier = Modifier.clickable { onClose() }.padding(8.dp))
-            Spacer(Modifier.size(16.dp))
-            Text("Eltern-Portal", fontSize = 15.sp, color = Cupertino.Blue,
-                modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
+        if (!bedtime) {
+            Row {
+                Text("Startbildschirm", fontSize = 15.sp, color = Cupertino.Blue,
+                    modifier = Modifier.clickable { onClose() }.padding(8.dp))
+                Spacer(Modifier.size(16.dp))
+                Text("Eltern-Portal", fontSize = 15.sp, color = Cupertino.Blue,
+                    modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
+            }
+        } else {
+            Text("Gute Nacht", fontSize = 14.sp, color = Cupertino.TertiaryLabel)
         }
         Spacer(Modifier.height(8.dp))
     }

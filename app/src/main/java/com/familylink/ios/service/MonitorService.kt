@@ -78,6 +78,10 @@ class MonitorService : Service() {
     }
 
     private fun tick() {
+        // Never enforce anything until initial setup is finished (so granting permissions and
+        // enabling the admin during setup is never interrupted).
+        if (!prefs.setupDone) return
+
         if (ticksSincePkgRefresh++ >= 40) { ticksSincePkgRefresh = 0; refreshManagedPackages() }
 
         val usage = UsageStatsTracker.todayUsageSeconds(this)
@@ -98,12 +102,24 @@ class MonitorService : Service() {
             main.post { BedtimeSound.stop() }
         }
 
-        // Only act when a *blockable* app is actually in the foreground.
         if (decision is LockDecision.Allowed) return
-        if (pkg == null || engine.isForegroundExempt(pkg)) return
-        // Never block anything that isn't a real, user-launchable app. This is the key fix so a
-        // keyboard / ad SDK / Play-services window can't cover a freshly-opened PLUS app.
-        if (pkg !in managedPackages) return
+        if (pkg == null) return
+        // Phone / system / our own screens are never blocked (even during bedtime).
+        if (engine.isAlwaysExempt(pkg)) return
+
+        val bedtime = decision is LockDecision.Bedtime
+        if (!bedtime) {
+            when (decision) {
+                // Settings is blocked directly (it is not a "managed" launchable app).
+                is LockDecision.SettingsBlocked -> { /* fall through to block */ }
+                else -> {
+                    // Daytime limit blocks: launcher stays free and only real launchable apps count.
+                    if (engine.isForegroundExempt(pkg)) return
+                    if (pkg !in managedPackages) return
+                }
+            }
+        }
+        // Bedtime: block EVERYTHING that is not always-exempt (launcher, PLUS apps, settings, …).
 
         // Record for the parent portal.
         when (decision) {
@@ -119,7 +135,7 @@ class MonitorService : Service() {
         lastBlockLaunchAt = now
 
         val (title, detail) = messageFor(decision)
-        main.post { BlockActivity.launch(this, title, detail) }
+        main.post { BlockActivity.launch(this, title, detail, bedtime) }
     }
 
     private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {
@@ -131,6 +147,8 @@ class MonitorService : Service() {
             "App-Limit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
         is LockDecision.AppBlocked ->
             "App gesperrt" to "Diese App ist dauerhaft gesperrt."
+        is LockDecision.SettingsBlocked ->
+            "Einstellungen gesperrt" to "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal."
         LockDecision.Allowed -> "" to ""
     }
 

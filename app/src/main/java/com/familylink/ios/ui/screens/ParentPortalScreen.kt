@@ -178,6 +178,30 @@ fun ParentPortalScreen(
             ) { Chevron() }
         }
 
+        // ---- device: system settings are locked by default; released here temporarily ----
+        SectionHeader("Gerät")
+        CupertinoCard {
+            Column(Modifier.padding(16.dp)) {
+                val open = prefs.settingsUnlocked()
+                Text(
+                    if (open) "Systemeinstellungen sind vorübergehend freigegeben."
+                    else "Die Systemeinstellungen des Geräts sind gesperrt. Hier für 5 Minuten freigeben und öffnen.",
+                    fontSize = 14.sp, color = Cupertino.SecondaryLabel
+                )
+                Spacer(Modifier.height(12.dp))
+                CupertinoButton(text = "Einstellungen öffnen (5 Min)", color = Cupertino.Blue) {
+                    prefs.unlockSettings(5)
+                    v++
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(Modifier.height(24.dp))
         Text(
             "Das Eltern-Portal ist jederzeit mit der PIN erreichbar.",
