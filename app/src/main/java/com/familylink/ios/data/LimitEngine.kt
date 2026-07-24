@@ -80,8 +80,14 @@ class LimitEngine(private val prefs: Prefs) {
         }
     }
 
+    /** Settings-family surfaces that must stay locked (kept in sync with the a11y service). */
     fun isSettings(pkg: String): Boolean =
-        pkg == "com.android.settings" || pkg.endsWith(".settings")
+        pkg == "com.android.settings" ||
+            pkg == "com.samsung.android.settings" ||
+            pkg.endsWith(".settings") ||
+            pkg == "com.android.packageinstaller" ||
+            pkg == "com.google.android.packageinstaller" ||
+            pkg == "com.android.permissioncontroller"
 
     /** Usable even during bedtime: phone, system UI, our own screens. */
     fun isAlwaysExempt(pkg: String): Boolean =

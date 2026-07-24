@@ -185,12 +185,12 @@ fun ParentPortalScreen(
                 val open = prefs.settingsUnlocked()
                 Text(
                     if (open) "Systemeinstellungen sind vorübergehend freigegeben."
-                    else "Die Systemeinstellungen des Geräts sind gesperrt. Hier für 5 Minuten freigeben und öffnen.",
+                    else "Die Systemeinstellungen des Geräts sind gesperrt. Hier für 1 Minute freigeben und öffnen.",
                     fontSize = 14.sp, color = Cupertino.SecondaryLabel
                 )
                 Spacer(Modifier.height(12.dp))
-                CupertinoButton(text = "Einstellungen öffnen (5 Min)", color = Cupertino.Blue) {
-                    prefs.unlockSettings(5)
+                CupertinoButton(text = "Einstellungen öffnen (1 Min)", color = Cupertino.Blue) {
+                    prefs.unlockSettings(1)
                     v++
                     runCatching {
                         context.startActivity(
