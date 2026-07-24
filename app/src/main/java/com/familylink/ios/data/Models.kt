@@ -1,12 +1,13 @@
 package com.familylink.ios.data
 
 /**
- * App category as defined in the spec:
+ * App category:
  *  - PLUS     -> always allowed, never counts against any limit
  *  - LIMIT    -> has its own dedicated per-app daily limit
  *  - STANDARD -> shares the global daily time budget
+ *  - BLOCKED  -> always locked (generally blocked, independent of time)
  */
-enum class AppCategory { PLUS, LIMIT, STANDARD }
+enum class AppCategory { PLUS, LIMIT, STANDARD, BLOCKED }
 
 data class ManagedApp(
     val packageName: String,

@@ -78,7 +78,7 @@ fun PermissionsScreen(
             Divider()
             PermRow(
                 title = "Über anderen Apps anzeigen",
-                subtitle = "Für den Sperrbildschirm",
+                subtitle = "Damit die Sperr-Liste angezeigt werden kann",
                 granted = overlay
             ) { runCatching { context.startActivity(Permissions.overlayIntent(context)) } }
             Divider()

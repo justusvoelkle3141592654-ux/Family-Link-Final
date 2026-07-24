@@ -52,7 +52,7 @@ fun AppsScreen() {
             modifier = Modifier.padding(16.dp)
         )
         Text(
-            "Plus = immer erlaubt · Limit = eigenes Limit · Standard = gemeinsames Guthaben",
+            "Plus = immer erlaubt · Limit = eigenes Limit · Standard = gemeinsames Guthaben · Gesperrt = nie",
             fontSize = 13.sp, color = Cupertino.SecondaryLabel,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -82,7 +82,8 @@ fun AppsScreen() {
                         val next = when (cat) {
                             AppCategory.STANDARD -> AppCategory.PLUS
                             AppCategory.PLUS -> AppCategory.LIMIT
-                            AppCategory.LIMIT -> AppCategory.STANDARD
+                            AppCategory.LIMIT -> AppCategory.BLOCKED
+                            AppCategory.BLOCKED -> AppCategory.STANDARD
                         }
                         prefs.setCategory(app.packageName, next, limit)
                         version++
@@ -106,6 +107,7 @@ private fun CategoryChip(cat: AppCategory, onClick: () -> Unit) {
         AppCategory.PLUS -> "Plus" to Cupertino.Green
         AppCategory.LIMIT -> "Limit" to Cupertino.Orange
         AppCategory.STANDARD -> "Standard" to Cupertino.Blue
+        AppCategory.BLOCKED -> "Gesperrt" to Cupertino.Red
     }
     Box(
         Modifier

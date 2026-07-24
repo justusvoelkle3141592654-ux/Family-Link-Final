@@ -130,21 +130,7 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     fun limitsDisabled(now: Long = System.currentTimeMillis()): Boolean = now < offUntilEpoch
 
-    // ---- Parent portal weekly gate ----------------------------------------
-
-    val lastPortalEpoch: Long get() = sp.getLong(K_LAST_PORTAL, 0)
-
-    fun markPortalOpened() = sp.edit().putLong(K_LAST_PORTAL, System.currentTimeMillis()).apply()
-
-    /**
-     * Portal is openable once per week, OR anytime while the Aus-Button window is active
-     * (so the parent can always reach the controls on a day they unlocked).
-     */
-    fun canOpenPortal(now: Long = System.currentTimeMillis()): Boolean {
-        if (limitsDisabled(now)) return true
-        val week = 7L * 24 * 60 * 60 * 1000
-        return now - lastPortalEpoch >= week
-    }
+    // The parent portal is openable anytime with the PIN — the weekly restriction was removed.
 
     // ---- App categories ----------------------------------------------------
 

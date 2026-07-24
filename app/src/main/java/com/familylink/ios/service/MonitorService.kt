@@ -12,38 +12,37 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
+import com.familylink.ios.BlockActivity
 import com.familylink.ios.MainActivity
 import com.familylink.ios.R
 import com.familylink.ios.data.LimitEngine
 import com.familylink.ios.data.LockDecision
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.lock.LockOverlayManager
 import com.familylink.ios.util.BedtimeSound
 import com.familylink.ios.util.ForegroundTracker
+import com.familylink.ios.util.TimeFmt
 import com.familylink.ios.util.UsageStatsTracker
 
 /**
- * Always-on foreground service and the heart of enforcement.
+ * Always-on guard. Every ~1.5s it reads real usage from the OS, decides whether the current
+ * foreground app is blocked, and — if so — brings up the block list screen (Listen-Ansicht).
  *
- * Every ~1.5s it:
- *  1. reads the *real* usage numbers from the OS (UsageStatsManager),
- *  2. finds the current foreground app (OS usage events, or the accessibility hint),
- *  3. asks [LimitEngine] whether to lock, and shows/hides the overlay accordingly,
- *  4. caches the numbers so the UI can display live usage,
- *  5. records blocked apps and drives the bedtime sound.
- *
- * Because measurement comes from the OS, tracking keeps working even if the service is
- * briefly killed, and it does not depend on the accessibility service being enabled.
+ * The block screen is a normal, leavable Activity, not a screen-locking overlay:
+ *  - no full-screen lock, the child can always go Home and use PLUS apps,
+ *  - single surface, and it does not flicker because we only (re)launch it when a *blocked*
+ *    app is actually in the foreground and not more than once per cooldown window.
  */
 class MonitorService : Service() {
 
     private lateinit var prefs: Prefs
     private lateinit var engine: LimitEngine
 
-    // Do the UsageStats query off the main thread; touch the overlay on the main thread.
     private val workerThread = HandlerThread("monitor-worker")
     private lateinit var worker: Handler
     private val main = Handler(Looper.getMainLooper())
+
+    private var lastBlockLaunchAt = 0L
 
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -84,22 +83,37 @@ class MonitorService : Service() {
             main.post { BedtimeSound.stop() }
         }
 
-        // Record which app got blocked (for the parent portal list).
+        // Only act when a *blockable* app is actually in the foreground.
+        if (decision is LockDecision.Allowed) return
+        if (pkg == null || engine.isForegroundExempt(pkg)) return
+
+        // Record for the parent portal.
         when (decision) {
             is LockDecision.AppLimitReached -> prefs.recordBlocked(decision.pkg)
-            is LockDecision.GlobalLimitReached -> if (pkg != null) prefs.recordBlocked(pkg)
+            is LockDecision.AppBlocked -> prefs.recordBlocked(decision.pkg)
+            is LockDecision.GlobalLimitReached -> prefs.recordBlocked(pkg)
             else -> {}
         }
 
-        main.post {
-            when (decision) {
-                is LockDecision.Allowed ->
-                    if (LockOverlayManager.isShowing) LockOverlayManager.hide(this)
-                else ->
-                    if (LockOverlayManager.isShowing) LockOverlayManager.update(decision)
-                    else LockOverlayManager.show(this, decision)
-            }
-        }
+        // Debounce so we never relaunch in a tight loop (no flicker).
+        val now = SystemClock.uptimeMillis()
+        if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
+        lastBlockLaunchAt = now
+
+        val (title, detail) = messageFor(decision)
+        main.post { BlockActivity.launch(this, title, detail) }
+    }
+
+    private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {
+        is LockDecision.Bedtime ->
+            "Ruhezeit" to "Es ist Ruhezeit. Nur freigegebene Apps sind verfügbar."
+        is LockDecision.GlobalLimitReached ->
+            "Zeitlimit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
+        is LockDecision.AppLimitReached ->
+            "App-Limit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
+        is LockDecision.AppBlocked ->
+            "App gesperrt" to "Diese App ist dauerhaft gesperrt."
+        LockDecision.Allowed -> "" to ""
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -108,7 +122,6 @@ class MonitorService : Service() {
         worker.removeCallbacks(tickRunnable)
         workerThread.quitSafely()
         main.post { BedtimeSound.stop() }
-        // Self-heal: ask the system to restart us if a child killed the service.
         sendBroadcast(Intent(this, BootReceiver::class.java).setAction(BootReceiver.ACTION_RESTART))
         super.onDestroy()
     }
@@ -137,12 +150,12 @@ class MonitorService : Service() {
 
     companion object {
         private const val TICK_MS = 1500L
+        private const val RELAUNCH_COOLDOWN_MS = 2500L
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "family_link_monitor"
         const val ACTION_RECHECK = "com.familylink.ios.RECHECK"
 
         fun start(context: Context) {
-            // Starting a FGS from the background can throw on Android 12+; never let that crash us.
             try {
                 val i = Intent(context, MonitorService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)

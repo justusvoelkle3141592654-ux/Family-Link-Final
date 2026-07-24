@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Device-admin policy set.
-  IMPORTANT: we intentionally do NOT declare <force-lock/> as an auto-applied policy so that
-  simply *enabling* the admin never locks the screen (see spec: "Aktivierung darf das Gerät
-  nicht sofort sperren"). The admin exists only to block uninstall while it is active.
+  Device-admin policy set — intentionally MINIMAL.
+
+  The admin exists for exactly one purpose: while it is active the OS refuses to uninstall the
+  app (tamper resistance). It grants NO destructive capability:
+    * NO <wipe-data/>       -> the app can never factory-reset or erase the device.
+    * NO <watch-login/>     -> failed-password attempts are not monitored.
+    * NO auto <force-lock/> -> enabling the admin never locks the screen.
+  We therefore declare an empty policy list; being an active admin alone blocks uninstall.
 -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-policies>
-        <watch-login />
-        <force-lock />
     </uses-policies>
 </device-admin>

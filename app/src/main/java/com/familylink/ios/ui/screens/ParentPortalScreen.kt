@@ -42,6 +42,7 @@ import com.familylink.ios.util.TimeFmt
 fun ParentPortalScreen(
     onOpenApps: () -> Unit,
     onOpenPermissions: () -> Unit,
+    onChangePin: () -> Unit,
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -165,9 +166,15 @@ fun ParentPortalScreen(
             CupertinoRow(title = "Berechtigungen", onClick = onOpenPermissions) { Chevron() }
         }
 
+        // ---- security ----
+        SectionHeader("Sicherheit")
+        CupertinoCard {
+            CupertinoRow(title = "PIN ändern", onClick = onChangePin) { Chevron() }
+        }
+
         Spacer(Modifier.height(24.dp))
         Text(
-            "Das Eltern-Portal ist nur einmal pro Woche ohne Aus-Button erreichbar.",
+            "Das Eltern-Portal ist jederzeit mit der PIN erreichbar.",
             fontSize = 12.sp, color = Cupertino.TertiaryLabel
         )
         Spacer(Modifier.height(24.dp))

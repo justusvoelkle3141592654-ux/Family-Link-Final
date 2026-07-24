@@ -65,7 +65,7 @@ private sealed class Route {
     object Portal : Route()
     object PortalApps : Route()
     object PortalPermissions : Route()
-    object PortalLocked : Route()
+    object PortalChangePin : Route()
 }
 
 @Composable
@@ -102,19 +102,17 @@ private fun RootNav() {
             onOpenParentPortal = { route = Route.VerifyPin }
         )
 
+        // Portal opens with the PIN anytime — no weekly restriction (requirement 5).
         Route.VerifyPin -> PinScreen(
             mode = PinMode.VERIFY,
-            onSuccess = {
-                route = if (prefs.canOpenPortal()) {
-                    prefs.markPortalOpened(); Route.Portal
-                } else Route.PortalLocked
-            },
+            onSuccess = { route = Route.Portal },
             onCancel = { route = Route.Home }
         )
 
         Route.Portal -> ParentPortalScreen(
             onOpenApps = { route = Route.PortalApps },
             onOpenPermissions = { route = Route.PortalPermissions },
+            onChangePin = { route = Route.PortalChangePin },
             onExit = { route = Route.Home }
         )
 
@@ -128,9 +126,11 @@ private fun RootNav() {
             showContinue = true
         )
 
-        Route.PortalLocked -> PortalLocked(
-            offActive = prefs.limitsDisabled(),
-            onBack = { route = Route.Home }
+        // Change PIN: already authenticated in the portal, so just set a new one.
+        Route.PortalChangePin -> PinScreen(
+            mode = PinMode.SET,
+            onSuccess = { route = Route.Portal },
+            onCancel = { route = Route.Portal }
         )
     }
 }
@@ -142,25 +142,5 @@ private fun SetupFooter(text: String, onClick: () -> Unit) {
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Bottom
     ) {
         CupertinoButton(text = text, onClick = onClick)
-    }
-}
-
-@Composable
-private fun PortalLocked(offActive: Boolean, onBack: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().background(Cupertino.SystemBackground).padding(24.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Diese Woche schon geöffnet", fontSize = 22.sp, color = Cupertino.Label)
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Das Eltern-Portal kann nur einmal pro Woche geöffnet werden. " +
-                "Für heute freischalten ist über den Aus-Button möglich, sobald das Portal " +
-                "wieder erreichbar ist.",
-            fontSize = 15.sp, color = Cupertino.SecondaryLabel, textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(32.dp))
-        CupertinoButton(text = "Zurück", onClick = onBack)
     }
 }

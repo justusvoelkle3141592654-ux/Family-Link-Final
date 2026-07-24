@@ -4,7 +4,7 @@
     <string name="accessibility_label">Family Link Schutz</string>
     <string name="accessibility_description">Überwacht die aktive App, misst die Nutzungszeit und verhindert Umgehungsversuche (Gastprofil, abgesicherter Modus). Es werden keine Inhalte an Dritte gesendet.</string>
     <string name="device_admin_label">Family Link Geräteschutz</string>
-    <string name="device_admin_description">Verhindert die Deinstallation der Kindersicherung. Sperrt das Gerät bei der Aktivierung nicht.</string>
+    <string name="device_admin_description">Verhindert die Deinstallation der Kindersicherung. Sperrt das Gerät nicht und löscht keine Daten.</string>
     <string name="monitor_channel_name">Family Link Schutz</string>
     <string name="monitor_notification_title">Family Link ist aktiv</string>
     <string name="monitor_notification_text">Nutzungszeit wird gemessen und überwacht.</string>
