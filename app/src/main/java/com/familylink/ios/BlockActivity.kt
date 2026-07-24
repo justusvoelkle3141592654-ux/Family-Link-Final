@@ -36,6 +36,7 @@ class BlockActivity : ComponentActivity() {
                         reasonDetail = detail,
                         onLaunchApp = { pkg -> launchApp(pkg) },
                         onExtend = { screen = "extend" },
+                        onOpenPortal = { openPortal() },
                         onClose = { goHome() }
                     )
                 }
@@ -55,6 +56,15 @@ class BlockActivity : ComponentActivity() {
         startActivity(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
+        finish()
+    }
+
+    private fun openPortal() {
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
         finish()
     }
 

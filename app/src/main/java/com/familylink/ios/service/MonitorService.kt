@@ -16,6 +16,7 @@ import android.os.SystemClock
 import com.familylink.ios.BlockActivity
 import com.familylink.ios.MainActivity
 import com.familylink.ios.R
+import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.LimitEngine
 import com.familylink.ios.data.LockDecision
 import com.familylink.ios.data.Prefs
@@ -44,6 +45,11 @@ class MonitorService : Service() {
 
     private var lastBlockLaunchAt = 0L
 
+    // Only real, user-launchable apps are ever blocked. Everything else (keyboards, ad SDKs,
+    // Play services, system surfaces) is left alone so it can never appear over a PLUS app.
+    @Volatile private var managedPackages: Set<String> = emptySet()
+    private var ticksSincePkgRefresh = 0
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
@@ -56,6 +62,7 @@ class MonitorService : Service() {
         prefs = Prefs.get(this)
         engine = LimitEngine(prefs)
         startForeground(NOTIF_ID, buildNotification())
+        refreshManagedPackages()
         workerThread.start()
         worker = Handler(workerThread.looper)
         worker.post(tickRunnable)
@@ -66,10 +73,18 @@ class MonitorService : Service() {
         return START_STICKY
     }
 
+    private fun refreshManagedPackages() {
+        runCatching { managedPackages = InstalledApps.load(this).map { it.packageName }.toSet() }
+    }
+
     private fun tick() {
+        if (ticksSincePkgRefresh++ >= 40) { ticksSincePkgRefresh = 0; refreshManagedPackages() }
+
         val usage = UsageStatsTracker.todayUsageSeconds(this)
-        val pkg = ForegroundTracker.currentPackage
-            ?: UsageStatsTracker.currentForegroundPackage(this)
+        // UsageStats is authoritative for "what is resumed right now"; the accessibility hint is
+        // only a fallback, because a stale hint was blocking freshly-opened PLUS apps.
+        val pkg = UsageStatsTracker.currentForegroundPackage(this)
+            ?: ForegroundTracker.currentPackage
 
         val globalUsed = engine.computeGlobalUsedSeconds(usage)
         prefs.cacheUsage(globalUsed, usage)
@@ -86,6 +101,9 @@ class MonitorService : Service() {
         // Only act when a *blockable* app is actually in the foreground.
         if (decision is LockDecision.Allowed) return
         if (pkg == null || engine.isForegroundExempt(pkg)) return
+        // Never block anything that isn't a real, user-launchable app. This is the key fix so a
+        // keyboard / ad SDK / Play-services window can't cover a freshly-opened PLUS app.
+        if (pkg !in managedPackages) return
 
         // Record for the parent portal.
         when (decision) {
@@ -106,7 +124,7 @@ class MonitorService : Service() {
 
     private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {
         is LockDecision.Bedtime ->
-            "Ruhezeit" to "Es ist Ruhezeit. Nur freigegebene Apps sind verfügbar."
+            "Ruhezeit" to "Wieder entsperrt um ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr."
         is LockDecision.GlobalLimitReached ->
             "Zeitlimit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
         is LockDecision.AppLimitReached ->

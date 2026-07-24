@@ -73,7 +73,8 @@ object UsageStatsTracker {
     fun currentForegroundPackage(context: Context): String? {
         val usm = manager(context) ?: return null
         val now = System.currentTimeMillis()
-        val events = usm.queryEvents(now - 12_000, now)
+        // Wide window so a long, event-free session in one app still resolves to that app.
+        val events = usm.queryEvents(now - 60_000, now)
         var pkg: String? = null
         val e = UsageEvents.Event()
         while (events.hasNextEvent()) {
