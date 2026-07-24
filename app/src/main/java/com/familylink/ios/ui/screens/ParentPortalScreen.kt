@@ -43,6 +43,7 @@ fun ParentPortalScreen(
     onOpenApps: () -> Unit,
     onOpenPermissions: () -> Unit,
     onChangePin: () -> Unit,
+    onSetSecurePin: () -> Unit,
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -51,7 +52,7 @@ fun ParentPortalScreen(
     @Suppress("UNUSED_EXPRESSION") v
 
     val used = prefs.globalUsedSeconds
-    val limit = prefs.globalLimitMinutes * 60
+    val limit = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
 
     Column(
         Modifier
@@ -169,7 +170,12 @@ fun ParentPortalScreen(
         // ---- security ----
         SectionHeader("Sicherheit")
         CupertinoCard {
-            CupertinoRow(title = "PIN ändern", onClick = onChangePin) { Chevron() }
+            CupertinoRow(title = "PIN ändern", subtitle = "4-stellige Zugangs-PIN", onClick = onChangePin) { Chevron() }
+            CupertinoRow(
+                title = if (prefs.isSecurePinSet) "Sicherheits-PIN ändern" else "Sicherheits-PIN festlegen",
+                subtitle = "Lange PIN für Zeitverlängerung",
+                onClick = onSetSecurePin
+            ) { Chevron() }
         }
 
         Spacer(Modifier.height(24.dp))

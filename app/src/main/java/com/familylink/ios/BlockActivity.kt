@@ -5,13 +5,19 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.ui.screens.BlockListScreen
+import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.theme.FamilyLinkTheme
 
 /**
- * Shown (as a normal, leavable screen — not a screen lock) when the child opens a blocked app.
- * It presents the Listen-Ansicht: which apps are blocked vs. still available. The child can
- * always leave via Home; PLUS apps stay usable.
+ * The block screen (Listen-Ansicht) — a normal, leavable screen, not a screen lock. Hosts the
+ * block list (with the Plus-Apps filter that can launch apps) and the parent-protected time
+ * extension flow.
  */
 class BlockActivity : ComponentActivity() {
 
@@ -19,18 +25,35 @@ class BlockActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Zeitlimit erreicht"
         val detail = intent.getStringExtra(EXTRA_DETAIL) ?: "Diese App ist gerade gesperrt."
+
         setContent {
             FamilyLinkTheme {
-                BlockListScreen(reasonTitle = title, reasonDetail = detail, onClose = { goHome() })
+                var screen by remember { mutableStateOf("block") }
+                when (screen) {
+                    "extend" -> ExtendTimeScreen(onClose = { screen = "block" })
+                    else -> BlockListScreen(
+                        reasonTitle = title,
+                        reasonDetail = detail,
+                        onLaunchApp = { pkg -> launchApp(pkg) },
+                        onExtend = { screen = "extend" },
+                        onClose = { goHome() }
+                    )
+                }
             }
+        }
+    }
+
+    private fun launchApp(pkg: String) {
+        val intent = InstalledApps.launchIntent(this, pkg)
+        if (intent != null) {
+            runCatching { startActivity(intent) }
+            finish()
         }
     }
 
     private fun goHome() {
         startActivity(
-            Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_HOME)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
         finish()
     }

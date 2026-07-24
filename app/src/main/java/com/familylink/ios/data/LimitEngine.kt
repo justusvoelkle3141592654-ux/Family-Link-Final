@@ -57,7 +57,7 @@ class LimitEngine(private val prefs: Prefs) {
 
             AppCategory.STANDARD -> {
                 val used = computeGlobalUsedSeconds(usage)
-                val limit = prefs.globalLimitMinutes * 60
+                val limit = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
                 if (used >= limit) LockDecision.GlobalLimitReached(used, limit)
                 else LockDecision.Allowed
             }

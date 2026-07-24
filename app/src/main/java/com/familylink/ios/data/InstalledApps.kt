@@ -36,4 +36,24 @@ object InstalledApps {
     } catch (_: PackageManager.NameNotFoundException) {
         pkg
     }
+
+    /** Launch intent for a package, or null if it can't be launched. */
+    fun launchIntent(context: Context, pkg: String): android.content.Intent? =
+        context.packageManager.getLaunchIntentForPackage(pkg)?.apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+    /** App icon rasterised to a Bitmap for Compose, or null on failure. */
+    fun iconBitmap(context: Context, pkg: String): android.graphics.Bitmap? = try {
+        val drawable = context.packageManager.getApplicationIcon(pkg)
+        val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
+        val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        drawable.setBounds(0, 0, w, h)
+        drawable.draw(canvas)
+        bmp
+    } catch (_: Throwable) {
+        null
+    }
 }

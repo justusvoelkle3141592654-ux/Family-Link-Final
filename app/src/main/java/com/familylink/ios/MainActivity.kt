@@ -27,7 +27,9 @@ import com.familylink.ios.data.Prefs
 import com.familylink.ios.service.MonitorService
 import com.familylink.ios.ui.cupertino.CupertinoButton
 import com.familylink.ios.ui.screens.AppsScreen
+import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.screens.HomeScreen
+import com.familylink.ios.ui.screens.SecurePinSetupScreen
 import com.familylink.ios.ui.screens.ParentPortalScreen
 import com.familylink.ios.ui.screens.PermissionsScreen
 import com.familylink.ios.ui.screens.PinMode
@@ -61,11 +63,13 @@ private sealed class Route {
     object SetupApps : Route()
     // main
     object Home : Route()
+    object ExtendTime : Route()
     object VerifyPin : Route()
     object Portal : Route()
     object PortalApps : Route()
     object PortalPermissions : Route()
     object PortalChangePin : Route()
+    object PortalSecurePin : Route()
 }
 
 @Composable
@@ -99,8 +103,12 @@ private fun RootNav() {
 
         // ---------------- main ----------------
         Route.Home -> HomeScreen(
-            onOpenParentPortal = { route = Route.VerifyPin }
+            onOpenParentPortal = { route = Route.VerifyPin },
+            onExtendTime = { route = Route.ExtendTime }
         )
+
+        // Time extension is protected inside the flow by the secure PIN.
+        Route.ExtendTime -> ExtendTimeScreen(onClose = { route = Route.Home })
 
         // Portal opens with the PIN anytime — no weekly restriction (requirement 5).
         Route.VerifyPin -> PinScreen(
@@ -113,6 +121,7 @@ private fun RootNav() {
             onOpenApps = { route = Route.PortalApps },
             onOpenPermissions = { route = Route.PortalPermissions },
             onChangePin = { route = Route.PortalChangePin },
+            onSetSecurePin = { route = Route.PortalSecurePin },
             onExit = { route = Route.Home }
         )
 
@@ -130,6 +139,12 @@ private fun RootNav() {
         Route.PortalChangePin -> PinScreen(
             mode = PinMode.SET,
             onSuccess = { route = Route.Portal },
+            onCancel = { route = Route.Portal }
+        )
+
+        // Set/change the long secure PIN used to grant time extensions.
+        Route.PortalSecurePin -> SecurePinSetupScreen(
+            onDone = { route = Route.Portal },
             onCancel = { route = Route.Portal }
         )
     }

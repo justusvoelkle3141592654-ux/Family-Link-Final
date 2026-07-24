@@ -1,20 +1,21 @@
 package com.familylink.ios.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,95 +23,126 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.cupertino.CupertinoButton
 import com.familylink.ios.ui.theme.Cupertino
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 
 /**
- * Child-facing status screen: how much time is left today, plus a discreet entrance to the
- * (PIN- and weekly-gated) parent portal.
+ * Modernised child-facing status screen: a soft gradient, a circular time ring, and quick
+ * actions (parent-protected time extension + discreet parent portal entrance).
  */
 @Composable
-fun HomeScreen(onOpenParentPortal: () -> Unit) {
+fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
     var tick by remember { mutableStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        while (true) { tick++; delay(1000) }
-    }
+    LaunchedEffectTicker { tick++ }
     @Suppress("UNUSED_EXPRESSION") tick
 
     val used = prefs.globalUsedSeconds
-    val limit = prefs.globalLimitMinutes * 60
+    val bonus = prefs.bonusSecondsToday
+    val limit = prefs.globalLimitMinutes * 60 + bonus
     val remaining = (limit - used).coerceAtLeast(0)
     val fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f)
     val disabled = prefs.limitsDisabled()
     val bedtime = prefs.isBedtime()
 
+    val ringColor = when {
+        disabled -> Cupertino.Green
+        bedtime -> Cupertino.Purple
+        fraction >= 1f -> Cupertino.Red
+        fraction >= 0.8f -> Cupertino.Orange
+        else -> Cupertino.Blue
+    }
+
     Column(
-        Modifier.fillMaxSize().background(Cupertino.SystemBackground).padding(24.dp),
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Cupertino.SystemBackground))
+            )
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("Family Link", fontSize = 17.sp, color = Cupertino.SecondaryLabel)
-        Text(TimeFmt.nowLong(), fontSize = 14.sp, color = Cupertino.TertiaryLabel)
+        Text("Family Link", fontSize = 15.sp, color = Cupertino.SecondaryLabel)
+        Text(TimeFmt.nowLong(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
 
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(36.dp))
 
-        // big remaining-time ring-ish tile
-        Box(
-            Modifier
-                .size(220.dp)
-                .clip(CircleShape)
-                .background(
-                    when {
-                        disabled -> Cupertino.Green.copy(alpha = 0.15f)
-                        bedtime -> Cupertino.Purple.copy(alpha = 0.15f)
-                        fraction >= 1f -> Cupertino.Red.copy(alpha = 0.15f)
-                        else -> Cupertino.Blue.copy(alpha = 0.12f)
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
+        // Time ring
+        Box(contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(240.dp)) {
+                val stroke = 22.dp.toPx()
+                val inset = stroke / 2
+                val arcSize = Size(size.width - stroke, size.height - stroke)
+                val topLeft = Offset(inset, inset)
+                drawArc(
+                    color = Color(0x14000000),
+                    startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                    topLeft = topLeft, size = arcSize, style = Stroke(stroke, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f, sweepAngle = 360f * (1f - fraction), useCenter = false,
+                    topLeft = topLeft, size = arcSize, style = Stroke(stroke, cap = StrokeCap.Round)
+                )
+            }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 when {
                     disabled -> {
                         Text("Frei", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Cupertino.Green)
-                        Text("bis 23:00 Uhr", fontSize = 15.sp, color = Cupertino.SecondaryLabel)
+                        Text("bis 23:00 Uhr", fontSize = 14.sp, color = Cupertino.SecondaryLabel)
                     }
-                    bedtime -> {
-                        Text("Ruhezeit", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Cupertino.Purple)
-                    }
+                    bedtime -> Text("Ruhezeit", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Cupertino.Purple)
                     else -> {
-                        Text(TimeFmt.hm(remaining), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
-                        Text("übrig heute", fontSize = 15.sp, color = Cupertino.SecondaryLabel)
+                        Text(TimeFmt.hm(remaining), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+                        Text("übrig heute", fontSize = 14.sp, color = Cupertino.SecondaryLabel)
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
-            "Genutzt: ${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}",
-            fontSize = 15.sp, color = Cupertino.SecondaryLabel
+            "Genutzt: ${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}" +
+                if (bonus > 0) "  (+${bonus / 60} Min Bonus)" else "",
+            fontSize = 14.sp, color = Cupertino.SecondaryLabel
         )
 
-        Spacer(Modifier.fillMaxWidth().weight(1f))
+        Spacer(Modifier.weight(1f))
 
-        // discreet parent entrance
+        // Actions
+        Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .background(Cupertino.Blue).clickable { onExtendTime() }.padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Zeit verlängern (Eltern)", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        }
         Text(
             "Eltern-Portal öffnen",
-            fontSize = 15.sp,
-            color = Cupertino.Blue,
+            fontSize = 15.sp, color = Cupertino.Blue,
             modifier = Modifier.clickable { onOpenParentPortal() }.padding(16.dp)
         )
+    }
+}
+
+/** 1-second ticker to keep the screen live without importing LaunchedEffect at each call site. */
+@Composable
+private fun LaunchedEffectTicker(onTick: () -> Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) { delay(1000); onTick() }
     }
 }

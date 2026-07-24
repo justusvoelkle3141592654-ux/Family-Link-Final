@@ -18,6 +18,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         // config keys
         private const val K_PIN_HASH = "pin_hash"
         private const val K_PIN_SALT = "pin_salt"
+        private const val K_SECURE_PIN_HASH = "secure_pin_hash"   // longer parent PIN
+        private const val K_SECURE_PIN_SALT = "secure_pin_salt"
         private const val K_GLOBAL_LIMIT_MIN = "global_limit_min"
         private const val K_BEDTIME_START = "bedtime_start_min"   // minutes since midnight
         private const val K_BEDTIME_END = "bedtime_end_min"
@@ -33,9 +35,12 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_GLOBAL_USED = "global_used_sec"
         private const val K_PERAPP_USED = "perapp_used_json"
         private const val K_BLOCKED_TODAY = "blocked_today_json" // pkg -> lastBlocked epoch
+        private const val K_BONUS_SEC = "bonus_seconds"          // parent-granted extra time today
 
         const val DEFAULT_GLOBAL_LIMIT_MIN = 60
         const val MAX_GLOBAL_LIMIT_MIN = 120
+        const val MAX_BONUS_MIN = 30
+        const val SECURE_PIN_MIN_LEN = 6
 
         @Volatile private var instance: Prefs? = null
 
@@ -68,6 +73,24 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         val digest = MessageDigest.getInstance("SHA-256")
         val bytes = digest.digest((salt + "|" + pin).toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    // ---- Secure PIN (longer; required to grant time extensions) ------------
+
+    val isSecurePinSet: Boolean get() = sp.contains(K_SECURE_PIN_HASH)
+
+    fun setSecurePin(pin: String) {
+        val salt = System.nanoTime().toString()
+        sp.edit()
+            .putString(K_SECURE_PIN_SALT, salt)
+            .putString(K_SECURE_PIN_HASH, hash(pin, salt))
+            .apply()
+    }
+
+    fun checkSecurePin(pin: String): Boolean {
+        val salt = sp.getString(K_SECURE_PIN_SALT, null) ?: return false
+        val stored = sp.getString(K_SECURE_PIN_HASH, null) ?: return false
+        return stored == hash(pin, salt)
     }
 
     // ---- Setup flag --------------------------------------------------------
@@ -173,8 +196,26 @@ class Prefs private constructor(private val sp: SharedPreferences) {
                 .putInt(K_GLOBAL_USED, 0)
                 .putString(K_PERAPP_USED, "{}")
                 .putString(K_BLOCKED_TODAY, "{}")
+                .putInt(K_BONUS_SEC, 0)
                 .apply()
         }
+    }
+
+    // ---- Bonus time (parent-granted extension, max 30 min/day) -------------
+
+    /** Extra global seconds granted by a parent today (capped at MAX_BONUS_MIN). */
+    val bonusSecondsToday: Int
+        get() { ensureToday(); return sp.getInt(K_BONUS_SEC, 0) }
+
+    fun remainingBonusMinutes(): Int = (MAX_BONUS_MIN - bonusSecondsToday / 60).coerceAtLeast(0)
+
+    /** Add [minutes] of bonus time, capped at MAX_BONUS_MIN/day. Returns the new total minutes. */
+    fun addBonusMinutes(minutes: Int): Int {
+        ensureToday()
+        val current = sp.getInt(K_BONUS_SEC, 0)
+        val capped = (current + minutes * 60).coerceAtMost(MAX_BONUS_MIN * 60).coerceAtLeast(0)
+        sp.edit().putInt(K_BONUS_SEC, capped).apply()
+        return capped / 60
     }
 
     /** Called by the monitor service with the freshly measured usage numbers. */
