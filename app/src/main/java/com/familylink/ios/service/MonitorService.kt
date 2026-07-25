@@ -22,6 +22,7 @@ import com.familylink.ios.data.LockDecision
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.util.BedtimeSound
 import com.familylink.ios.util.ForegroundTracker
+import com.familylink.ios.util.LockState
 import com.familylink.ios.util.TimeFmt
 import com.familylink.ios.util.UsageStatsTracker
 
@@ -95,8 +96,18 @@ class MonitorService : Service() {
 
         val decision = engine.decide(pkg, usage)
 
+        val isBedtimeNow = decision is LockDecision.Bedtime
+        // Only a single app's own limit may be dismissed; day limit and bedtime are hard locks.
+        val hardLock = isBedtimeNow || decision is LockDecision.GlobalLimitReached
+        // Publish state for the accessibility service (multi-window / bypass hardening).
+        LockState.update(
+            lockActive = decision !is LockDecision.Allowed,
+            hardLock = hardLock,
+            bedtime = isBedtimeNow
+        )
+
         // Bedtime ambient sound.
-        if (decision is LockDecision.Bedtime && prefs.bedtimeSoundEnabled) {
+        if (isBedtimeNow && prefs.bedtimeSoundEnabled) {
             main.post { BedtimeSound.start(this) }
         } else {
             main.post { BedtimeSound.stop() }
@@ -107,7 +118,7 @@ class MonitorService : Service() {
         // Phone / system / our own screens are never blocked (even during bedtime).
         if (engine.isAlwaysExempt(pkg)) return
 
-        val bedtime = decision is LockDecision.Bedtime
+        val bedtime = isBedtimeNow
         if (!bedtime) {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
@@ -135,7 +146,7 @@ class MonitorService : Service() {
         lastBlockLaunchAt = now
 
         val (title, detail) = messageFor(decision)
-        main.post { BlockActivity.launch(this, title, detail, bedtime) }
+        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock) }
     }
 
     private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {

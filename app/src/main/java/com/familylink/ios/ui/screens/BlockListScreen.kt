@@ -60,6 +60,7 @@ fun BlockListScreen(
     reasonTitle: String,
     reasonDetail: String,
     bedtime: Boolean,
+    hardLock: Boolean,
     onLaunchApp: (String) -> Unit,
     onExtend: () -> Unit,
     onOpenPortal: () -> Unit,
@@ -118,16 +119,19 @@ fun BlockListScreen(
         Text("Telefon", fontSize = 13.sp, color = Cupertino.SecondaryLabel)
 
         Spacer(Modifier.height(16.dp))
-        if (!bedtime) {
-            Row {
+        when {
+            bedtime -> Text("Gute Nacht", fontSize = 14.sp, color = Cupertino.TertiaryLabel)
+            // Hard lock (day limit): no way to simply close the screen — only Plus apps,
+            // an extension, the phone, or the parent portal.
+            hardLock -> Text("Eltern-Portal", fontSize = 15.sp, color = Cupertino.Blue,
+                modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
+            else -> Row {
                 Text("Startbildschirm", fontSize = 15.sp, color = Cupertino.Blue,
                     modifier = Modifier.clickable { onClose() }.padding(8.dp))
                 Spacer(Modifier.size(16.dp))
                 Text("Eltern-Portal", fontSize = 15.sp, color = Cupertino.Blue,
                     modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
             }
-        } else {
-            Text("Gute Nacht", fontSize = 14.sp, color = Cupertino.TertiaryLabel)
         }
         Spacer(Modifier.height(8.dp))
     }

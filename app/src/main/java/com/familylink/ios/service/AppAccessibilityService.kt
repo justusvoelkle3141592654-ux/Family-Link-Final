@@ -7,6 +7,7 @@ import com.familylink.ios.BlockActivity
 import com.familylink.ios.admin.DeviceAdmin
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.util.ForegroundTracker
+import com.familylink.ios.util.LockState
 
 /**
  * Second line of defence and a latency booster.
@@ -47,22 +48,35 @@ class AppAccessibilityService : AccessibilityService() {
         // 3 — anti-bypass surfaces.
         if (handlePotentialBypass(pkg, event)) return
 
+        // Block multi-window / pop-up (split screen) whenever a lock is active. Checked on every
+        // event (not just window-state) because some launchers open pop-up views without a
+        // TYPE_WINDOW_STATE_CHANGED for our package.
+        if (isGuarding() && hasMultipleAppWindows()) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            MonitorService.recheck(this)
+            return
+        }
+
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            // Block multi-window / pop-up (split screen) while a lock is active.
-            if (isGuarding() && hasMultipleAppWindows()) {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                return
-            }
             ForegroundTracker.update(pkg)
             MonitorService.recheck(this)
         }
     }
 
-    private fun isGuarding(): Boolean =
-        prefs.isBedtime() || prefs.getBlockedToday().isNotEmpty()
+    /** Fast path: read the shared in-memory state instead of parsing preferences. */
+    private fun isGuarding(): Boolean = LockState.lockActive || prefs.isBedtime()
 
     private fun hasMultipleAppWindows(): Boolean = try {
-        windows.count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } >= 2
+        var appWindows = 0
+        var hasSplitOrPip = false
+        for (w in windows) {
+            when (w.type) {
+                AccessibilityWindowInfo.TYPE_APPLICATION -> appWindows++
+                AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> hasSplitOrPip = true
+            }
+            if (w.isInPictureInPictureMode) hasSplitOrPip = true
+        }
+        hasSplitOrPip || appWindows >= 2
     } catch (_: Throwable) {
         false
     }
@@ -83,8 +97,9 @@ class AppAccessibilityService : AccessibilityService() {
         if (!prefs.setupDone || prefs.settingsUnlocked()) return false
 
         val now = android.os.SystemClock.uptimeMillis()
-        // Debounce: one reaction per ~1.2s, so a single visit isn't handled a dozen times.
-        if (now - lastSettingsActionAt < 1200) return true
+        // Short debounce only — we want to react on essentially every settings event so the
+        // child cannot linger on a toggle page between two reactions.
+        if (now - lastSettingsActionAt < 400) return true
         lastSettingsActionAt = now
 
         // Count rapid repeat attempts; reset the streak after a calm period.
@@ -99,7 +114,9 @@ class AppAccessibilityService : AccessibilityService() {
             this,
             "Einstellungen gesperrt",
             "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal.",
-            bedtime = false
+            bedtime = false,
+            // Dismissible: the child just needs to leave Settings, not stay locked out.
+            hardLock = false
         )
 
         // 2) Last resort only: persistent attempts -> lock the screen, then return Home so the

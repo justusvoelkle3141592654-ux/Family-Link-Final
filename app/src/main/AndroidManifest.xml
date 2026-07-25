@@ -47,6 +47,9 @@
             android:launchMode="singleTask"
             android:excludeFromRecents="true"
             android:taskAffinity=".block"
+            android:resizeableActivity="false"
+            android:supportsPictureInPicture="false"
+            android:showOnLockScreen="true"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:theme="@style/Theme.FamilyLinkIOS" />
 

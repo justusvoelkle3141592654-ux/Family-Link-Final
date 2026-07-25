@@ -16,8 +16,12 @@ import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.theme.FamilyLinkTheme
 
 /**
- * The block screen. During the day it is a leavable list screen; during bedtime it becomes a
- * hard lock: no allowed apps, no close/portal, and BACK is swallowed.
+ * The block screen.
+ *
+ * Dismissibility follows the scope of the block:
+ *  - a single app's own limit  -> dismissible (child can go home and use other apps),
+ *  - day limit / bedtime       -> HARD lock: BACK is swallowed, no "Startbildschirm" link,
+ *    and the monitor re-asserts it if the child escapes with HOME.
  */
 class BlockActivity : ComponentActivity() {
 
@@ -26,11 +30,12 @@ class BlockActivity : ComponentActivity() {
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Zeitlimit erreicht"
         val detail = intent.getStringExtra(EXTRA_DETAIL) ?: "Diese App ist gerade gesperrt."
         val bedtime = intent.getBooleanExtra(EXTRA_BEDTIME, false)
+        val hardLock = intent.getBooleanExtra(EXTRA_HARD_LOCK, false)
 
         setContent {
             FamilyLinkTheme {
-                // During bedtime the screen cannot be dismissed with BACK.
-                if (bedtime) BackHandler(enabled = true) { /* swallow */ }
+                // Hard locks cannot be dismissed with BACK.
+                if (hardLock) BackHandler(enabled = true) { /* swallow */ }
 
                 var screen by remember { mutableStateOf("block") }
                 when (screen) {
@@ -39,6 +44,7 @@ class BlockActivity : ComponentActivity() {
                         reasonTitle = title,
                         reasonDetail = detail,
                         bedtime = bedtime,
+                        hardLock = hardLock,
                         onLaunchApp = { pkg -> launchApp(pkg) },
                         onExtend = { screen = "extend" },
                         onOpenPortal = { openPortal() },
@@ -75,12 +81,14 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_DETAIL = "detail"
         const val EXTRA_BEDTIME = "bedtime"
+        const val EXTRA_HARD_LOCK = "hard_lock"
 
-        fun launch(context: Context, title: String, detail: String, bedtime: Boolean) {
+        fun launch(context: Context, title: String, detail: String, bedtime: Boolean, hardLock: Boolean) {
             val i = Intent(context, BlockActivity::class.java).apply {
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_DETAIL, detail)
                 putExtra(EXTRA_BEDTIME, bedtime)
+                putExtra(EXTRA_HARD_LOCK, hardLock)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
