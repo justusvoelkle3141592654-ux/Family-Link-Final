@@ -26,17 +26,43 @@ sealed class LockDecision {
  */
 class LimitEngine(private val prefs: Prefs) {
 
-    /** Shared consumed budget: usage of STANDARD + LIMIT apps (PLUS/BLOCKED excluded). */
+    /**
+     * Shared consumed budget for the day. PLUS apps never count in either mode.
+     *
+     *  - SYSTEM_TOTAL: the phone's whole foreground time minus the allowed apps. Only our own
+     *    screens and the phone/emergency surfaces are excluded, so unclassified apps still cost
+     *    time and nothing slips through.
+     *  - CATEGORIES: only apps explicitly marked STANDARD or LIMIT.
+     */
     fun computeGlobalUsedSeconds(usage: Map<String, Int>): Int {
         val cats = prefs.getCategories()
+        val mode = prefs.usageMode
         var total = 0
         for ((pkg, sec) in usage) {
-            if (pkg == OWN_PACKAGE || isForegroundExempt(pkg) || isSettings(pkg)) continue
+            // Our own app and the phone must never consume the child's budget.
+            if (pkg == OWN_PACKAGE || isAlwaysExempt(pkg)) continue
             val cat = cats[pkg]?.first ?: AppCategory.STANDARD
-            if (cat == AppCategory.STANDARD || cat == AppCategory.LIMIT) total += sec
+
+            // Allowed apps are subtracted in both modes — that is the whole point of PLUS.
+            if (cat == AppCategory.PLUS) continue
+
+            when (mode) {
+                UsageMode.SYSTEM_TOTAL -> {
+                    // Everything else the child did counts, including unclassified apps.
+                    // The launcher is skipped so idle home-screen time is not billed.
+                    if (isLauncher(pkg)) continue
+                    total += sec
+                }
+                UsageMode.CATEGORIES -> {
+                    if (isForegroundExempt(pkg) || isSettings(pkg)) continue
+                    if (cat == AppCategory.STANDARD || cat == AppCategory.LIMIT) total += sec
+                }
+            }
         }
         return total
     }
+
+    private fun isLauncher(pkg: String): Boolean = pkg in LAUNCHER_EXEMPT
 
     private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
 
@@ -119,7 +145,7 @@ class LimitEngine(private val prefs: Prefs) {
             "com.android.server.telecom"
         )
 
-        private val LAUNCHER_EXEMPT = setOf(
+        internal val LAUNCHER_EXEMPT = setOf(
             "com.android.launcher",
             "com.android.launcher3",
             "com.google.android.apps.nexuslauncher",

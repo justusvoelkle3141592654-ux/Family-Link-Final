@@ -196,6 +196,12 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     // ---- Appearance -------------------------------------------------------
 
+    /** How the daily budget is measured (system total minus PLUS, or categories only). */
+    var usageMode: UsageMode
+        get() = runCatching { UsageMode.valueOf(sp.getString("usage_mode", null) ?: "CATEGORIES") }
+            .getOrDefault(UsageMode.CATEGORIES)
+        set(v) = sp.edit().putString("usage_mode", v.name).apply()
+
     var themeMode: com.familylink.ios.ui.theme.ThemeMode
         get() = runCatching {
             com.familylink.ios.ui.theme.ThemeMode.valueOf(sp.getString("theme_mode", null) ?: "SYSTEM")

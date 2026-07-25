@@ -3,6 +3,7 @@ package com.familylink.ios.sync
 import android.content.Context
 import android.os.Build
 import com.familylink.ios.data.AppCategory
+import com.familylink.ios.data.UsageMode
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import org.json.JSONObject
@@ -40,7 +41,8 @@ class SyncManager(private val context: Context) {
             settingsUnlockedUntil = prefs.settingsUnlockedUntil,
             categories = cats,
             focus = prefs.focusSession(),
-            chores = prefs.getChores()
+            chores = prefs.getChores(),
+            usageMode = prefs.usageMode.name
         )
     }
 
@@ -196,6 +198,9 @@ class SyncManager(private val context: Context) {
         prefs.setOffUntilEpoch(cfg.offUntilEpoch)
         prefs.setSettingsUnlockedUntil(cfg.settingsUnlockedUntil)
         prefs.setFocusSession(cfg.focus)
+        runCatching {
+            prefs.usageMode = com.familylink.ios.data.UsageMode.valueOf(cfg.usageMode)
+        }
         // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep
         // a claim that has not been seen by the parent yet instead of overwriting it.
         val localChores = prefs.getChores().associateBy { it.id }

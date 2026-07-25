@@ -9,6 +9,17 @@ package com.familylink.ios.data
  */
 enum class AppCategory { PLUS, LIMIT, STANDARD, BLOCKED }
 
+/**
+ * How the daily budget is measured.
+ *
+ *  SYSTEM_TOTAL — take the phone's whole foreground time for the day and simply subtract the
+ *                 allowed (PLUS) apps. Everything else the child does counts, including apps
+ *                 that were never classified. Strict and hard to game.
+ *  CATEGORIES   — count only apps explicitly put into STANDARD or LIMIT. An unclassified app
+ *                 costs nothing until a parent sorts it. Predictable and forgiving.
+ */
+enum class UsageMode { SYSTEM_TOTAL, CATEGORIES }
+
 data class ManagedApp(
     val packageName: String,
     val label: String,

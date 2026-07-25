@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
+import com.familylink.ios.data.UsageMode
 import com.familylink.ios.sync.SyncManager
 import com.familylink.ios.sync.TimeRequest
 import com.familylink.ios.sync.SyncService
@@ -158,6 +159,48 @@ fun ParentPortalScreen(
                             }
                         }
                     }
+            }
+        }
+
+        // ---- how time is measured ----
+        SectionHeader("Zeitmessung")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                listOf(
+                    UsageMode.SYSTEM_TOTAL to ("Handynutzung gesamt" to
+                        "Die gesamte Bildschirmzeit zählt — abzüglich der zugelassenen Plus-Apps. " +
+                        "Auch nicht eingeordnete Apps kosten Zeit."),
+                    UsageMode.CATEGORIES to ("Nur eingeordnete Apps" to
+                        "Es zählen nur Apps in Standard oder Limit. Neue Apps kosten erst Zeit, " +
+                        "wenn du sie einordnest.")
+                ).forEach { (m, texts) ->
+                    val sel = prefs.usageMode == m
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(Nova.RadiusControl.dp))
+                            .background(if (sel) Nova.Primary.copy(alpha = 0.10f) else Color.Transparent)
+                            .clickable {
+                                prefs.usageMode = m; v++
+                                SyncService.pushNow(context)
+                            }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Box(
+                            Modifier.padding(top = 2.dp).size(20.dp).clip(CircleShape)
+                                .background(if (sel) Nova.Primary else Nova.Fill),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (sel) Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(texts.first, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
+                            Spacer(Modifier.height(2.dp))
+                            Text(texts.second, fontSize = 12.sp, color = Nova.InkMuted)
+                        }
+                    }
+                }
             }
         }
 

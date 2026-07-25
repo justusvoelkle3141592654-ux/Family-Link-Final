@@ -24,11 +24,14 @@ data class FamilyConfig(
     val focus: FocusSession = FocusSession.OFF,
     /** Chore list shared between both devices. */
     val chores: List<Chore> = emptyList(),
+    /** How the daily budget is measured on the child device. */
+    val usageMode: String = "CATEGORIES",
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("focus", focus.toJson())
         put("chores", Chore.listToJson(chores))
+        put("usageMode", usageMode)
         put("globalLimitMinutes", globalLimitMinutes)
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
@@ -59,6 +62,7 @@ data class FamilyConfig(
                 categories = cats,
                 focus = FocusSession.fromJson(o.optJSONObject("focus")),
                 chores = Chore.listFromJson(o.optJSONArray("chores")),
+                usageMode = o.optString("usageMode", "CATEGORIES"),
                 updatedAt = o.optLong("updatedAt", 0)
             )
         }
