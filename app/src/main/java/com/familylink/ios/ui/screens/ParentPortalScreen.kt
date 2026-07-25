@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
+import com.familylink.ios.sync.SyncManager
+import com.familylink.ios.sync.SyncService
 import com.familylink.ios.ui.cupertino.CupertinoButton
 import com.familylink.ios.ui.cupertino.CupertinoCard
 import com.familylink.ios.ui.cupertino.CupertinoRow
@@ -37,6 +43,7 @@ import com.familylink.ios.ui.cupertino.CupertinoSwitch
 import com.familylink.ios.ui.cupertino.SectionHeader
 import com.familylink.ios.ui.theme.Cupertino
 import com.familylink.ios.util.TimeFmt
+import kotlinx.coroutines.delay
 
 @Composable
 fun ParentPortalScreen(
@@ -48,10 +55,26 @@ fun ParentPortalScreen(
 ) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
+    val sync = remember { SyncManager(context) }
     var v by remember { mutableStateOf(0) }
     @Suppress("UNUSED_EXPRESSION") v
 
-    val used = prefs.globalUsedSeconds
+    // Any change the parent makes is pushed to the child immediately.
+    LaunchedEffect(v) {
+        if (v > 0 && prefs.isParentDevice) SyncService.pushNow(context)
+    }
+
+    // On the parent device the numbers come from the child, live; otherwise they are local.
+    var childStatus by remember { mutableStateOf(sync.cachedChildStatus()) }
+    LaunchedEffect(Unit) {
+        while (prefs.isParentDevice && prefs.syncConfigured) {
+            childStatus = sync.cachedChildStatus()
+            delay(3000)
+        }
+    }
+
+    val remote = childStatus.takeIf { prefs.isParentDevice }
+    val used = remote?.globalUsedSeconds ?: prefs.globalUsedSeconds
     val limit = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
 
     Column(
@@ -67,14 +90,54 @@ fun ParentPortalScreen(
             Text("Fertig", color = Cupertino.Blue, fontSize = 17.sp, modifier = Modifier.clickable { onExit() })
         }
 
+        // ---- connection status ----
+        if (prefs.syncConfigured) {
+            val online = System.currentTimeMillis() - prefs.lastSyncAt < 120_000
+            val c = if (online) Cupertino.Green else Cupertino.Orange
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp)
+                    .clip(RoundedCornerShape(12.dp)).background(c.copy(alpha = 0.10f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(c))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (online) "Verbunden mit ${remote?.deviceName ?: "Kinder-Gerät"}"
+                    else "Keine aktuelle Verbindung zum Kinder-Gerät",
+                    fontSize = 13.sp, color = c
+                )
+            }
+        }
+
         // ---- usage summary ----
-        SectionHeader("Heute genutzt")
+        SectionHeader(if (prefs.isParentDevice) "Nutzung des Kindes heute" else "Heute genutzt")
         CupertinoCard {
             Column(Modifier.padding(16.dp)) {
                 Text(TimeFmt.hm(used), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
                 Text("von ${TimeFmt.hm(limit)} Tageslimit", fontSize = 14.sp, color = Cupertino.SecondaryLabel)
                 Spacer(Modifier.height(12.dp))
                 ProgressBar(fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
+            }
+        }
+
+        // ---- live per-app usage from the child device ----
+        if (remote != null && remote.perAppSeconds.isNotEmpty()) {
+            SectionHeader("Apps auf dem Kinder-Gerät")
+            CupertinoCard {
+                remote.perAppSeconds.entries
+                    .sortedByDescending { it.value }
+                    .take(10)
+                    .forEach { (pkg, secs) ->
+                        val label = remote.perAppLabels[pkg] ?: pkg
+                        val blocked = pkg in remote.blockedToday
+                        CupertinoRow(title = label, subtitle = TimeFmt.hm(secs)) {
+                            if (blocked) {
+                                Text("Gesperrt", color = Cupertino.Red, fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
             }
         }
 

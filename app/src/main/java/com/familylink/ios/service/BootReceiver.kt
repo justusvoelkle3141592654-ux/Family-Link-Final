@@ -10,7 +10,10 @@ class BootReceiver : BroadcastReceiver() {
         when (intent?.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
-            ACTION_RESTART -> MonitorService.start(context)
+            ACTION_RESTART -> {
+                MonitorService.start(context)
+                com.familylink.ios.sync.SyncService.start(context)
+            }
         }
     }
 

@@ -26,9 +26,14 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.service.MonitorService
 import com.familylink.ios.ui.cupertino.CupertinoButton
+import com.familylink.ios.sync.DeviceRole
+import com.familylink.ios.sync.SyncService
 import com.familylink.ios.ui.screens.AppsScreen
+import com.familylink.ios.ui.screens.ChildPortalScreen
 import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.screens.HomeScreen
+import com.familylink.ios.ui.screens.PairingScreen
+import com.familylink.ios.ui.screens.RoleChoiceScreen
 import com.familylink.ios.ui.screens.SecurePinSetupScreen
 import com.familylink.ios.ui.screens.ParentPortalScreen
 import com.familylink.ios.ui.screens.PermissionsScreen
@@ -44,8 +49,12 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
         }
-        // Self-heal: make sure the guard is running every time the app is opened.
-        if (Prefs.get(this).setupDone) MonitorService.start(this)
+        // Self-heal: make sure the guard and the sync link are running on every app start.
+        val p = Prefs.get(this)
+        if (p.setupDone) {
+            if (p.isChildDevice || p.deviceRole == DeviceRole.UNSET) MonitorService.start(this)
+            SyncService.start(this)
+        }
         setContent {
             FamilyLinkTheme {
                 Box(Modifier.fillMaxSize().background(Cupertino.SystemBackground)) {
@@ -58,6 +67,8 @@ class MainActivity : ComponentActivity() {
 
 private sealed class Route {
     // setup wizard
+    object SetupRole : Route()
+    object SetupPairing : Route()
     object SetupPin : Route()
     object SetupPermissions : Route()
     object SetupApps : Route()
@@ -78,14 +89,43 @@ private fun RootNav() {
     val prefs = remember { Prefs.get(context) }
 
     var route by remember {
-        mutableStateOf<Route>(if (prefs.setupDone) Route.Home else Route.SetupPin)
+        mutableStateOf<Route>(
+            when {
+                prefs.setupDone -> Route.Home
+                prefs.deviceRole == DeviceRole.UNSET -> Route.SetupRole
+                else -> Route.SetupPairing
+            }
+        )
     }
+    // Role drives both the wizard path and which home screen is shown.
+    var role by remember { mutableStateOf(prefs.deviceRole) }
 
     when (route) {
         // ---------------- setup wizard ----------------
+        Route.SetupRole -> RoleChoiceScreen { chosen ->
+            prefs.deviceRole = chosen
+            role = chosen
+            route = Route.SetupPairing
+        }
+
+        Route.SetupPairing -> PairingScreen(
+            role = role,
+            onPaired = {
+                SyncService.start(context)
+                route = Route.SetupPin
+            },
+            onSkip = { route = Route.SetupPin }
+        )
+
         Route.SetupPin -> PinScreen(
             mode = PinMode.SET,
-            onSuccess = { route = Route.SetupPermissions }
+            onSuccess = {
+                // Only the supervised device needs system permissions.
+                route = if (role == DeviceRole.CHILD) Route.SetupPermissions else {
+                    prefs.setupDone = true
+                    Route.Home
+                }
+            }
         )
 
         Route.SetupPermissions -> PermissionsScreen(
@@ -97,15 +137,24 @@ private fun RootNav() {
             SetupFooter(text = "Fertig") {
                 prefs.setupDone = true
                 MonitorService.start(context)
+                SyncService.start(context)
                 route = Route.Home
             }
         }
 
         // ---------------- main ----------------
-        Route.Home -> HomeScreen(
-            onOpenParentPortal = { route = Route.VerifyPin },
-            onExtendTime = { route = Route.ExtendTime }
-        )
+        // The child device gets its own informational portal; the parent keeps the control UI.
+        Route.Home -> if (prefs.isChildDevice) {
+            ChildPortalScreen(
+                onExtendTime = { route = Route.ExtendTime },
+                onOpenParentArea = { route = Route.VerifyPin }
+            )
+        } else {
+            HomeScreen(
+                onOpenParentPortal = { route = Route.VerifyPin },
+                onExtendTime = { route = Route.ExtendTime }
+            )
+        }
 
         // Time extension is protected inside the flow by the secure PIN.
         Route.ExtendTime -> ExtendTimeScreen(onClose = { route = Route.Home })

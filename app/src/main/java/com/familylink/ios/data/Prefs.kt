@@ -99,6 +99,47 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getBoolean(K_SETUP_DONE, false)
         set(v) = sp.edit().putBoolean(K_SETUP_DONE, v).apply()
 
+    // ---- Pairing / online sync --------------------------------------------
+
+    /** PARENT (control device) or CHILD (supervised device). */
+    var deviceRole: com.familylink.ios.sync.DeviceRole
+        get() = runCatching {
+            com.familylink.ios.sync.DeviceRole.valueOf(
+                sp.getString("device_role", null) ?: "UNSET"
+            )
+        }.getOrDefault(com.familylink.ios.sync.DeviceRole.UNSET)
+        set(v) = sp.edit().putString("device_role", v.name).apply()
+
+    val isChildDevice: Boolean get() = deviceRole == com.familylink.ios.sync.DeviceRole.CHILD
+    val isParentDevice: Boolean get() = deviceRole == com.familylink.ios.sync.DeviceRole.PARENT
+
+    /** Shared pairing code — identifies the family node on the server. */
+    var familyId: String
+        get() = sp.getString("family_id", "") ?: ""
+        set(v) = sp.edit().putString("family_id", v).apply()
+
+    /** Realtime-database base URL (set once during setup). */
+    var syncUrl: String
+        get() = sp.getString("sync_url", "") ?: ""
+        set(v) = sp.edit().putString("sync_url", v.trim()).apply()
+
+    val syncConfigured: Boolean get() = syncUrl.isNotBlank() && familyId.isNotBlank()
+
+    /** Timestamp of the last successful sync, for the status display. */
+    var lastSyncAt: Long
+        get() = sp.getLong("last_sync_at", 0)
+        set(v) = sp.edit().putLong("last_sync_at", v).apply()
+
+    /** Latest config revision applied from the server (avoids redundant writes). */
+    var lastConfigStamp: Long
+        get() = sp.getLong("last_config_stamp", 0)
+        set(v) = sp.edit().putLong("last_config_stamp", v).apply()
+
+    /** Cached child status JSON, shown in the parent portal. */
+    var cachedChildStatus: String
+        get() = sp.getString("child_status_json", "") ?: ""
+        set(v) = sp.edit().putString("child_status_json", v).apply()
+
     // ---- Limits ------------------------------------------------------------
 
     var globalLimitMinutes: Int
@@ -224,6 +265,25 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() { ensureToday(); return sp.getInt(K_BONUS_SEC, 0) }
 
     fun remainingBonusMinutes(): Int = (MAX_BONUS_MIN - bonusSecondsToday / 60).coerceAtLeast(0)
+
+    // Absolute setters used when applying a config pushed from the parent device.
+    fun setBonusMinutesAbsolute(minutes: Int) {
+        ensureToday()
+        sp.edit().putInt(K_BONUS_SEC, (minutes * 60).coerceIn(0, MAX_BONUS_MIN * 60)).apply()
+    }
+
+    fun setOffUntilEpoch(epoch: Long) = sp.edit().putLong(K_OFF_UNTIL, epoch).apply()
+
+    fun setSettingsUnlockedUntil(epoch: Long) = sp.edit().putLong(kSettingsUntil, epoch).apply()
+
+    /** Replace the whole category map (remote config wins on the child device). */
+    fun replaceCategories(map: Map<String, Pair<AppCategory, Int>>) {
+        val obj = JSONObject()
+        for ((pkg, v) in map) {
+            obj.put(pkg, JSONObject().put("cat", v.first.name).put("limit", v.second))
+        }
+        sp.edit().putString(K_CATEGORIES, obj.toString()).apply()
+    }
 
     /** Add [minutes] of bonus time, capped at MAX_BONUS_MIN/day. Returns the new total minutes. */
     fun addBonusMinutes(minutes: Int): Int {

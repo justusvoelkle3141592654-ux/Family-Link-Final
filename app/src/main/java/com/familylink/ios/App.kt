@@ -7,9 +7,11 @@ import com.familylink.ios.service.MonitorService
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
-        // If setup is already complete, make sure the guard is running from app start.
-        if (Prefs.get(this).setupDone) {
-            MonitorService.start(this)
+        // If setup is complete, start the guard (child device) and the sync link (both).
+        val prefs = Prefs.get(this)
+        if (prefs.setupDone) {
+            if (!prefs.isParentDevice) MonitorService.start(this)
+            com.familylink.ios.sync.SyncService.start(this)
         }
     }
 }

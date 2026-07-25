@@ -118,6 +118,47 @@ Alternativ einen `signingConfig` in `app/build.gradle.kts` hinterlegen, dann erz
 
 ---
 
+## Online-Synchronisation (Eltern-Gerät ↔ Kinder-Gerät)
+
+Die App läuft auf **beiden** Geräten aus derselben APK; beim ersten Start wählt man die Rolle.
+
+### Server einrichten (einmalig, kostenlos)
+Die Echtzeit-Sync nutzt eine **Firebase Realtime Database** über reines HTTPS – **kein Firebase-SDK
+und keine `google-services.json` nötig**.
+
+1. [console.firebase.google.com](https://console.firebase.google.com) → Projekt anlegen (gratis).
+2. **Realtime Database** erstellen (Region wählen, im „Testmodus" starten).
+3. Die Datenbank-URL kopieren, z. B. `https://mein-projekt-default-rtdb.europe-west1.firebasedatabase.app`.
+4. Diese URL beim Einrichten auf **beiden** Geräten eintragen.
+
+> ⚠️ Der Testmodus erlaubt offenen Zugriff und läuft nach 30 Tagen ab. Für den Dauerbetrieb in
+> den Datenbank-Regeln den Zugriff auf den eigenen Familienknoten beschränken.
+
+### Geräte verbinden
+1. **Eltern-Gerät:** App öffnen → „Eltern-Gerät" → URL eintragen → es wird ein **6-stelliger Code**
+   erzeugt → „Familie erstellen".
+2. **Kinder-Gerät:** App öffnen → „Kinder-Gerät" → dieselbe URL + den 6-stelligen Code eintragen →
+   „Verbinden".
+3. Danach auf dem Kindergerät die Berechtigungen erteilen und die Apps einordnen.
+
+### Was synchronisiert wird
+| Richtung | Inhalt | Geschwindigkeit |
+|---|---|---|
+| Eltern → Kind | Limits, Ruhezeit, App-Kategorien, Bonuszeit, Aus-Button, Einstellungs-Freigabe | **sofort** (offene SSE-Verbindung) |
+| Kind → Eltern | Genutzte Zeit gesamt und pro App, gesperrte Apps, Ruhezeit-Status, Gerätename | alle ~10 s |
+
+Technisch: `sync/SyncService.kt` hält eine dauerhafte **Server-Sent-Events**-Verbindung offen, sodass
+eine Änderung im Eltern-Portal binnen etwa einer Sekunde auf dem Kindergerät greift. Ein
+periodischer Push dient als Sicherheitsnetz, falls die Verbindung abbricht.
+
+### Unterschiedliche Oberflächen
+- **Eltern-Gerät:** das gewohnte Portal – Regeln setzen, Live-Nutzung des Kindes sehen.
+  Es braucht **keine** Systemberechtigungen (es überwacht sich ja nicht selbst).
+- **Kinder-Gerät:** eigenes Portal mit verbleibender Zeit, Ring-Anzeige, Liste „Heute genutzt"
+  (App-Icons + Dauer + Balken), Hinweis auf die nächste Ruhezeit und Verbindungsstatus.
+
+---
+
 ## Ersteinrichtung auf dem Kindergerät
 1. APK installieren und App öffnen → **4-stellige PIN** festlegen (Eltern).
 2. Im Berechtigungs-Schritt nacheinander erteilen: **Nutzungszugriff**, **Über anderen Apps
