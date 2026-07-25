@@ -205,15 +205,18 @@ class SyncManager(private val context: Context) {
             else incoming
         })
 
+        // MERGE, never replace: a package the parent has not classified keeps its local
+        // setting. Replacing would silently drop PLUS marks made on the child device, which
+        // made allowed apps fall back to STANDARD and start consuming the daily budget.
         if (cfg.categories.isNotEmpty()) {
-            val parsed = HashMap<String, Pair<AppCategory, Int>>()
+            val merged = HashMap<String, Pair<AppCategory, Int>>(prefs.getCategories())
             for ((pkg, raw) in cfg.categories) {
                 val parts = raw.split(":")
                 val cat = runCatching { AppCategory.valueOf(parts[0]) }.getOrDefault(AppCategory.STANDARD)
                 val lim = parts.getOrNull(1)?.toIntOrNull() ?: 30
-                parsed[pkg] = cat to lim
+                merged[pkg] = cat to lim
             }
-            prefs.replaceCategories(parsed)
+            prefs.replaceCategories(merged)
         }
         prefs.lastSyncAt = System.currentTimeMillis()
     }

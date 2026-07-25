@@ -32,6 +32,10 @@ class BlockActivity : ComponentActivity() {
         val bedtime = intent.getBooleanExtra(EXTRA_BEDTIME, false)
         val hardLock = intent.getBooleanExtra(EXTRA_HARD_LOCK, false)
 
+        // Device owner only: pin this screen so HOME and Recents stop working during a hard
+        // lock. This is the piece that makes bedtime / day-limit genuinely unescapable.
+        if (hardLock) com.familylink.ios.admin.DeviceOwner.startKiosk(this)
+
         setContent {
             val prefs = com.familylink.ios.data.Prefs.get(this)
             val dark = when (prefs.themeMode) {
@@ -62,6 +66,7 @@ class BlockActivity : ComponentActivity() {
     }
 
     private fun launchApp(pkg: String) {
+        leaveKiosk()
         val intent = InstalledApps.launchIntent(this, pkg)
         if (intent != null) {
             runCatching { startActivity(intent) }
@@ -69,7 +74,17 @@ class BlockActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        runCatching { com.familylink.ios.admin.DeviceOwner.stopKiosk(this) }
+        super.onDestroy()
+    }
+
+    private fun leaveKiosk() {
+        runCatching { com.familylink.ios.admin.DeviceOwner.stopKiosk(this) }
+    }
+
     private fun goHome() {
+        leaveKiosk()
         startActivity(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
@@ -77,6 +92,7 @@ class BlockActivity : ComponentActivity() {
     }
 
     private fun openPortal() {
+        leaveKiosk()
         runCatching {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }

@@ -210,15 +210,48 @@ periodischer Push dient als Sicherheitsnetz, falls die Verbindung abbricht.
 
 ---
 
-## Optional: Device Owner (harte Garantien)
-Für maximale Manipulationssicherheit kann die App als **Device Owner** provisioniert werden
-(nur auf einem frisch zurückgesetzten Gerät, ohne bestehendes Google-Konto):
+## Geräteinhaber (Device Owner) — die unumgehbare Stufe
+
+**Das ist der entscheidende Schritt.** Ohne ihn kann eine normale Android-App die HOME-Taste
+nicht blockieren und Einstellungen nur „wegdrücken". Als Geräteinhaber erzwingt das
+Betriebssystem selbst die Regeln.
+
+### Einrichten (einmalig, ~10 Minuten)
+Nur auf einem **frisch zurückgesetzten** Gerät möglich, **bevor** ein Google-Konto eingerichtet wird:
+
+1. Gerät zurücksetzen (Einstellungen → System → Zurücksetzen) und die Ersteinrichtung
+   durchlaufen — **kein Google-Konto hinzufügen, WLAN reicht**.
+2. Entwickleroptionen aktivieren (Einstellungen → Über das Telefon → 7× auf „Build-Nummer").
+3. **USB-Debugging** einschalten und das Gerät per Kabel an den PC anschließen.
+4. APK installieren und die App **einmal öffnen**, Rolle „Kinder-Gerät" wählen.
+5. Am PC ausführen:
+   ```bash
+   adb shell dpm set-device-owner com.familylink.ios/.admin.DeviceAdmin
+   ```
+   Erfolgsmeldung: `Success: Device owner set to package com.familylink.ios`
+6. App neu starten → im Eltern-Portal steht unter **Schutz-Stufe** jetzt **„Maximal"**.
+
+### Was dann vom System erzwungen wird
+| Umgehungsversuch | Ohne Geräteinhaber | Mit Geräteinhaber |
+|---|---|---|
+| HOME-Taste bei Sperre | Sperre kommt nach ~1 s zurück | **Blockiert** (Lock-Task/Kiosk) |
+| Einstellungen öffnen | wird weggedrückt | **App ausgeblendet** |
+| Abgesicherter Modus | Best effort | **Vom System verboten** |
+| Gastprofil / 2. Nutzer | Best effort | **Vom System verboten** |
+| App deinstallieren | Geräteadmin blockt | **Zusätzlich systemseitig blockiert** |
+| Auf Werkseinstellungen | möglich | **Vom System verboten** |
+| Bedienungshilfe abschalten | möglich | **Nur unsere erlaubt** |
+| ADB/Entwickleroptionen | möglich | **Vom System verboten** |
+
+> **Was die App bewusst NIE tut:** `wipeData()` wird nirgendwo aufgerufen — die App kann
+> **keine Daten löschen** und das Gerät nicht zurücksetzen. Alle Policies sind ausschließlich
+> einschränkend oder schützend.
+
+### Rückgängig machen
 ```bash
-adb shell dpm set-device-owner com.familylink.ios/.admin.DeviceAdmin
+adb shell dpm remove-active-admin com.familylink.ios/.admin.DeviceAdmin
 ```
-Als Device Owner lassen sich Gastprofile, Safe-Mode und weitere Umgehungen **hart** sperren
-(`DevicePolicyManager.addUserRestriction(...)`). Ohne diesen Modus arbeitet die App mit den
-oben beschriebenen Best-Effort-Mechanismen.
+Oder im Eltern-Portal die Schutz-Stufe zurücksetzen.
 
 ---
 

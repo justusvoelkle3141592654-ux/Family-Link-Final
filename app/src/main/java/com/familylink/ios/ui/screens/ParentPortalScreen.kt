@@ -313,6 +313,37 @@ fun ParentPortalScreen(
             }
         }
 
+        // ---- protection level ----
+        SectionHeader("Schutz-Stufe")
+        NovaCard {
+            val owner = com.familylink.ios.admin.DeviceOwner.isDeviceOwner(context)
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NovaPill(
+                        if (owner) "Maximal" else "Standard",
+                        if (owner) Nova.Success else Nova.Warning
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        if (owner) "Geräteinhaber aktiv" else "Geräteinhaber nicht aktiv",
+                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (owner)
+                        "HOME wird bei Sperren blockiert, Einstellungen sind ausgeblendet, " +
+                        "abgesicherter Modus, Gastprofil, Zurücksetzen und Deinstallation sind " +
+                        "vom System verboten. Daten werden nie gelöscht."
+                    else
+                        "Die App schützt so gut es ohne Geräteinhaber geht. Für echte " +
+                        "Unumgehbarkeit muss die App einmalig als Geräteinhaber eingerichtet " +
+                        "werden (Anleitung im README).",
+                    fontSize = 13.sp, color = Nova.InkMuted
+                )
+            }
+        }
+
         // ---- instant pause ----
         SectionHeader("Sofort-Pause")
         NovaCard {

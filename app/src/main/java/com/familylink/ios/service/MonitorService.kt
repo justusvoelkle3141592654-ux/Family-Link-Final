@@ -45,6 +45,7 @@ class MonitorService : Service() {
     private val main = Handler(Looper.getMainLooper())
 
     private var lastBlockLaunchAt = 0L
+    private var lastSettingsHidden: Boolean? = null
 
     // Only real, user-launchable apps are ever blocked. Everything else (keyboards, ad SDKs,
     // Play services, system surfaces) is left alone so it can never appear over a PLUS app.
@@ -108,6 +109,16 @@ class MonitorService : Service() {
             hardLock = hardLock,
             bedtime = isBedtimeNow
         )
+
+        // Device owner: hide the Settings app outright unless the parent released it.
+        // (Falls back to the bounce-and-overlay behaviour when not device owner.)
+        val settingsShouldHide = !prefs.settingsUnlocked()
+        if (settingsShouldHide != lastSettingsHidden) {
+            lastSettingsHidden = settingsShouldHide
+            runCatching {
+                com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, settingsShouldHide)
+            }
+        }
 
         // Bedtime ambient sound.
         if (isBedtimeNow && prefs.bedtimeSoundEnabled) {
