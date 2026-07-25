@@ -181,6 +181,27 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getString("request_json", "") ?: ""
         set(v) = sp.edit().putString("request_json", v).apply()
 
+    // ---- Chores -----------------------------------------------------------
+
+    var choresJson: String
+        get() = sp.getString("chores_json", "") ?: ""
+        set(v) = sp.edit().putString("chores_json", v).apply()
+
+    fun getChores(): List<com.familylink.ios.sync.Chore> =
+        com.familylink.ios.sync.Chore.listFromString(choresJson)
+
+    fun setChores(list: List<com.familylink.ios.sync.Chore>) {
+        choresJson = com.familylink.ios.sync.Chore.listToJson(list).toString()
+    }
+
+    // ---- Appearance -------------------------------------------------------
+
+    var themeMode: com.familylink.ios.ui.theme.ThemeMode
+        get() = runCatching {
+            com.familylink.ios.ui.theme.ThemeMode.valueOf(sp.getString("theme_mode", null) ?: "SYSTEM")
+        }.getOrDefault(com.familylink.ios.ui.theme.ThemeMode.SYSTEM)
+        set(v) = sp.edit().putString("theme_mode", v.name).apply()
+
     // ---- Limits ------------------------------------------------------------
 
     var globalLimitMinutes: Int
@@ -289,6 +310,18 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     private fun ensureToday() {
         val today = dayMarker()
         if (sp.getInt(K_USAGE_DAY, -1) != today) {
+            // Archive the finished day before wiping the counters, so the weekly report has data.
+            archiveDay(sp.getInt(K_USAGE_DAY, -1), sp.getInt(K_GLOBAL_USED, 0))
+            // Repeating chores become available again each day.
+            runCatching {
+                val reset = getChores().map {
+                    if (it.repeating && !it.isOpen) it.copy(
+                        state = com.familylink.ios.sync.Chore.OPEN, claimedAt = 0, approvedAt = 0
+                    ) else it
+                }
+                if (reset.isNotEmpty()) choresJson =
+                    com.familylink.ios.sync.Chore.listToJson(reset).toString()
+            }
             sp.edit()
                 .putInt(K_USAGE_DAY, today)
                 .putInt(K_GLOBAL_USED, 0)
@@ -376,6 +409,43 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         val out = HashMap<String, Long>()
         obj.keys().forEach { out[it] = obj.getLong(it) }
         return out
+    }
+
+    // ---- 7-day history (weekly report) ------------------------------------
+
+    /** Store a finished day's total; keeps the last 7 entries. */
+    private fun archiveDay(dayMarker: Int, seconds: Int) {
+        if (dayMarker <= 0) return
+        val arr = runCatching { org.json.JSONArray(sp.getString("history_json", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        val out = org.json.JSONArray()
+        // Keep the newest 6 so this day becomes the 7th.
+        val start = (arr.length() - 6).coerceAtLeast(0)
+        for (i in start until arr.length()) out.put(arr.get(i))
+        out.put(org.json.JSONObject().put("d", dayMarker).put("s", seconds))
+        sp.edit().putString("history_json", out.toString()).apply()
+    }
+
+    /** Weekday label -> seconds, oldest first, including today. */
+    fun getWeekHistory(): List<Pair<String, Int>> {
+        val names = listOf("So", "Mo", "Di", "Mi", "Do", "Fr", "Sa")
+        val arr = runCatching { org.json.JSONArray(sp.getString("history_json", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        val out = ArrayList<Pair<String, Int>>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val marker = o.optInt("d")
+            val dayOfYear = marker % 1000
+            val year = marker / 1000
+            val c = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year); set(Calendar.DAY_OF_YEAR, dayOfYear)
+            }
+            out.add(names[c.get(Calendar.DAY_OF_WEEK) - 1] to o.optInt("s"))
+        }
+        // Append today (live value).
+        val todayName = names[Calendar.getInstance().get(Calendar.DAY_OF_WEEK) - 1]
+        out.add(todayName to globalUsedSeconds)
+        return out.takeLast(7)
     }
 
     // ---- helpers -----------------------------------------------------------

@@ -58,7 +58,11 @@ import kotlinx.coroutines.delay
  * which apps are free, and when bedtime starts. No settings, no rules to change.
  */
 @Composable
-fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
+fun ChildPortalScreen(
+    onExtendTime: () -> Unit,
+    onOpenChores: () -> Unit,
+    onOpenParentArea: () -> Unit
+) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
     var tick by remember { mutableStateOf(0) }
@@ -185,12 +189,33 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
 
         // ---- actions ----
         Column(Modifier.padding(horizontal = 20.dp)) {
+            // Chores: earn extra time by doing jobs.
+            val chores = prefs.getChores()
+            val openChores = chores.count { it.isOpen }
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(Brush.horizontalGradient(Nova.BrandGradient))
+                    .clickable { onOpenChores() }.padding(18.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Aufgaben erledigen", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (openChores > 0) "$openChores offen · verdiene Extra-Zeit"
+                            else "Keine offenen Aufgaben",
+                            color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp
+                        )
+                    }
+                    Text("→", color = Color.White, fontSize = 22.sp)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
             Box(
                 Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(15.dp))
-                    .background(Nova.Primary).clickable { onExtendTime() },
+                    .background(Nova.Fill).clickable { onExtendTime() },
                 contentAlignment = Alignment.Center
             ) {
-                Text("Mehr Zeit anfragen", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text("Mehr Zeit anfragen", color = Nova.Primary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(10.dp))
             Text(

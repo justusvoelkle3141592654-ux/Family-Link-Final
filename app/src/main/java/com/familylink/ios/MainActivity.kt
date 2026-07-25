@@ -30,6 +30,9 @@ import com.familylink.ios.sync.DeviceRole
 import com.familylink.ios.sync.SyncService
 import com.familylink.ios.ui.screens.AppsScreen
 import com.familylink.ios.ui.screens.AuthScreen
+import com.familylink.ios.ui.screens.ChoresChildScreen
+import com.familylink.ios.ui.screens.ChoresParentScreen
+import com.familylink.ios.ui.screens.StatsScreen
 import com.familylink.ios.ui.screens.DevicesScreen
 import com.familylink.ios.ui.screens.FocusScreen
 import com.familylink.ios.ui.screens.RequestTimeScreen
@@ -44,6 +47,7 @@ import com.familylink.ios.ui.screens.PermissionsScreen
 import com.familylink.ios.ui.screens.PinMode
 import com.familylink.ios.ui.screens.PinScreen
 import com.familylink.ios.ui.theme.Nova
+import com.familylink.ios.ui.theme.ThemeMode
 import com.familylink.ios.ui.theme.FamilyLinkTheme
 
 class MainActivity : ComponentActivity() {
@@ -60,9 +64,17 @@ class MainActivity : ComponentActivity() {
             SyncService.start(this)
         }
         setContent {
-            FamilyLinkTheme {
+            val prefs = Prefs.get(this)
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            var mode by remember { mutableStateOf(prefs.themeMode) }
+            val dark = when (mode) {
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+                ThemeMode.SYSTEM -> systemDark
+            }
+            FamilyLinkTheme(dark = dark) {
                 Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
-                    RootNav()
+                    RootNav(onThemeChanged = { mode = prefs.themeMode })
                 }
             }
         }
@@ -89,10 +101,13 @@ private sealed class Route {
     object PortalFocus : Route()
     object PortalDevices : Route()
     object RequestTime : Route()
+    object PortalChores : Route()
+    object ChildChores : Route()
+    object PortalStats : Route()
 }
 
 @Composable
-private fun RootNav() {
+private fun RootNav(onThemeChanged: () -> Unit = {}) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
 
@@ -165,6 +180,7 @@ private fun RootNav() {
         Route.Home -> if (prefs.isChildDevice) {
             ChildPortalScreen(
                 onExtendTime = { route = Route.RequestTime },
+                onOpenChores = { route = Route.ChildChores },
                 onOpenParentArea = { route = Route.VerifyPin }
             )
         } else {
@@ -191,6 +207,9 @@ private fun RootNav() {
             onSetSecurePin = { route = Route.PortalSecurePin },
             onOpenFocus = { route = Route.PortalFocus },
             onOpenDevices = { route = Route.PortalDevices },
+            onOpenChores = { route = Route.PortalChores },
+            onOpenStats = { route = Route.PortalStats },
+            onThemeChanged = onThemeChanged,
             onExit = { route = Route.Home }
         )
 
@@ -225,6 +244,13 @@ private fun RootNav() {
 
         // Child asks the parent for extra minutes.
         Route.RequestTime -> RequestTimeScreen(onClose = { route = Route.Home })
+
+        // Chores: parent defines and confirms, child claims.
+        Route.PortalChores -> ChoresParentScreen(onBack = { route = Route.Portal })
+        Route.ChildChores -> ChoresChildScreen(onBack = { route = Route.Home })
+
+        // Weekly statistics.
+        Route.PortalStats -> StatsScreen(onBack = { route = Route.Portal })
     }
 }
 

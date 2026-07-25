@@ -33,7 +33,13 @@ class BlockActivity : ComponentActivity() {
         val hardLock = intent.getBooleanExtra(EXTRA_HARD_LOCK, false)
 
         setContent {
-            FamilyLinkTheme {
+            val prefs = com.familylink.ios.data.Prefs.get(this)
+            val dark = when (prefs.themeMode) {
+                com.familylink.ios.ui.theme.ThemeMode.DARK -> true
+                com.familylink.ios.ui.theme.ThemeMode.LIGHT -> false
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            FamilyLinkTheme(dark = dark) {
                 // Hard locks cannot be dismissed with BACK.
                 if (hardLock) BackHandler(enabled = true) { /* swallow */ }
 

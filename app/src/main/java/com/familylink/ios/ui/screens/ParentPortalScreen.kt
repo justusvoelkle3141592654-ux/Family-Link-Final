@@ -45,6 +45,7 @@ import com.familylink.ios.ui.components.NovaRow
 import com.familylink.ios.ui.components.NovaSwitch
 import com.familylink.ios.ui.components.SectionHeader
 import com.familylink.ios.ui.theme.Nova
+import com.familylink.ios.ui.theme.ThemeMode
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 import kotlin.concurrent.thread
@@ -57,6 +58,9 @@ fun ParentPortalScreen(
     onSetSecurePin: () -> Unit,
     onOpenFocus: () -> Unit,
     onOpenDevices: () -> Unit,
+    onOpenChores: () -> Unit,
+    onOpenStats: () -> Unit,
+    onThemeChanged: () -> Unit,
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -291,6 +295,72 @@ fun ParentPortalScreen(
             NovaRow(title = "Apps & Kategorien", onClick = onOpenApps) { Chevron() }
             NovaRow(title = "Berechtigungen", onClick = onOpenPermissions) { Chevron() }
             NovaRow(title = "Geräte", subtitle = "Max. 3 pro Konto", onClick = onOpenDevices) { Chevron() }
+            NovaRow(title = "Wochenbericht", subtitle = "Nutzung der letzten 7 Tage", onClick = onOpenStats) { Chevron() }
+        }
+
+        // ---- chores ----
+        SectionHeader("Aufgaben & Belohnungen")
+        NovaCard {
+            val chores = prefs.getChores()
+            val waiting = chores.count { it.isClaimed }
+            NovaRow(
+                title = "Aufgaben verwalten",
+                subtitle = if (waiting > 0) "$waiting wartet auf Bestätigung"
+                else "${chores.size} Aufgaben angelegt",
+                onClick = onOpenChores
+            ) {
+                if (waiting > 0) NovaPill("$waiting neu", Nova.Warning) else Chevron()
+            }
+        }
+
+        // ---- instant pause ----
+        SectionHeader("Sofort-Pause")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                val paused = prefs.focusSession().let { it.isRunning() && it.label == "Pause" }
+                Text(
+                    if (paused) "Das Gerät ist pausiert. Nur Telefon ist erreichbar."
+                    else "Sperrt das Kindergerät sofort für 30 Minuten (z. B. beim Essen).",
+                    fontSize = 14.sp, color = Nova.InkMuted
+                )
+                Spacer(Modifier.height(12.dp))
+                if (paused) {
+                    NovaButton(text = "Pause beenden", color = Nova.Success) {
+                        sync.stopFocus(); v++; SyncService.pushNow(context)
+                    }
+                } else {
+                    NovaButton(text = "Jetzt pausieren (30 Min)", color = Nova.Danger) {
+                        sync.startFocus("Pause", 30, emptyList()); v++; SyncService.pushNow(context)
+                    }
+                }
+            }
+        }
+
+        // ---- appearance ----
+        SectionHeader("Darstellung")
+        NovaCard {
+            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    ThemeMode.SYSTEM to "System",
+                    ThemeMode.LIGHT to "Hell",
+                    ThemeMode.DARK to "Dunkel"
+                ).forEach { (m, label) ->
+                    val sel = prefs.themeMode == m
+                    Box(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(Nova.RadiusControl.dp))
+                            .background(if (sel) Nova.Primary else Nova.Fill)
+                            .clickable { prefs.themeMode = m; v++; onThemeChanged() }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            color = if (sel) Color.White else Nova.InkMuted
+                        )
+                    }
+                }
+            }
         }
 
         // ---- security ----

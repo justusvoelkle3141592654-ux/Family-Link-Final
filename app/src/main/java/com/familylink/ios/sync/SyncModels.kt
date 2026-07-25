@@ -22,10 +22,13 @@ data class FamilyConfig(
     val categories: Map<String, String>,
     /** Active focus session pushed down from the parent (headline feature). */
     val focus: FocusSession = FocusSession.OFF,
+    /** Chore list shared between both devices. */
+    val chores: List<Chore> = emptyList(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("focus", focus.toJson())
+        put("chores", Chore.listToJson(chores))
         put("globalLimitMinutes", globalLimitMinutes)
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
@@ -55,6 +58,7 @@ data class FamilyConfig(
                 settingsUnlockedUntil = o.optLong("settingsUnlockedUntil", 0),
                 categories = cats,
                 focus = FocusSession.fromJson(o.optJSONObject("focus")),
+                chores = Chore.listFromJson(o.optJSONArray("chores")),
                 updatedAt = o.optLong("updatedAt", 0)
             )
         }

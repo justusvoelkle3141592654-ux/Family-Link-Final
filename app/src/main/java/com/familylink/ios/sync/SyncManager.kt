@@ -39,7 +39,8 @@ class SyncManager(private val context: Context) {
             offUntilEpoch = prefs.offUntilEpoch,
             settingsUnlockedUntil = prefs.settingsUnlockedUntil,
             categories = cats,
-            focus = prefs.focusSession()
+            focus = prefs.focusSession(),
+            chores = prefs.getChores()
         )
     }
 
@@ -58,6 +59,51 @@ class SyncManager(private val context: Context) {
     }
 
     fun stopFocus() = prefs.setFocusSession(FocusSession.OFF)
+
+    // ---------------- chores ----------------
+
+    /** Child: mark a chore as done so the parent can confirm it. */
+    fun claimChore(id: String) {
+        prefs.setChores(prefs.getChores().map {
+            if (it.id == id && it.isOpen) it.copy(state = Chore.DONE, claimedAt = System.currentTimeMillis())
+            else it
+        })
+        pushChores()
+    }
+
+    /** Parent: confirm a finished chore and credit the reward. */
+    fun approveChore(id: String) {
+        val chore = prefs.getChores().firstOrNull { it.id == id } ?: return
+        prefs.addBonusMinutes(chore.rewardMinutes)
+        prefs.setChores(prefs.getChores().map {
+            if (it.id == id) it.copy(state = Chore.APPROVED, approvedAt = System.currentTimeMillis()) else it
+        })
+        pushConfig()
+    }
+
+    /** Parent: send a claimed chore back to the open list. */
+    fun rejectChore(id: String) {
+        prefs.setChores(prefs.getChores().map {
+            if (it.id == id) it.copy(state = Chore.OPEN, claimedAt = 0) else it
+        })
+        pushConfig()
+    }
+
+    /** Child pushes only the chore list upward (it may not rewrite the parent's rules). */
+    fun pushChores(): Boolean {
+        val c = client() ?: return false
+        return c.put(
+            "${SyncClient.familyPath(prefs.familyId)}/chores",
+            org.json.JSONObject().put("list", Chore.listToJson(prefs.getChores()))
+        )
+    }
+
+    /** Parent: read chore claims coming from the child. */
+    fun fetchChoreClaims(): List<Chore> {
+        val c = client() ?: return emptyList()
+        val node = c.get("${SyncClient.familyPath(prefs.familyId)}/chores") ?: return emptyList()
+        return Chore.listFromJson(node.optJSONArray("list"))
+    }
 
     // ---------------- time requests ----------------
 
@@ -150,6 +196,14 @@ class SyncManager(private val context: Context) {
         prefs.setOffUntilEpoch(cfg.offUntilEpoch)
         prefs.setSettingsUnlockedUntil(cfg.settingsUnlockedUntil)
         prefs.setFocusSession(cfg.focus)
+        // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep
+        // a claim that has not been seen by the parent yet instead of overwriting it.
+        val localChores = prefs.getChores().associateBy { it.id }
+        prefs.setChores(cfg.chores.map { incoming ->
+            val local = localChores[incoming.id]
+            if (local != null && local.isClaimed && incoming.isOpen && local.claimedAt > cfg.updatedAt) local
+            else incoming
+        })
 
         if (cfg.categories.isNotEmpty()) {
             val parsed = HashMap<String, Pair<AppCategory, Int>>()

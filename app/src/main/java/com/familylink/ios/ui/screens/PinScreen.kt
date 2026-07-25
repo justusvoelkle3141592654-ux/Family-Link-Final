@@ -34,7 +34,8 @@ fun PinScreen(
     var firstEntry by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf(false) }
 
-    val length = 4
+    // Longer PIN for the parent portal — 6 digits.
+    val length = 6
 
     fun submit(code: String) {
         when (mode) {
@@ -67,7 +68,7 @@ fun PinScreen(
     val subtitle = when {
         error && mode == PinMode.SET -> "Codes stimmen nicht überein"
         error -> "Falsche PIN"
-        mode == PinMode.SET -> "4-stelligen Code wählen"
+        mode == PinMode.SET -> "6-stelligen Code wählen"
         else -> "Eltern-Zugang"
     }
 
