@@ -11,6 +11,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             ACTION_RESTART -> {
+                // MonitorService.start() already refuses to run on a parent device.
                 MonitorService.start(context)
                 com.familylink.ios.sync.SyncService.start(context)
             }

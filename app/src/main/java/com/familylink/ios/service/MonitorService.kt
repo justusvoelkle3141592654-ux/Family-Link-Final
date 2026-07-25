@@ -80,6 +80,13 @@ class MonitorService : Service() {
     }
 
     private fun tick() {
+        // The guard only ever runs on the supervised (child) device. A parent phone must never
+        // lock itself, no matter how the service got started (boot, accessibility, self-heal).
+        if (prefs.isParentDevice) {
+            LockState.update(lockActive = false, hardLock = false, bedtime = false)
+            stopSelf()
+            return
+        }
         // Never enforce anything until initial setup is finished (so granting permissions and
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
@@ -221,6 +228,8 @@ class MonitorService : Service() {
         const val ACTION_RECHECK = "com.familylink.ios.RECHECK"
 
         fun start(context: Context) {
+            // Guard at the call site too, so a parent device never even spins the service up.
+            if (Prefs.get(context).isParentDevice) return
             try {
                 val i = Intent(context, MonitorService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)

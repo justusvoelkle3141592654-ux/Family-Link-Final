@@ -49,7 +49,20 @@ import com.familylink.ios.util.TimeFmt
 fun AppsScreen() {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
-    val apps = remember { InstalledApps.load(context) }
+
+    // On the parent device we manage the CHILD's apps (reported through sync), not the ones
+    // installed on the parent phone. Falls back to local apps when nothing has synced yet.
+    val remoteApps = remember {
+        if (!prefs.isParentDevice) emptyList()
+        else com.familylink.ios.sync.SyncManager(context).cachedChildStatus()
+            ?.perAppLabels?.map { (pkg, label) -> InstalledApps.Entry(pkg, label) }
+            ?.sortedBy { it.label.lowercase() }
+            ?: emptyList()
+    }
+    val apps = remember(remoteApps) {
+        if (remoteApps.isNotEmpty()) remoteApps else InstalledApps.load(context)
+    }
+    val managingRemote = remoteApps.isNotEmpty()
     // local mirror so the UI updates immediately; persisted on each change
     var version by remember { mutableStateOf(0) }
 
@@ -65,10 +78,19 @@ fun AppsScreen() {
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp)
         )
         Text(
-            "Tippe auf die Markierung, um die Kategorie zu wechseln.",
+            if (managingRemote) "Apps des Kinder-Geräts · tippe die Markierung zum Wechseln."
+            else "Tippe auf die Markierung, um die Kategorie zu wechseln.",
             fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
+        if (prefs.isParentDevice && !managingRemote) {
+            Text(
+                "Noch keine App-Daten vom Kinder-Gerät empfangen. Sobald es verbunden ist und " +
+                    "Apps genutzt wurden, erscheinen sie hier.",
+                fontSize = 12.sp, color = Nova.Warning,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
         Legend()
         Spacer(Modifier.height(8.dp))
 
@@ -125,12 +147,14 @@ fun AppsScreen() {
                                 }
                                 prefs.setCategory(app.packageName, next, limit)
                                 version++
+                                com.familylink.ios.sync.SyncService.pushNow(context)
                             }
                             if (cat == AppCategory.LIMIT) {
                                 Spacer(Modifier.height(6.dp))
                                 StepperMinutes(limit) { newVal ->
                                     prefs.setCategory(app.packageName, AppCategory.LIMIT, newVal)
                                     version++
+                                    com.familylink.ios.sync.SyncService.pushNow(context)
                                 }
                             }
                         }

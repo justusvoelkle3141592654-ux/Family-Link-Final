@@ -32,11 +32,13 @@ class AppAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         prefs = Prefs.get(this)
-        MonitorService.start(this)
+        if (!prefs.isParentDevice) MonitorService.start(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+        // Anti-bypass applies to the supervised device only.
+        if (prefs.isParentDevice) return
         val pkg = event.packageName?.toString() ?: return
 
         // 2 — anti-tamper: the Settings app must not even be reachable unless the parent
