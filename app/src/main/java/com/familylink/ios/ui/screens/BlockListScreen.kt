@@ -81,11 +81,24 @@ fun BlockListScreen(
     LaunchedEffect(Unit) { while (true) { clock = TimeFmt.now(); delay(1000) } }
 
     Column(
-        Modifier.fillMaxSize().background(Cupertino.SystemBackground).padding(24.dp),
+        Modifier.fillMaxSize()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    if (bedtime) listOf(Color(0xFFEDE9FB), Cupertino.SystemBackground)
+                    else Cupertino.PageGradient
+                )
+            )
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(56.dp))
-        Icon(Icons.Filled.Lock, contentDescription = null, tint = Cupertino.Blue, modifier = Modifier.size(30.dp))
+        val accent = if (bedtime) Cupertino.Purple else Cupertino.Blue
+        Box(
+            Modifier.size(64.dp).clip(CircleShape).background(accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Lock, contentDescription = null, tint = accent, modifier = Modifier.size(28.dp))
+        }
         Spacer(Modifier.height(16.dp))
         Text(TimeFmt.nowLong(), fontSize = 16.sp, color = Cupertino.SecondaryLabel)
         Text(clock, fontSize = 72.sp, fontWeight = FontWeight.Thin, color = Cupertino.Label)

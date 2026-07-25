@@ -56,7 +56,7 @@ fun PermissionsScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(Cupertino.SystemBackground)
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Cupertino.PageGradient))
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {

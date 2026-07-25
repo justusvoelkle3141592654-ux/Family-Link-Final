@@ -21,14 +21,22 @@ object Cupertino {
     val SecondaryLabel = Color(0x993C3C43)
     val TertiaryLabel = Color(0x4D3C3C43)
 
+    val Teal = Color(0xFF5AC8FA)
+    val Indigo = Color(0xFF5856D6)
+    val Pink = Color(0xFFFF2D55)
+
     val SystemBackground = Color(0xFFF2F2F7)      // grouped background
     val SecondaryBackground = Color(0xFFFFFFFF)   // cards
     val Separator = Color(0x5C3C3C43)
+    val Fill = Color(0x14000000)                  // subtle control fill
 
     // Dark variants (used by the lock overlay, which is always dark for an iOS look).
     val DarkBackground = Color(0xFF000000)
     val DarkLabel = Color(0xFFFFFFFF)
     val DarkSecondaryLabel = Color(0x99EBEBF5)
+
+    /** Soft top-to-bottom page gradient used on the main screens. */
+    val PageGradient = listOf(Color(0xFFFFFFFF), SystemBackground)
 }
 
 private val CupertinoTypography = Typography(
