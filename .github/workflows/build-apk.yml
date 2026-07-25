@@ -37,16 +37,20 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      # Convenience copy for the Actions UI. The artifact host occasionally times out on a
+      # 55 MB upload, which must not cost us the build — the branch below is the real delivery.
       - name: Upload APK artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: family-link-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          if-no-files-found: warn
 
-      # Publish the APK to a dedicated orphan branch so it can be retrieved via git
-      # (some environments cannot reach the artifact download host directly).
+      # Primary delivery: publish the APK to a dedicated orphan branch so it is always
+      # retrievable via git, independent of the artifact service.
       - name: Publish APK to apk-output branch
+        if: success() || failure()
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/family-link-debug.apk
           git config user.name "github-actions[bot]"
