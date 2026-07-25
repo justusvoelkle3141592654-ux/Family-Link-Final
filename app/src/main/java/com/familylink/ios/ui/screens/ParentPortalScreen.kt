@@ -35,15 +35,19 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.sync.SyncManager
+import com.familylink.ios.sync.TimeRequest
 import com.familylink.ios.sync.SyncService
-import com.familylink.ios.ui.cupertino.CupertinoButton
-import com.familylink.ios.ui.cupertino.CupertinoCard
-import com.familylink.ios.ui.cupertino.CupertinoRow
-import com.familylink.ios.ui.cupertino.CupertinoSwitch
-import com.familylink.ios.ui.cupertino.SectionHeader
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.components.NovaButton
+import com.familylink.ios.ui.components.NovaButtonTonal
+import com.familylink.ios.ui.components.NovaPill
+import com.familylink.ios.ui.components.NovaCard
+import com.familylink.ios.ui.components.NovaRow
+import com.familylink.ios.ui.components.NovaSwitch
+import com.familylink.ios.ui.components.SectionHeader
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
+import kotlin.concurrent.thread
 
 @Composable
 fun ParentPortalScreen(
@@ -51,6 +55,8 @@ fun ParentPortalScreen(
     onOpenPermissions: () -> Unit,
     onChangePin: () -> Unit,
     onSetSecurePin: () -> Unit,
+    onOpenFocus: () -> Unit,
+    onOpenDevices: () -> Unit,
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -62,6 +68,16 @@ fun ParentPortalScreen(
     // Any change the parent makes is pushed to the child immediately.
     LaunchedEffect(v) {
         if (v > 0 && prefs.isParentDevice) SyncService.pushNow(context)
+    }
+
+    // Live time requests from the child device.
+    var pendingRequest by remember { mutableStateOf<TimeRequest?>(null) }
+    LaunchedEffect(Unit) {
+        while (prefs.isParentDevice && prefs.syncConfigured) {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { sync.readRequest() }
+            pendingRequest = r?.takeIf { it.isPending }
+            delay(4000)
+        }
     }
 
     // On the parent device the numbers come from the child, live; otherwise they are local.
@@ -80,20 +96,20 @@ fun ParentPortalScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Cupertino.PageGradient))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Eltern-Portal", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+            Text("Eltern-Portal", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
             Spacer(Modifier.weight(1f))
-            Text("Fertig", color = Cupertino.Blue, fontSize = 17.sp, modifier = Modifier.clickable { onExit() })
+            Text("Fertig", color = Nova.Primary, fontSize = 17.sp, modifier = Modifier.clickable { onExit() })
         }
 
         // ---- connection status ----
         if (prefs.syncConfigured) {
             val online = System.currentTimeMillis() - prefs.lastSyncAt < 120_000
-            val c = if (online) Cupertino.Green else Cupertino.Orange
+            val c = if (online) Nova.Success else Nova.Warning
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp)
                     .clip(RoundedCornerShape(12.dp)).background(c.copy(alpha = 0.10f))
@@ -112,10 +128,10 @@ fun ParentPortalScreen(
 
         // ---- usage summary ----
         SectionHeader(if (prefs.isParentDevice) "Nutzung des Kindes heute" else "Heute genutzt")
-        CupertinoCard {
+        NovaCard {
             Column(Modifier.padding(16.dp)) {
-                Text(TimeFmt.hm(used), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
-                Text("von ${TimeFmt.hm(limit)} Tageslimit", fontSize = 14.sp, color = Cupertino.SecondaryLabel)
+                Text(TimeFmt.hm(used), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                Text("von ${TimeFmt.hm(limit)} Tageslimit", fontSize = 14.sp, color = Nova.InkMuted)
                 Spacer(Modifier.height(12.dp))
                 ProgressBar(fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
             }
@@ -124,16 +140,16 @@ fun ParentPortalScreen(
         // ---- live per-app usage from the child device ----
         if (remote != null && remote.perAppSeconds.isNotEmpty()) {
             SectionHeader("Apps auf dem Kinder-Gerät")
-            CupertinoCard {
+            NovaCard {
                 remote.perAppSeconds.entries
                     .sortedByDescending { it.value }
                     .take(10)
                     .forEach { (pkg, secs) ->
                         val label = remote.perAppLabels[pkg] ?: pkg
                         val blocked = pkg in remote.blockedToday
-                        CupertinoRow(title = label, subtitle = TimeFmt.hm(secs)) {
+                        NovaRow(title = label, subtitle = TimeFmt.hm(secs)) {
                             if (blocked) {
-                                Text("Gesperrt", color = Cupertino.Red, fontSize = 13.sp,
+                                Text("Gesperrt", color = Nova.Danger, fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold)
                             }
                         }
@@ -143,8 +159,8 @@ fun ParentPortalScreen(
 
         // ---- global limit ----
         SectionHeader("Tägliches Limit (Standard-Apps)")
-        CupertinoCard {
-            CupertinoRow(title = "Limit", subtitle = "Standard 1 Std · max. 2 Std") {
+        NovaCard {
+            NovaRow(title = "Limit", subtitle = "Standard 1 Std · max. 2 Std") {
                 Stepper(
                     value = "${prefs.globalLimitMinutes} Min",
                     onMinus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes - 15).coerceAtLeast(0); v++ },
@@ -155,26 +171,26 @@ fun ParentPortalScreen(
 
         // ---- bedtime ----
         SectionHeader("Ruhezeit")
-        CupertinoCard {
-            CupertinoRow(title = "Ruhezeit aktiv") {
-                CupertinoSwitch(checked = prefs.bedtimeEnabled) { prefs.bedtimeEnabled = it; v++ }
+        NovaCard {
+            NovaRow(title = "Ruhezeit aktiv") {
+                NovaSwitch(checked = prefs.bedtimeEnabled) { prefs.bedtimeEnabled = it; v++ }
             }
-            CupertinoRow(title = "Beginn") {
+            NovaRow(title = "Beginn") {
                 Stepper(
                     value = TimeFmt.clock(prefs.bedtimeStartMin),
                     onMinus = { prefs.bedtimeStartMin = wrap(prefs.bedtimeStartMin - 30); v++ },
                     onPlus = { prefs.bedtimeStartMin = wrap(prefs.bedtimeStartMin + 30); v++ }
                 )
             }
-            CupertinoRow(title = "Ende") {
+            NovaRow(title = "Ende") {
                 Stepper(
                     value = TimeFmt.clock(prefs.bedtimeEndMin),
                     onMinus = { prefs.bedtimeEndMin = wrap(prefs.bedtimeEndMin - 30); v++ },
                     onPlus = { prefs.bedtimeEndMin = wrap(prefs.bedtimeEndMin + 30); v++ }
                 )
             }
-            CupertinoRow(title = "Beruhigender Ton") {
-                CupertinoSwitch(checked = prefs.bedtimeSoundEnabled) { prefs.bedtimeSoundEnabled = it; v++ }
+            NovaRow(title = "Beruhigender Ton") {
+                NovaSwitch(checked = prefs.bedtimeSoundEnabled) { prefs.bedtimeSoundEnabled = it; v++ }
             }
         }
 
@@ -182,19 +198,19 @@ fun ParentPortalScreen(
         SectionHeader("Heute gesperrte Apps")
         val blocked = prefs.getBlockedToday()
         val perApp = prefs.getPerAppSeconds()
-        CupertinoCard {
+        NovaCard {
             if (blocked.isEmpty()) {
                 Text(
                     "Heute wurde noch keine App gesperrt.",
-                    fontSize = 15.sp, color = Cupertino.SecondaryLabel,
+                    fontSize = 15.sp, color = Nova.InkMuted,
                     modifier = Modifier.padding(16.dp)
                 )
             } else {
                 blocked.entries.sortedByDescending { it.value }.forEach { (pkg, _) ->
                     val label = InstalledApps.labelFor(context, pkg)
                     val used = perApp[pkg] ?: 0
-                    CupertinoRow(title = label, subtitle = "Genutzt: ${TimeFmt.hm(used)}") {
-                        Text("Gesperrt", color = Cupertino.Red, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    NovaRow(title = label, subtitle = "Genutzt: ${TimeFmt.hm(used)}") {
+                        Text("Gesperrt", color = Nova.Danger, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -202,39 +218,86 @@ fun ParentPortalScreen(
 
         // ---- Aus-Button ----
         SectionHeader("Für heute freischalten")
-        CupertinoCard {
+        NovaCard {
             Column(Modifier.padding(16.dp)) {
                 val active = prefs.limitsDisabled()
                 Text(
                     if (active) "Alle Limits sind bis 23:00 Uhr deaktiviert."
                     else "Deaktiviert alle Limits bis 23:00 Uhr des heutigen Tages.",
-                    fontSize = 14.sp, color = Cupertino.SecondaryLabel
+                    fontSize = 14.sp, color = Nova.InkMuted
                 )
                 Spacer(Modifier.height(12.dp))
                 if (active) {
-                    CupertinoButton(text = "Limits wieder aktivieren", color = Cupertino.Red) {
+                    NovaButton(text = "Limits wieder aktivieren", color = Nova.Danger) {
                         prefs.clearOffButton(); v++
                     }
                 } else {
-                    CupertinoButton(text = "Aus-Button – bis 23:00 freischalten", color = Cupertino.Orange) {
+                    NovaButton(text = "Aus-Button – bis 23:00 freischalten", color = Nova.Warning) {
                         prefs.activateOffButton(); v++
                     }
                 }
             }
         }
 
+        // ---- live time request from the child ----
+        pendingRequest?.let { req ->
+            SectionHeader("Anfrage vom Kind")
+            NovaCard {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        NovaPill("+${req.minutes} Min", Nova.Warning)
+                        Spacer(Modifier.width(10.dp))
+                        Text(TimeFmt.hm(((System.currentTimeMillis() - req.createdAt) / 1000).toInt()) + " her",
+                            fontSize = 12.sp, color = Nova.InkFaint)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(req.reason, fontSize = 15.sp, color = Nova.Ink)
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            NovaButton(text = "Genehmigen", color = Nova.Success) {
+                                thread(isDaemon = true) { sync.decideRequest(req, true) }
+                                pendingRequest = null; v++
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            NovaButtonTonal(text = "Ablehnen", color = Nova.Danger) {
+                                thread(isDaemon = true) { sync.decideRequest(req, false) }
+                                pendingRequest = null
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- focus mode (headline feature) ----
+        SectionHeader("Fokus-Modus")
+        NovaCard {
+            val focus = prefs.focusSession()
+            NovaRow(
+                title = if (focus.isRunning()) "Fokus läuft: ${focus.label}" else "Fokus-Session starten",
+                subtitle = if (focus.isRunning()) "Noch ${TimeFmt.hm(focus.remainingSeconds())}"
+                else "Nur ausgewählte Apps, auf Zeit",
+                onClick = onOpenFocus
+            ) {
+                if (focus.isRunning()) NovaPill("Aktiv", Nova.Focus) else Chevron()
+            }
+        }
+
         // ---- navigation ----
         SectionHeader("Verwaltung")
-        CupertinoCard {
-            CupertinoRow(title = "Apps & Kategorien", onClick = onOpenApps) { Chevron() }
-            CupertinoRow(title = "Berechtigungen", onClick = onOpenPermissions) { Chevron() }
+        NovaCard {
+            NovaRow(title = "Apps & Kategorien", onClick = onOpenApps) { Chevron() }
+            NovaRow(title = "Berechtigungen", onClick = onOpenPermissions) { Chevron() }
+            NovaRow(title = "Geräte", subtitle = "Max. 3 pro Konto", onClick = onOpenDevices) { Chevron() }
         }
 
         // ---- security ----
         SectionHeader("Sicherheit")
-        CupertinoCard {
-            CupertinoRow(title = "PIN ändern", subtitle = "4-stellige Zugangs-PIN", onClick = onChangePin) { Chevron() }
-            CupertinoRow(
+        NovaCard {
+            NovaRow(title = "PIN ändern", subtitle = "4-stellige Zugangs-PIN", onClick = onChangePin) { Chevron() }
+            NovaRow(
                 title = if (prefs.isSecurePinSet) "Sicherheits-PIN ändern" else "Sicherheits-PIN festlegen",
                 subtitle = "Lange PIN für Zeitverlängerung",
                 onClick = onSetSecurePin
@@ -243,16 +306,16 @@ fun ParentPortalScreen(
 
         // ---- device: system settings are locked by default; released here temporarily ----
         SectionHeader("Gerät")
-        CupertinoCard {
+        NovaCard {
             Column(Modifier.padding(16.dp)) {
                 val open = prefs.settingsUnlocked()
                 Text(
                     if (open) "Systemeinstellungen sind vorübergehend freigegeben."
                     else "Die Systemeinstellungen des Geräts sind gesperrt. Hier für 1 Minute freigeben und öffnen.",
-                    fontSize = 14.sp, color = Cupertino.SecondaryLabel
+                    fontSize = 14.sp, color = Nova.InkMuted
                 )
                 Spacer(Modifier.height(12.dp))
-                CupertinoButton(text = "Einstellungen öffnen (1 Min)", color = Cupertino.Blue) {
+                NovaButton(text = "Einstellungen öffnen (1 Min)", color = Nova.Primary) {
                     prefs.unlockSettings(1)
                     v++
                     runCatching {
@@ -268,7 +331,7 @@ fun ParentPortalScreen(
         Spacer(Modifier.height(24.dp))
         Text(
             "Das Eltern-Portal ist jederzeit mit der PIN erreichbar.",
-            fontSize = 12.sp, color = Cupertino.TertiaryLabel
+            fontSize = 12.sp, color = Nova.InkFaint
         )
         Spacer(Modifier.height(24.dp))
     }
@@ -290,7 +353,7 @@ private fun ProgressBar(fraction: Float) {
                 .fillMaxWidth(fraction)
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(if (fraction >= 1f) Cupertino.Red else Cupertino.Green)
+                .background(if (fraction >= 1f) Nova.Danger else Nova.Success)
         )
     }
 }
@@ -299,7 +362,7 @@ private fun ProgressBar(fraction: Float) {
 private fun Stepper(value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         StepBtn("−", onMinus)
-        Text(value, modifier = Modifier.padding(horizontal = 12.dp), fontSize = 17.sp, color = Cupertino.Label)
+        Text(value, modifier = Modifier.padding(horizontal = 12.dp), fontSize = 17.sp, color = Nova.Ink)
         StepBtn("+", onPlus)
     }
 }
@@ -314,11 +377,11 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, fontSize = 20.sp, color = Cupertino.Blue)
+        Text(label, fontSize = 20.sp, color = Nova.Primary)
     }
 }
 
 @Composable
 private fun Chevron() {
-    Text("›", color = Cupertino.TertiaryLabel, fontSize = 22.sp)
+    Text("›", color = Nova.InkFaint, fontSize = 22.sp)
 }

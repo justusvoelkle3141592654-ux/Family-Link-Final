@@ -48,7 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.AppCategory
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 
@@ -79,16 +79,16 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
         .take(12)
 
     val accent = when {
-        disabled -> Cupertino.Green
-        bedtime -> Cupertino.Purple
-        fraction >= 1f -> Cupertino.Red
-        fraction >= 0.8f -> Cupertino.Orange
-        else -> Cupertino.Blue
+        disabled -> Nova.Success
+        bedtime -> Nova.Night
+        fraction >= 1f -> Nova.Danger
+        fraction >= 0.8f -> Nova.Warning
+        else -> Nova.Primary
     }
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Cupertino.PageGradient))
+            .background(Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState())
     ) {
         // ---- header ----
@@ -97,8 +97,8 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Meine Zeit", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
-                Text(TimeFmt.nowLong(), fontSize = 13.sp, color = Cupertino.SecondaryLabel)
+                Text("Meine Zeit", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                Text(TimeFmt.nowLong(), fontSize = 13.sp, color = Nova.InkMuted)
             }
             SyncBadge(prefs)
         }
@@ -126,16 +126,16 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     when {
                         disabled -> {
-                            Text("Frei", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Cupertino.Green)
-                            Text("bis 23:00", fontSize = 13.sp, color = Cupertino.SecondaryLabel)
+                            Text("Frei", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Nova.Success)
+                            Text("bis 23:00", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                         bedtime -> {
-                            Text("Ruhezeit", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cupertino.Purple)
-                            Text("bis ${TimeFmt.clock(prefs.bedtimeEndMin)}", fontSize = 13.sp, color = Cupertino.SecondaryLabel)
+                            Text("Ruhezeit", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Nova.Night)
+                            Text("bis ${TimeFmt.clock(prefs.bedtimeEndMin)}", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                         else -> {
-                            Text(TimeFmt.hm(remaining), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
-                            Text("übrig", fontSize = 13.sp, color = Cupertino.SecondaryLabel)
+                            Text(TimeFmt.hm(remaining), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                            Text("übrig", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                     }
                 }
@@ -145,7 +145,7 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text(
             "Genutzt ${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}" + if (bonus > 0) " (+${bonus / 60} Bonus)" else "",
-            fontSize = 13.sp, color = Cupertino.SecondaryLabel,
+            fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
         )
 
@@ -153,7 +153,7 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
 
         // ---- next bedtime hint ----
         if (!bedtime && prefs.bedtimeEnabled) {
-            InfoStrip("Ruhezeit beginnt um ${TimeFmt.clock(prefs.bedtimeStartMin)} Uhr", Cupertino.Purple)
+            InfoStrip("Ruhezeit beginnt um ${TimeFmt.clock(prefs.bedtimeStartMin)} Uhr", Nova.Night)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -163,7 +163,7 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
         if (perApp.isEmpty()) {
             Text(
                 "Heute noch keine App genutzt.",
-                fontSize = 14.sp, color = Cupertino.SecondaryLabel,
+                fontSize = 14.sp, color = Nova.InkMuted,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
             )
         } else {
@@ -187,7 +187,7 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             Box(
                 Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(15.dp))
-                    .background(Cupertino.Blue).clickable { onExtendTime() },
+                    .background(Nova.Primary).clickable { onExtendTime() },
                 contentAlignment = Alignment.Center
             ) {
                 Text("Mehr Zeit anfragen", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -195,7 +195,7 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Text(
                 "Eltern-Bereich",
-                fontSize = 14.sp, color = Cupertino.TertiaryLabel,
+                fontSize = 14.sp, color = Nova.InkFaint,
                 modifier = Modifier.fillMaxWidth().clickable { onOpenParentArea() }.padding(10.dp)
             )
         }
@@ -207,7 +207,7 @@ fun ChildPortalScreen(onExtendTime: () -> Unit, onOpenParentArea: () -> Unit) {
 private fun SyncBadge(prefs: Prefs) {
     val online = prefs.syncConfigured &&
         System.currentTimeMillis() - prefs.lastSyncAt < 120_000
-    val color = if (online) Cupertino.Green else Cupertino.TertiaryLabel
+    val color = if (online) Nova.Success else Nova.InkFaint
     Row(
         Modifier.clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -225,7 +225,7 @@ private fun SyncBadge(prefs: Prefs) {
 @Composable
 private fun SectionTitle(text: String) {
     Text(
-        text.uppercase(), fontSize = 12.sp, color = Cupertino.SecondaryLabel,
+        text.uppercase(), fontSize = 12.sp, color = Nova.InkMuted,
         modifier = Modifier.padding(start = 20.dp, bottom = 6.dp)
     )
 }
@@ -255,30 +255,30 @@ private fun UsageRow(
     val context = LocalContext.current
     val icon = remember(pkg) { InstalledApps.iconBitmap(context, pkg) }
     val barColor = when (category) {
-        AppCategory.PLUS -> Cupertino.Green
-        AppCategory.LIMIT -> Cupertino.Orange
-        AppCategory.BLOCKED -> Cupertino.Red
-        AppCategory.STANDARD -> Cupertino.Blue
+        AppCategory.PLUS -> Nova.Success
+        AppCategory.LIMIT -> Nova.Warning
+        AppCategory.BLOCKED -> Nova.Danger
+        AppCategory.STANDARD -> Nova.Primary
     }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(Cupertino.Fill),
+            Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(Nova.Fill),
             contentAlignment = Alignment.Center
         ) {
             if (icon != null) {
                 Image(bitmap = icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(32.dp))
             } else {
-                Text(label.take(1), fontSize = 15.sp, color = Cupertino.Label)
+                Text(label.take(1), fontSize = 15.sp, color = Nova.Ink)
             }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 15.sp, color = Cupertino.Label, modifier = Modifier.weight(1f))
-                Text(TimeFmt.hm(seconds), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Cupertino.SecondaryLabel)
+                Text(label, fontSize = 15.sp, color = Nova.Ink, modifier = Modifier.weight(1f))
+                Text(TimeFmt.hm(seconds), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Nova.InkMuted)
             }
             Spacer(Modifier.height(5.dp))
             Box(

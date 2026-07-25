@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.AppCategory
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 
@@ -84,15 +84,15 @@ fun BlockListScreen(
         Modifier.fillMaxSize()
             .background(
                 androidx.compose.ui.graphics.Brush.verticalGradient(
-                    if (bedtime) listOf(Color(0xFFEDE9FB), Cupertino.SystemBackground)
-                    else Cupertino.PageGradient
+                    if (bedtime) listOf(Color(0xFFEDE9FB), Nova.Canvas)
+                    else Nova.PageGradient
                 )
             )
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(56.dp))
-        val accent = if (bedtime) Cupertino.Purple else Cupertino.Blue
+        val accent = if (bedtime) Nova.Night else Nova.Primary
         Box(
             Modifier.size(64.dp).clip(CircleShape).background(accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
@@ -100,20 +100,20 @@ fun BlockListScreen(
             Icon(Icons.Filled.Lock, contentDescription = null, tint = accent, modifier = Modifier.size(28.dp))
         }
         Spacer(Modifier.height(16.dp))
-        Text(TimeFmt.nowLong(), fontSize = 16.sp, color = Cupertino.SecondaryLabel)
-        Text(clock, fontSize = 72.sp, fontWeight = FontWeight.Thin, color = Cupertino.Label)
+        Text(TimeFmt.nowLong(), fontSize = 16.sp, color = Nova.InkMuted)
+        Text(clock, fontSize = 72.sp, fontWeight = FontWeight.Thin, color = Nova.Ink)
         Spacer(Modifier.height(16.dp))
-        Text(reasonTitle, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+        Text(reasonTitle, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
         Spacer(Modifier.height(6.dp))
-        Text(reasonDetail, fontSize = 16.sp, color = Cupertino.SecondaryLabel, textAlign = TextAlign.Center)
+        Text(reasonDetail, fontSize = 16.sp, color = Nova.InkMuted, textAlign = TextAlign.Center)
 
         Spacer(Modifier.weight(1f))
 
         // During bedtime this is a hard lock: no allowed apps, no extension, no close/portal.
         if (!bedtime) {
-            BigButton("Zugelassen + Apps", Cupertino.Green) { showPlus = true }
+            BigButton("Zugelassen + Apps", Nova.Success) { showPlus = true }
             Spacer(Modifier.height(12.dp))
-            BigButton("Verlängerung", Cupertino.Blue) { onExtend() }
+            BigButton("Verlängerung", Nova.Primary) { onExtend() }
             Spacer(Modifier.height(24.dp))
         }
 
@@ -126,23 +126,23 @@ fun BlockListScreen(
                 },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.Phone, contentDescription = "Telefon", tint = Cupertino.Green, modifier = Modifier.size(26.dp))
+            Icon(Icons.Filled.Phone, contentDescription = "Telefon", tint = Nova.Success, modifier = Modifier.size(26.dp))
         }
         Spacer(Modifier.height(6.dp))
-        Text("Telefon", fontSize = 13.sp, color = Cupertino.SecondaryLabel)
+        Text("Telefon", fontSize = 13.sp, color = Nova.InkMuted)
 
         Spacer(Modifier.height(16.dp))
         when {
-            bedtime -> Text("Gute Nacht", fontSize = 14.sp, color = Cupertino.TertiaryLabel)
+            bedtime -> Text("Gute Nacht", fontSize = 14.sp, color = Nova.InkFaint)
             // Hard lock (day limit): no way to simply close the screen — only Plus apps,
             // an extension, the phone, or the parent portal.
-            hardLock -> Text("Eltern-Portal", fontSize = 15.sp, color = Cupertino.Blue,
+            hardLock -> Text("Eltern-Portal", fontSize = 15.sp, color = Nova.Primary,
                 modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
             else -> Row {
-                Text("Startbildschirm", fontSize = 15.sp, color = Cupertino.Blue,
+                Text("Startbildschirm", fontSize = 15.sp, color = Nova.Primary,
                     modifier = Modifier.clickable { onClose() }.padding(8.dp))
                 Spacer(Modifier.size(16.dp))
-                Text("Eltern-Portal", fontSize = 15.sp, color = Cupertino.Blue,
+                Text("Eltern-Portal", fontSize = 15.sp, color = Nova.Primary,
                     modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
             }
         }
@@ -167,29 +167,29 @@ private fun PlusAppsView(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    Column(Modifier.fillMaxSize().background(Cupertino.SystemBackground).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().background(Nova.Canvas).verticalScroll(rememberScrollState())) {
         Row(
             Modifier.fillMaxWidth().padding(top = 44.dp, start = 8.dp, end = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(Modifier.clickable { onBack() }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.ChevronLeft, contentDescription = "Zurück", tint = Cupertino.Blue, modifier = Modifier.size(24.dp))
-                Text("Zurück", color = Cupertino.Blue, fontSize = 17.sp)
+                Icon(Icons.Filled.ChevronLeft, contentDescription = "Zurück", tint = Nova.Primary, modifier = Modifier.size(24.dp))
+                Text("Zurück", color = Nova.Primary, fontSize = 17.sp)
             }
         }
         Text(
-            "Zugelassene Apps", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label,
+            "Zugelassene Apps", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink,
             modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)
         )
         Text(
             "Tippe eine App an, um sie zu öffnen.",
-            fontSize = 14.sp, color = Cupertino.SecondaryLabel, modifier = Modifier.padding(start = 16.dp, bottom = 12.dp)
+            fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.padding(start = 16.dp, bottom = 12.dp)
         )
 
         if (plusApps.isEmpty()) {
             Text(
                 "Es sind keine Plus-Apps festgelegt. Im Eltern-Portal können Apps auf Plus gestellt werden.",
-                fontSize = 14.sp, color = Cupertino.SecondaryLabel, modifier = Modifier.padding(horizontal = 16.dp)
+                fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.padding(horizontal = 16.dp)
             )
         } else {
             Column(Modifier.padding(horizontal = 16.dp)) {
@@ -208,11 +208,11 @@ private fun PlusAppsView(
                                     if (bmp != null) {
                                         Image(bitmap = bmp.asImageBitmap(), contentDescription = app.label, modifier = Modifier.size(54.dp))
                                     } else {
-                                        Text(app.label.take(1), fontSize = 24.sp, color = Cupertino.Label)
+                                        Text(app.label.take(1), fontSize = 24.sp, color = Nova.Ink)
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
-                                Text(app.label, fontSize = 11.sp, color = Cupertino.Label, maxLines = 1, textAlign = TextAlign.Center)
+                                Text(app.label, fontSize = 11.sp, color = Nova.Ink, maxLines = 1, textAlign = TextAlign.Center)
                             }
                         }
                         repeat(4 - rowApps.size) { Spacer(Modifier.weight(1f)) }

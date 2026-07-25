@@ -38,8 +38,54 @@ class SyncManager(private val context: Context) {
             bonusMinutes = prefs.bonusSecondsToday / 60,
             offUntilEpoch = prefs.offUntilEpoch,
             settingsUnlockedUntil = prefs.settingsUnlockedUntil,
-            categories = cats
+            categories = cats,
+            focus = prefs.focusSession()
         )
+    }
+
+    // ---------------- focus mode ----------------
+
+    /** Parent: start a focus session that takes effect on the child within ~1s. */
+    fun startFocus(label: String, minutes: Int, allowed: List<String>) {
+        prefs.setFocusSession(
+            FocusSession(
+                active = true,
+                endsAt = System.currentTimeMillis() + minutes * 60_000L,
+                label = label,
+                allowed = allowed
+            )
+        )
+    }
+
+    fun stopFocus() = prefs.setFocusSession(FocusSession.OFF)
+
+    // ---------------- time requests ----------------
+
+    /** Child: ask for extra minutes. */
+    fun sendRequest(minutes: Int, reason: String): Boolean {
+        val c = client() ?: return false
+        val req = TimeRequest(minutes = minutes, reason = reason)
+        prefs.requestJson = req.toJson().toString()
+        return c.put("${SyncClient.familyPath(prefs.familyId)}/request", req.toJson())
+    }
+
+    fun readRequest(): TimeRequest? {
+        val c = client() ?: return null
+        val json = c.get("${SyncClient.familyPath(prefs.familyId)}/request") ?: return null
+        return runCatching { TimeRequest.fromJson(json) }.getOrNull()
+    }
+
+    /** Parent: approve (grants the minutes) or decline. */
+    fun decideRequest(req: TimeRequest, approve: Boolean): Boolean {
+        val c = client() ?: return false
+        if (approve) prefs.addBonusMinutes(req.minutes)
+        val updated = req.copy(
+            state = if (approve) TimeRequest.APPROVED else TimeRequest.DECLINED,
+            decidedAt = System.currentTimeMillis()
+        )
+        val ok = c.put("${SyncClient.familyPath(prefs.familyId)}/request", updated.toJson())
+        if (approve) pushConfig()
+        return ok
     }
 
     /** Parent -> server. Safe to call from any background thread. */
@@ -103,6 +149,7 @@ class SyncManager(private val context: Context) {
         prefs.setBonusMinutesAbsolute(cfg.bonusMinutes)
         prefs.setOffUntilEpoch(cfg.offUntilEpoch)
         prefs.setSettingsUnlockedUntil(cfg.settingsUnlockedUntil)
+        prefs.setFocusSession(cfg.focus)
 
         if (cfg.categories.isNotEmpty()) {
             val parsed = HashMap<String, Pair<AppCategory, Int>>()

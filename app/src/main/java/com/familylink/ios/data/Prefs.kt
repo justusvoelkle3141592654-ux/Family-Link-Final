@@ -140,6 +140,47 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getString("child_status_json", "") ?: ""
         set(v) = sp.edit().putString("child_status_json", v).apply()
 
+    // ---- Account ----------------------------------------------------------
+
+    var accountEmail: String
+        get() = sp.getString("account_email", "") ?: ""
+        set(v) = sp.edit().putString("account_email", v.trim().lowercase()).apply()
+
+    val isSignedIn: Boolean get() = accountEmail.isNotBlank() && familyId.isNotBlank()
+
+    /** Stable id for this installation, used for the 3-device limit. */
+    var deviceId: String
+        get() {
+            val existing = sp.getString("device_id", null)
+            if (!existing.isNullOrBlank()) return existing
+            val fresh = com.familylink.ios.sync.Account.deviceId(null)
+            sp.edit().putString("device_id", fresh).apply()
+            return fresh
+        }
+        set(v) = sp.edit().putString("device_id", v).apply()
+
+    // ---- Focus mode (pushed from the parent) ------------------------------
+
+    var focusJson: String
+        get() = sp.getString("focus_json", "") ?: ""
+        set(v) = sp.edit().putString("focus_json", v).apply()
+
+    fun focusSession(): com.familylink.ios.sync.FocusSession = runCatching {
+        if (focusJson.isBlank()) com.familylink.ios.sync.FocusSession.OFF
+        else com.familylink.ios.sync.FocusSession.fromJson(JSONObject(focusJson))
+    }.getOrDefault(com.familylink.ios.sync.FocusSession.OFF)
+
+    fun setFocusSession(s: com.familylink.ios.sync.FocusSession) {
+        focusJson = s.toJson().toString()
+    }
+
+    // ---- Time requests ----------------------------------------------------
+
+    /** Latest request as JSON (child writes, parent decides). */
+    var requestJson: String
+        get() = sp.getString("request_json", "") ?: ""
+        set(v) = sp.edit().putString("request_json", v).apply()
+
     // ---- Limits ------------------------------------------------------------
 
     var globalLimitMinutes: Int

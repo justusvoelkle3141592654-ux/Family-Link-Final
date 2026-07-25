@@ -26,11 +26,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.admin.DeviceAdmin
-import com.familylink.ios.ui.cupertino.CupertinoButton
-import com.familylink.ios.ui.cupertino.CupertinoCard
-import com.familylink.ios.ui.cupertino.CupertinoRow
-import com.familylink.ios.ui.cupertino.SectionHeader
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.components.NovaButton
+import com.familylink.ios.ui.components.NovaCard
+import com.familylink.ios.ui.components.NovaRow
+import com.familylink.ios.ui.components.SectionHeader
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.Permissions
 
 /**
@@ -56,16 +56,16 @@ fun PermissionsScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Cupertino.PageGradient))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text("Berechtigungen", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+        Text("Berechtigungen", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
         Spacer(Modifier.height(4.dp))
         Text(
             "Damit die Kindersicherung zuverlässig und unumgehbar funktioniert, werden diese " +
                 "Zugriffe benötigt.",
-            fontSize = 15.sp, color = Cupertino.SecondaryLabel
+            fontSize = 15.sp, color = Nova.InkMuted
         )
 
         // Opening any settings page from our own flow authorises settings access briefly, so the
@@ -76,7 +76,7 @@ fun PermissionsScreen(
         }
 
         SectionHeader("Erforderlich")
-        CupertinoCard {
+        NovaCard {
             PermRow(
                 title = "Nutzungszugriff",
                 subtitle = "Misst die App-Zeit ab 00:00 Uhr",
@@ -97,7 +97,7 @@ fun PermissionsScreen(
         }
 
         SectionHeader("Empfohlen")
-        CupertinoCard {
+        NovaCard {
             PermRow(
                 title = "Geräteadministrator",
                 subtitle = "Verhindert die Deinstallation (sperrt nicht)",
@@ -107,7 +107,7 @@ fun PermissionsScreen(
 
         Spacer(Modifier.height(28.dp))
         if (showContinue) {
-            CupertinoButton(
+            NovaButton(
                 text = if (allCore) "Weiter" else "Bitte alle erforderlichen erteilen",
                 enabled = allCore,
                 onClick = onAllGranted
@@ -119,14 +119,14 @@ fun PermissionsScreen(
 
 @Composable
 private fun PermRow(title: String, subtitle: String, granted: Boolean, onClick: () -> Unit) {
-    CupertinoRow(title = title, subtitle = subtitle, onClick = onClick) {
+    NovaRow(title = title, subtitle = subtitle, onClick = onClick) {
         if (granted) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = "Erteilt", tint = Cupertino.Green)
+            Icon(Icons.Filled.CheckCircle, contentDescription = "Erteilt", tint = Nova.Success)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Erteilen", color = Cupertino.Blue, fontSize = 15.sp)
+                Text("Erteilen", color = Nova.Primary, fontSize = 15.sp)
                 Spacer(Modifier.height(0.dp))
-                Icon(Icons.Filled.RadioButtonUnchecked, contentDescription = null, tint = Cupertino.TertiaryLabel)
+                Icon(Icons.Filled.RadioButtonUnchecked, contentDescription = null, tint = Nova.InkFaint)
             }
         }
     }
@@ -139,6 +139,6 @@ private fun Divider() {
             .fillMaxWidth()
             .padding(start = 16.dp)
             .height(0.5.dp)
-            .background(Cupertino.Separator)
+            .background(Nova.Line)
     )
 }

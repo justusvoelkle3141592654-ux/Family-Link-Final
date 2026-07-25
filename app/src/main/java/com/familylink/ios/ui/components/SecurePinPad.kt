@@ -1,4 +1,4 @@
-package com.familylink.ios.ui.cupertino
+package com.familylink.ios.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.theme.Nova
 
 /**
  * Variable-length secure PIN entry with a confirm button, used for the longer parent PIN that
@@ -44,11 +44,11 @@ fun SecurePinPad(
         Modifier.fillMaxWidth().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(title, color = Cupertino.Label, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = Nova.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Text(
             if (error) "Falsche PIN" else subtitle,
-            color = if (error) Cupertino.Red else Cupertino.SecondaryLabel, fontSize = 14.sp
+            color = if (error) Nova.Danger else Nova.InkMuted, fontSize = 14.sp
         )
         Spacer(Modifier.height(24.dp))
 
@@ -58,11 +58,11 @@ fun SecurePinPad(
             repeat(shown) {
                 Box(
                     Modifier.size(14.dp).clip(CircleShape)
-                        .background(if (error) Cupertino.Red else Cupertino.Label)
+                        .background(if (error) Nova.Danger else Nova.Ink)
                 )
             }
             if (shown == 0) {
-                Box(Modifier.size(14.dp).clip(CircleShape).border(1.5.dp, Cupertino.TertiaryLabel, CircleShape))
+                Box(Modifier.size(14.dp).clip(CircleShape).border(1.5.dp, Nova.InkFaint, CircleShape))
             }
         }
 
@@ -90,9 +90,9 @@ fun SecurePinPad(
         }
 
         Spacer(Modifier.height(20.dp))
-        CupertinoButton(
+        NovaButton(
             text = confirmLabel,
-            color = Cupertino.Green,
+            color = Nova.Success,
             enabled = entered.length >= minLength,
             onClick = onConfirm
         )
@@ -105,6 +105,6 @@ private fun Key(label: String, bg: Color, onClick: () -> Unit) {
         Modifier.size(70.dp).clip(CircleShape).background(bg).clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = Cupertino.Label, fontSize = 30.sp, fontWeight = FontWeight.Light)
+        Text(label, color = Nova.Ink, fontSize = 30.sp, fontWeight = FontWeight.Light)
     }
 }

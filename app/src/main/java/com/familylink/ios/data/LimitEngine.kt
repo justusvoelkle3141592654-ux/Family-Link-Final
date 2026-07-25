@@ -10,6 +10,8 @@ sealed class LockDecision {
     data class AppBlocked(val pkg: String) : LockDecision()
     /** System settings are blocked unless temporarily released via the portal. */
     object SettingsBlocked : LockDecision()
+    /** A parent-started focus session is running; only focus apps are allowed. */
+    data class FocusActive(val label: String, val remainingSeconds: Int) : LockDecision()
 }
 
 /**
@@ -39,12 +41,20 @@ class LimitEngine(private val prefs: Prefs) {
     private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
 
     fun decide(pkg: String?, usage: Map<String, Int>): LockDecision {
-        // Aus-Button wins over everything until 23:00.
-        if (prefs.limitsDisabled()) return LockDecision.Allowed
-
         // Bedtime is a HARD lock: it blocks EVERYTHING (PLUS included). The service keeps only
-        // phone/system usable and makes it non-dismissible.
+        // phone/system usable and makes it non-dismissible. It outranks the off-button.
         if (prefs.isBedtime()) return LockDecision.Bedtime
+
+        // Focus mode (parent-started): only the explicitly allowed apps stay usable.
+        val focus = prefs.focusSession()
+        if (focus.isRunning()) {
+            if (pkg == null) return LockDecision.Allowed
+            if (isAlwaysExempt(pkg) || pkg in focus.allowed) return LockDecision.Allowed
+            return LockDecision.FocusActive(focus.label, focus.remainingSeconds())
+        }
+
+        // Aus-Button wins over the remaining time limits until 23:00.
+        if (prefs.limitsDisabled()) return LockDecision.Allowed
 
         if (pkg == null) return LockDecision.Allowed
 

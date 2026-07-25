@@ -39,6 +39,20 @@ class SyncClient(private val databaseUrl: String) {
         false
     }
 
+    /** Delete the node at [path]. */
+    fun delete(path: String): Boolean = try {
+        val conn = (url(path).openConnection() as HttpURLConnection).apply {
+            requestMethod = "DELETE"
+            connectTimeout = 15000
+            readTimeout = 15000
+        }
+        val ok = conn.responseCode in 200..299
+        conn.disconnect()
+        ok
+    } catch (_: Throwable) {
+        false
+    }
+
     /** Read the JSON object at [path], or null if missing/unreachable. */
     fun get(path: String): JSONObject? = try {
         val conn = (url(path).openConnection() as HttpURLConnection).apply {

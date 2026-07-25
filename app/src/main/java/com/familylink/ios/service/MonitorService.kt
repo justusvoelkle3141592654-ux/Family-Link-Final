@@ -97,8 +97,11 @@ class MonitorService : Service() {
         val decision = engine.decide(pkg, usage)
 
         val isBedtimeNow = decision is LockDecision.Bedtime
-        // Only a single app's own limit may be dismissed; day limit and bedtime are hard locks.
-        val hardLock = isBedtimeNow || decision is LockDecision.GlobalLimitReached
+        // Only a single app's own limit may be dismissed; day limit, bedtime and an active
+        // focus session are hard locks.
+        val hardLock = isBedtimeNow ||
+            decision is LockDecision.GlobalLimitReached ||
+            decision is LockDecision.FocusActive
         // Publish state for the accessibility service (multi-window / bypass hardening).
         LockState.update(
             lockActive = decision !is LockDecision.Allowed,
@@ -119,7 +122,9 @@ class MonitorService : Service() {
         if (engine.isAlwaysExempt(pkg)) return
 
         val bedtime = isBedtimeNow
-        if (!bedtime) {
+        // Bedtime and focus sessions block everything that is not always-exempt.
+        val blocksEverything = bedtime || decision is LockDecision.FocusActive
+        if (!blocksEverything) {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
                 is LockDecision.SettingsBlocked -> { /* fall through to block */ }
@@ -160,6 +165,8 @@ class MonitorService : Service() {
             "App gesperrt" to "Diese App ist dauerhaft gesperrt."
         is LockDecision.SettingsBlocked ->
             "Einstellungen gesperrt" to "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal."
+        is LockDecision.FocusActive ->
+            "Fokus: ${decision.label}" to "Noch ${TimeFmt.hm(decision.remainingSeconds)} — nur Fokus-Apps sind erlaubt."
         LockDecision.Allowed -> "" to ""
     }
 

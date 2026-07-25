@@ -122,17 +122,58 @@ Alternativ einen `signingConfig` in `app/build.gradle.kts` hinterlegen, dann erz
 
 Die App läuft auf **beiden** Geräten aus derselben APK; beim ersten Start wählt man die Rolle.
 
-### Server einrichten (einmalig, kostenlos)
+### Server einrichten — dauerhaft kostenlos
 Die Echtzeit-Sync nutzt eine **Firebase Realtime Database** über reines HTTPS – **kein Firebase-SDK
 und keine `google-services.json` nötig**.
 
-1. [console.firebase.google.com](https://console.firebase.google.com) → Projekt anlegen (gratis).
-2. **Realtime Database** erstellen (Region wählen, im „Testmodus" starten).
-3. Die Datenbank-URL kopieren, z. B. `https://mein-projekt-default-rtdb.europe-west1.firebasedatabase.app`.
-4. Diese URL beim Einrichten auf **beiden** Geräten eintragen.
+**Der „für immer gratis"-Weg ist der Spark-Plan.** Er ist kein Testzeitraum, sondern Googles
+dauerhaft kostenlose Stufe: **keine Kreditkarte, läuft nicht ab**. Enthalten sind 1 GB Speicher und
+10 GB Transfer pro Monat. Diese App überträgt pro Gerät nur wenige Kilobyte pro Minute — eine
+Familie liegt im Jahr bei deutlich unter 1 % dieses Kontingents. Wichtig ist nur: **nicht** auf
+„Blaze" (Pay-as-you-go) hochstufen, dann bleibt es kostenlos.
 
-> ⚠️ Der Testmodus erlaubt offenen Zugriff und läuft nach 30 Tagen ab. Für den Dauerbetrieb in
-> den Datenbank-Regeln den Zugriff auf den eigenen Familienknoten beschränken.
+1. [console.firebase.google.com](https://console.firebase.google.com) → Projekt anlegen.
+   Google Analytics kann man abwählen.
+2. **Realtime Database** erstellen, Region wählen, im **gesperrten Modus** starten.
+3. Unter **Regeln** die folgenden Regeln einfügen und veröffentlichen:
+
+```json
+{
+  "rules": {
+    "accounts": {
+      "$account": {
+        ".read": true,
+        ".write": "!data.exists()"
+      }
+    },
+    "families": {
+      "$family": {
+        ".read": true,
+        ".write": true,
+        ".validate": "$family.length >= 8"
+      }
+    }
+  }
+}
+```
+
+   Diese Regeln laufen **nicht ab** (anders als der 30-Tage-Testmodus) und verhindern, dass ein
+   bestehendes Konto überschrieben wird.
+4. Die Datenbank-URL kopieren, z. B.
+   `https://mein-projekt-default-rtdb.europe-west1.firebasedatabase.app`, und beim Einrichten auf
+   allen Geräten eintragen.
+
+> **Ehrlicher Sicherheitshinweis:** Die Anmeldung läuft clientseitig gegen diese Datenbank; das
+> Passwort wird nur gesalzen und gehasht gespeichert, nie im Klartext übertragen. Das trennt
+> Familien sauber voneinander und hält Unbefugte fern, ist aber **kein Ersatz für einen echten
+> Auth-Anbieter**. Wer maximale Sicherheit braucht, sollte Firebase Authentication ergänzen —
+> das bleibt im Spark-Plan ebenfalls kostenlos.
+
+### Konto & Geräte-Limit
+- Beim Einrichten legt man ein **Familien-Konto** (E-Mail + Passwort) an bzw. meldet sich an.
+- Pro Konto sind **maximal 3 Geräte** erlaubt. Ein viertes Gerät wird abgewiesen, bis im Portal
+  unter **Geräte** eines entfernt wurde.
+- Das Portal zeigt alle Geräte mit Namen, Rolle und Online-Status.
 
 ### Geräte verbinden
 1. **Eltern-Gerät:** App öffnen → „Eltern-Gerät" → URL eintragen → es wird ein **6-stelliger Code**

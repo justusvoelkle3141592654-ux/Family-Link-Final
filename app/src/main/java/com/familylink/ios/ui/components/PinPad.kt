@@ -1,4 +1,4 @@
-package com.familylink.ios.ui.cupertino
+package com.familylink.ios.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

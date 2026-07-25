@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.cupertino.PinPad
+import com.familylink.ios.ui.components.PinPad
 
 enum class PinMode { VERIFY, SET }
 

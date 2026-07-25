@@ -20,9 +20,12 @@ data class FamilyConfig(
     val settingsUnlockedUntil: Long,
     /** packageName -> "CATEGORY:limitMinutes" */
     val categories: Map<String, String>,
+    /** Active focus session pushed down from the parent (headline feature). */
+    val focus: FocusSession = FocusSession.OFF,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
+        put("focus", focus.toJson())
         put("globalLimitMinutes", globalLimitMinutes)
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
@@ -51,6 +54,7 @@ data class FamilyConfig(
                 offUntilEpoch = o.optLong("offUntilEpoch", 0),
                 settingsUnlockedUntil = o.optLong("settingsUnlockedUntil", 0),
                 categories = cats,
+                focus = FocusSession.fromJson(o.optJSONObject("focus")),
                 updatedAt = o.optLong("updatedAt", 0)
             )
         }

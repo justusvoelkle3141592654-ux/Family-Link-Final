@@ -34,7 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 
@@ -59,25 +59,25 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
     val bedtime = prefs.isBedtime()
 
     val ringColor = when {
-        disabled -> Cupertino.Green
-        bedtime -> Cupertino.Purple
-        fraction >= 1f -> Cupertino.Red
-        fraction >= 0.8f -> Cupertino.Orange
-        else -> Cupertino.Blue
+        disabled -> Nova.Success
+        bedtime -> Nova.Night
+        fraction >= 1f -> Nova.Danger
+        fraction >= 0.8f -> Nova.Warning
+        else -> Nova.Primary
     }
 
     Column(
         Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Cupertino.SystemBackground))
+                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Nova.Canvas))
             )
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("Family Link", fontSize = 15.sp, color = Cupertino.SecondaryLabel)
-        Text(TimeFmt.nowLong(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+        Text("Family Link", fontSize = 15.sp, color = Nova.InkMuted)
+        Text(TimeFmt.nowLong(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
 
         Spacer(Modifier.height(36.dp))
 
@@ -102,13 +102,13 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 when {
                     disabled -> {
-                        Text("Frei", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Cupertino.Green)
-                        Text("bis 23:00 Uhr", fontSize = 14.sp, color = Cupertino.SecondaryLabel)
+                        Text("Frei", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Success)
+                        Text("bis 23:00 Uhr", fontSize = 14.sp, color = Nova.InkMuted)
                     }
-                    bedtime -> Text("Ruhezeit", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Cupertino.Purple)
+                    bedtime -> Text("Ruhezeit", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Nova.Night)
                     else -> {
-                        Text(TimeFmt.hm(remaining), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
-                        Text("übrig heute", fontSize = 14.sp, color = Cupertino.SecondaryLabel)
+                        Text(TimeFmt.hm(remaining), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                        Text("übrig heute", fontSize = 14.sp, color = Nova.InkMuted)
                     }
                 }
             }
@@ -118,7 +118,7 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
         Text(
             "Genutzt: ${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}" +
                 if (bonus > 0) "  (+${bonus / 60} Min Bonus)" else "",
-            fontSize = 14.sp, color = Cupertino.SecondaryLabel
+            fontSize = 14.sp, color = Nova.InkMuted
         )
 
         Spacer(Modifier.weight(1f))
@@ -126,14 +126,14 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
         // Actions
         Box(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                .background(Cupertino.Blue).clickable { onExtendTime() }.padding(vertical = 15.dp),
+                .background(Nova.Primary).clickable { onExtendTime() }.padding(vertical = 15.dp),
             contentAlignment = Alignment.Center
         ) {
             Text("Zeit verlängern (Eltern)", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(
             "Eltern-Portal öffnen",
-            fontSize = 15.sp, color = Cupertino.Blue,
+            fontSize = 15.sp, color = Nova.Primary,
             modifier = Modifier.clickable { onOpenParentPortal() }.padding(16.dp)
         )
     }

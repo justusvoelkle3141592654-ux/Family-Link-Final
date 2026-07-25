@@ -1,70 +1,92 @@
 package com.familylink.ios.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Typography
+import androidx.compose.material.lightColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** Apple system palette (iOS 17-ish). */
-object Cupertino {
-    val Blue = Color(0xFF0A84FF)
-    val Green = Color(0xFF34C759)
-    val Red = Color(0xFFFF3B30)
-    val Orange = Color(0xFFFF9500)
-    val Yellow = Color(0xFFFFCC00)
-    val Purple = Color(0xFFAF52DE)
+/**
+ * "Nova" — the product's own design language.
+ *
+ * Deliberately NOT an iOS clone: a deep indigo/violet brand core, a mint accent for positive
+ * states, generous rounding, layered surfaces and soft brand-tinted gradients. The palette is
+ * built around one hue family so the app reads as a single, deliberate product.
+ */
+object Nova {
 
-    val Label = Color(0xFF000000)
-    val SecondaryLabel = Color(0x993C3C43)
-    val TertiaryLabel = Color(0x4D3C3C43)
+    // -- Brand ------------------------------------------------------------
+    val Primary = Color(0xFF4C3FE0)        // brand indigo
+    val PrimaryDeep = Color(0xFF2D2496)    // pressed / depth
+    val PrimarySoft = Color(0xFFEDEBFF)    // tinted container
 
-    val Teal = Color(0xFF5AC8FA)
-    val Indigo = Color(0xFF5856D6)
-    val Pink = Color(0xFFFF2D55)
+    val Accent = Color(0xFF00C9A7)         // mint — "you're fine"
+    val AccentSoft = Color(0xFFDFF8F3)
 
-    val SystemBackground = Color(0xFFF2F2F7)      // grouped background
-    val SecondaryBackground = Color(0xFFFFFFFF)   // cards
-    val Separator = Color(0x5C3C3C43)
-    val Fill = Color(0x14000000)                  // subtle control fill
+    // -- Semantic ---------------------------------------------------------
+    val Success = Color(0xFF14B87A)
+    val Warning = Color(0xFFFF9F1C)
+    val Danger = Color(0xFFF0455F)
+    val Night = Color(0xFF7A5CF0)          // bedtime / quiet hours
+    val Focus = Color(0xFF2B9BF3)          // focus sessions
 
-    // Dark variants (used by the lock overlay, which is always dark for an iOS look).
-    val DarkBackground = Color(0xFF000000)
-    val DarkLabel = Color(0xFFFFFFFF)
-    val DarkSecondaryLabel = Color(0x99EBEBF5)
+    // -- Neutrals ---------------------------------------------------------
+    val Ink = Color(0xFF14142B)            // primary text
+    val InkMuted = Color(0xFF5A5A78)       // secondary text
+    val InkFaint = Color(0xFF9A9AB5)       // tertiary text
+    val Line = Color(0x1A14142B)           // hairline
+    val Fill = Color(0x0D14142B)           // control fill
 
-    /** Soft top-to-bottom page gradient used on the main screens. */
-    val PageGradient = listOf(Color(0xFFFFFFFF), SystemBackground)
+    val Canvas = Color(0xFFF6F6FB)         // page background
+    val Surface = Color(0xFFFFFFFF)        // cards
+    val SurfaceAlt = Color(0xFFFBFBFE)     // nested surfaces
+
+    // -- Gradients --------------------------------------------------------
+    val BrandGradient = listOf(Color(0xFF5B4BE8), Color(0xFF8B5CF0))
+    val PageGradient = listOf(Color(0xFFFFFFFF), Canvas)
+    val NightGradient = listOf(Color(0xFFEFEAFE), Canvas)
+    val SuccessGradient = listOf(Color(0xFF14B87A), Color(0xFF00C9A7))
+
+    // -- Category colours (single source of truth) ------------------------
+    val CatPlus = Success
+    val CatLimit = Warning
+    val CatStandard = Primary
+    val CatBlocked = Danger
+
+    // -- Radii / elevation tokens ----------------------------------------
+    const val RadiusCard = 20
+    const val RadiusControl = 14
+    const val RadiusPill = 999
 }
 
-private val CupertinoTypography = Typography(
-    defaultFontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
-    h1 = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Bold, fontSize = 34.sp),
-    h2 = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Bold, fontSize = 28.sp),
-    h6 = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 17.sp),
-    body1 = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Normal, fontSize = 17.sp),
-    body2 = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Normal, fontSize = 15.sp),
-    caption = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Normal, fontSize = 13.sp)
+private val NovaTypography = Typography(
+    defaultFontFamily = FontFamily.SansSerif,
+    h1 = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 32.sp, letterSpacing = (-0.5).sp),
+    h2 = TextStyle(fontWeight = FontWeight.Bold, fontSize = 26.sp, letterSpacing = (-0.3).sp),
+    h6 = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 17.sp),
+    body1 = TextStyle(fontWeight = FontWeight.Normal, fontSize = 16.sp),
+    body2 = TextStyle(fontWeight = FontWeight.Normal, fontSize = 14.sp),
+    caption = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp)
 )
 
 @Composable
 fun FamilyLinkTheme(content: @Composable () -> Unit) {
-    // We render a fixed light "iOS Settings" look regardless of system dark mode for the
-    // parent UI; the lock overlay styles itself dark independently.
-    @Suppress("UNUSED_EXPRESSION")
-    isSystemInDarkTheme()
     MaterialTheme(
-        colors = androidx.compose.material.lightColors(
-            primary = Cupertino.Blue,
-            background = Cupertino.SystemBackground,
-            surface = Cupertino.SecondaryBackground,
-            onBackground = Cupertino.Label,
-            onSurface = Cupertino.Label,
-            error = Cupertino.Red
+        colors = lightColors(
+            primary = Nova.Primary,
+            primaryVariant = Nova.PrimaryDeep,
+            secondary = Nova.Accent,
+            background = Nova.Canvas,
+            surface = Nova.Surface,
+            onBackground = Nova.Ink,
+            onSurface = Nova.Ink,
+            error = Nova.Danger
         ),
-        typography = CupertinoTypography,
+        typography = NovaTypography,
         content = content
     )
 }

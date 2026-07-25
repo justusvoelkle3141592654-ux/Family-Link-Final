@@ -27,9 +27,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.cupertino.CupertinoButton
-import com.familylink.ios.ui.cupertino.SecurePinPad
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.components.NovaButton
+import com.familylink.ios.ui.components.SecurePinPad
+import com.familylink.ios.ui.theme.Nova
 
 /**
  * Parent-only time extension: verify the long secure PIN, then grant up to the remaining
@@ -46,7 +46,7 @@ fun ExtendTimeScreen(onClose: () -> Unit) {
     var minutes by remember { mutableStateOf(minOf(15, prefs.remainingBonusMinutes().coerceAtLeast(5))) }
     var granted by remember { mutableStateOf(0) }
 
-    Box(Modifier.fillMaxSize().background(Cupertino.SystemBackground), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Nova.Canvas), contentAlignment = Alignment.Center) {
         when (step) {
             "nopin" -> InfoCard(
                 title = "Sicherheits-PIN fehlt",
@@ -76,11 +76,11 @@ fun ExtendTimeScreen(onClose: () -> Unit) {
                 Column(
                     Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Zeit freigeben", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+                    Text("Zeit freigeben", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Heute noch verfügbar: $remaining Min (max. ${Prefs.MAX_BONUS_MIN} Min/Tag)",
-                        fontSize = 14.sp, color = Cupertino.SecondaryLabel, textAlign = TextAlign.Center
+                        fontSize = 14.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(28.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -88,17 +88,17 @@ fun ExtendTimeScreen(onClose: () -> Unit) {
                         Text(
                             "$minutes Min",
                             modifier = Modifier.padding(horizontal = 20.dp),
-                            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label
+                            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
                         )
                         StepBtn("+") { minutes = (minutes + 5).coerceAtMost(remaining) }
                     }
                     Spacer(Modifier.height(28.dp))
-                    CupertinoButton(text = "$minutes Min freigeben", color = Cupertino.Green) {
+                    NovaButton(text = "$minutes Min freigeben", color = Nova.Success) {
                         granted = prefs.addBonusMinutes(minutes.coerceAtMost(remaining))
                         step = "done"
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text("Abbrechen", color = Cupertino.Blue, fontSize = 16.sp, modifier = Modifier.clickable { onClose() }.padding(8.dp))
+                    Text("Abbrechen", color = Nova.Primary, fontSize = 16.sp, modifier = Modifier.clickable { onClose() }.padding(8.dp))
                 }
             }
 
@@ -127,7 +127,7 @@ fun SecurePinSetupScreen(onDone: () -> Unit, onCancel: () -> Unit) {
     var first by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().background(Cupertino.SystemBackground), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Nova.Canvas), contentAlignment = Alignment.Center) {
         SecurePinPad(
             entered = entered,
             title = if (first == null) "Sicherheits-PIN festlegen" else "Sicherheits-PIN bestätigen",
@@ -153,11 +153,11 @@ private fun InfoCard(title: String, text: String, onClose: () -> Unit) {
     Column(
         Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
         Spacer(Modifier.height(12.dp))
-        Text(text, fontSize = 15.sp, color = Cupertino.SecondaryLabel, textAlign = TextAlign.Center)
+        Text(text, fontSize = 15.sp, color = Nova.InkMuted, textAlign = TextAlign.Center)
         Spacer(Modifier.height(28.dp))
-        CupertinoButton(text = "Fertig", onClick = onClose)
+        NovaButton(text = "Fertig", onClick = onClose)
     }
 }
 
@@ -168,6 +168,6 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
             .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, fontSize = 24.sp, color = Cupertino.Blue)
+        Text(label, fontSize = 24.sp, color = Nova.Primary)
     }
 }

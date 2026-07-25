@@ -46,8 +46,8 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.sync.DeviceRole
 import com.familylink.ios.sync.SyncManager
-import com.familylink.ios.ui.cupertino.CupertinoButton
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.components.NovaButton
+import com.familylink.ios.ui.theme.Nova
 import kotlin.concurrent.thread
 
 /** Step 1 — choose whether this phone is the parent's or the child's device. */
@@ -55,25 +55,25 @@ import kotlin.concurrent.thread
 fun RoleChoiceScreen(onChosen: (DeviceRole) -> Unit) {
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Cupertino.PageGradient))
+            .background(Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(48.dp))
-        Text("Family Link", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+        Text("Family Link", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
         Spacer(Modifier.height(8.dp))
         Text(
             "Auf welchem Gerät wird die App eingerichtet?",
-            fontSize = 16.sp, color = Cupertino.SecondaryLabel, textAlign = TextAlign.Center
+            fontSize = 16.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(36.dp))
 
         RoleCard(
             title = "Eltern-Gerät",
             subtitle = "Regeln festlegen und die Nutzung des Kindes live sehen.",
-            accent = Cupertino.Blue,
-            icon = { Icon(Icons.Filled.Shield, null, tint = Cupertino.Blue, modifier = Modifier.size(30.dp)) }
+            accent = Nova.Primary,
+            icon = { Icon(Icons.Filled.Shield, null, tint = Nova.Primary, modifier = Modifier.size(30.dp)) }
         ) { onChosen(DeviceRole.PARENT) }
 
         Spacer(Modifier.height(16.dp))
@@ -81,14 +81,14 @@ fun RoleChoiceScreen(onChosen: (DeviceRole) -> Unit) {
         RoleCard(
             title = "Kinder-Gerät",
             subtitle = "Wird überwacht. Zeigt die eigene Nutzung und verbleibende Zeit.",
-            accent = Cupertino.Green,
-            icon = { Icon(Icons.Filled.ChildCare, null, tint = Cupertino.Green, modifier = Modifier.size(30.dp)) }
+            accent = Nova.Success,
+            icon = { Icon(Icons.Filled.ChildCare, null, tint = Nova.Success, modifier = Modifier.size(30.dp)) }
         ) { onChosen(DeviceRole.CHILD) }
 
         Spacer(Modifier.height(28.dp))
         Text(
             "Beide Geräte werden über einen 6-stelligen Code verbunden.",
-            fontSize = 13.sp, color = Cupertino.TertiaryLabel, textAlign = TextAlign.Center
+            fontSize = 13.sp, color = Nova.InkFaint, textAlign = TextAlign.Center
         )
     }
 }
@@ -104,7 +104,7 @@ private fun RoleCard(
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(Cupertino.SecondaryBackground)
+            .background(Nova.Surface)
             .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(18.dp))
             .clickable { onClick() }
             .padding(20.dp),
@@ -116,11 +116,11 @@ private fun RoleCard(
         ) { icon() }
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Cupertino.Label)
+            Text(title, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
             Spacer(Modifier.height(4.dp))
-            Text(subtitle, fontSize = 13.sp, color = Cupertino.SecondaryLabel)
+            Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
         }
-        Text("›", fontSize = 26.sp, color = Cupertino.TertiaryLabel)
+        Text("›", fontSize = 26.sp, color = Nova.InkFaint)
     }
 }
 
@@ -148,56 +148,56 @@ fun PairingScreen(role: DeviceRole, onPaired: () -> Unit, onSkip: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Cupertino.PageGradient))
+            .background(Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(40.dp))
         Box(
-            Modifier.size(60.dp).clip(CircleShape).background(Cupertino.Blue.copy(alpha = 0.12f)),
+            Modifier.size(60.dp).clip(CircleShape).background(Nova.Primary.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
-        ) { Icon(Icons.Filled.CloudDone, null, tint = Cupertino.Blue, modifier = Modifier.size(28.dp)) }
+        ) { Icon(Icons.Filled.CloudDone, null, tint = Nova.Primary, modifier = Modifier.size(28.dp)) }
 
         Spacer(Modifier.height(16.dp))
-        Text("Geräte verbinden", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label)
+        Text("Geräte verbinden", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
         Spacer(Modifier.height(6.dp))
         Text(
             if (role == DeviceRole.PARENT)
                 "Diesen Code auf dem Kinder-Gerät eingeben."
             else
                 "Code vom Eltern-Gerät eingeben.",
-            fontSize = 15.sp, color = Cupertino.SecondaryLabel, textAlign = TextAlign.Center
+            fontSize = 15.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
         )
 
         Spacer(Modifier.height(24.dp))
 
         // Server URL
-        Text("Server-Adresse", fontSize = 13.sp, color = Cupertino.SecondaryLabel,
+        Text("Server-Adresse", fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(6.dp))
         InputBox(value = url, placeholder = "https://…firebasedatabase.app", onChange = { url = it })
         Spacer(Modifier.height(4.dp))
         Text(
             "Einmalig: kostenlose Firebase Realtime Database anlegen und URL hier einfügen (siehe README).",
-            fontSize = 11.sp, color = Cupertino.TertiaryLabel
+            fontSize = 11.sp, color = Nova.InkFaint
         )
 
         Spacer(Modifier.height(20.dp))
 
         // Pairing code
-        Text("Verbindungscode", fontSize = 13.sp, color = Cupertino.SecondaryLabel,
+        Text("Verbindungscode", fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(6.dp))
         if (role == DeviceRole.PARENT) {
             Box(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                    .background(Cupertino.Blue.copy(alpha = 0.10f)).padding(vertical = 18.dp),
+                    .background(Nova.Primary.copy(alpha = 0.10f)).padding(vertical = 18.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     code.chunked(3).joinToString(" "),
-                    fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Cupertino.Blue
+                    fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Nova.Primary
                 )
             }
         } else {
@@ -207,19 +207,19 @@ fun PairingScreen(role: DeviceRole, onPaired: () -> Unit, onSkip: () -> Unit) {
         Spacer(Modifier.height(24.dp))
 
         message?.let {
-            Text(it, fontSize = 14.sp, color = if (ok) Cupertino.Green else Cupertino.Red,
+            Text(it, fontSize = 14.sp, color = if (ok) Nova.Success else Nova.Danger,
                 textAlign = TextAlign.Center)
             Spacer(Modifier.height(12.dp))
         }
 
-        CupertinoButton(
+        NovaButton(
             text = when {
                 busy -> "Verbinde…"
                 role == DeviceRole.PARENT -> "Familie erstellen & fortfahren"
                 else -> "Verbinden"
             },
             enabled = !busy && url.isNotBlank() && code.length == 6,
-            color = Cupertino.Blue
+            color = Nova.Primary
         ) {
             busy = true
             message = null
@@ -248,7 +248,7 @@ fun PairingScreen(role: DeviceRole, onPaired: () -> Unit, onSkip: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text(
             "Ohne Verbindung fortfahren (nur lokal)",
-            fontSize = 14.sp, color = Cupertino.Blue,
+            fontSize = 14.sp, color = Nova.Primary,
             modifier = Modifier.clickable { onSkip() }.padding(8.dp)
         )
         Spacer(Modifier.height(24.dp))
@@ -264,17 +264,17 @@ private fun InputBox(
 ) {
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(Cupertino.SecondaryBackground).padding(horizontal = 14.dp, vertical = 14.dp)
+            .background(Nova.Surface).padding(horizontal = 14.dp, vertical = 14.dp)
     ) {
         if (value.isEmpty()) {
-            Text(placeholder, fontSize = 15.sp, color = Cupertino.TertiaryLabel)
+            Text(placeholder, fontSize = 15.sp, color = Nova.InkFaint)
         }
         BasicTextField(
             value = value,
             onValueChange = onChange,
             singleLine = true,
-            textStyle = TextStyle(fontSize = 15.sp, color = Cupertino.Label),
-            cursorBrush = SolidColor(Cupertino.Blue),
+            textStyle = TextStyle(fontSize = 15.sp, color = Nova.Ink),
+            cursorBrush = SolidColor(Nova.Primary),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                 keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Uri
             ),

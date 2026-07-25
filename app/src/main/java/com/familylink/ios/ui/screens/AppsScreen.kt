@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.AppCategory
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.TimeFmt
 
 /**
@@ -57,16 +57,16 @@ fun AppsScreen() {
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Cupertino.PageGradient))
+            .background(Brush.verticalGradient(Nova.PageGradient))
     ) {
         Text(
             "Apps verwalten",
-            fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Cupertino.Label,
+            fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Ink,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp)
         )
         Text(
             "Tippe auf die Markierung, um die Kategorie zu wechseln.",
-            fontSize = 13.sp, color = Cupertino.SecondaryLabel,
+            fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
         Legend()
@@ -83,7 +83,7 @@ fun AppsScreen() {
                 Box(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Cupertino.SecondaryBackground)
+                        .background(Nova.Surface)
                 ) {
                     Row(
                         Modifier.fillMaxWidth().padding(12.dp),
@@ -91,7 +91,7 @@ fun AppsScreen() {
                     ) {
                         // App icon
                         Box(
-                            Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(Cupertino.Fill),
+                            Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(Nova.Fill),
                             contentAlignment = Alignment.Center
                         ) {
                             if (icon != null) {
@@ -100,19 +100,19 @@ fun AppsScreen() {
                                     modifier = Modifier.size(38.dp)
                                 )
                             } else {
-                                Text(app.label.take(1), fontSize = 18.sp, color = Cupertino.Label)
+                                Text(app.label.take(1), fontSize = 18.sp, color = Nova.Ink)
                             }
                         }
                         Spacer(Modifier.width(12.dp))
 
                         Column(Modifier.weight(1f)) {
-                            Text(app.label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Cupertino.Label)
+                            Text(app.label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
                             val sub = when {
                                 cat == AppCategory.LIMIT -> "Limit $limit Min · heute ${TimeFmt.hm(used)}"
                                 used > 0 -> "Heute ${TimeFmt.hm(used)}"
                                 else -> "Heute noch nicht genutzt"
                             }
-                            Text(sub, fontSize = 12.sp, color = Cupertino.SecondaryLabel)
+                            Text(sub, fontSize = 12.sp, color = Nova.InkMuted)
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
@@ -149,10 +149,10 @@ private fun Legend() {
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        LegendDot("Plus", Cupertino.Green)
-        LegendDot("Limit", Cupertino.Orange)
-        LegendDot("Standard", Cupertino.Blue)
-        LegendDot("Gesperrt", Cupertino.Red)
+        LegendDot("Plus", Nova.Success)
+        LegendDot("Limit", Nova.Warning)
+        LegendDot("Standard", Nova.Primary)
+        LegendDot("Gesperrt", Nova.Danger)
     }
 }
 
@@ -161,17 +161,17 @@ private fun LegendDot(text: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(4.dp))
-        Text(text, fontSize = 11.sp, color = Cupertino.SecondaryLabel)
+        Text(text, fontSize = 11.sp, color = Nova.InkMuted)
     }
 }
 
 @Composable
 private fun CategoryChip(cat: AppCategory, onClick: () -> Unit) {
     val (label, color) = when (cat) {
-        AppCategory.PLUS -> "Plus" to Cupertino.Green
-        AppCategory.LIMIT -> "Limit" to Cupertino.Orange
-        AppCategory.STANDARD -> "Standard" to Cupertino.Blue
-        AppCategory.BLOCKED -> "Gesperrt" to Cupertino.Red
+        AppCategory.PLUS -> "Plus" to Nova.Success
+        AppCategory.LIMIT -> "Limit" to Nova.Warning
+        AppCategory.STANDARD -> "Standard" to Nova.Primary
+        AppCategory.BLOCKED -> "Gesperrt" to Nova.Danger
     }
     Box(
         Modifier
@@ -189,7 +189,7 @@ private fun StepperMinutes(minutes: Int, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.height(0.dp))
         StepBtn("−") { onChange((minutes - 5).coerceAtLeast(5)) }
-        Text("$minutes", modifier = Modifier.padding(horizontal = 6.dp), fontSize = 15.sp, color = Cupertino.Label)
+        Text("$minutes", modifier = Modifier.padding(horizontal = 6.dp), fontSize = 15.sp, color = Nova.Ink)
         StepBtn("+") { onChange((minutes + 5).coerceAtMost(240)) }
     }
 }
@@ -204,6 +204,6 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
             .clickable { onClick() }
             .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        Text(label, fontSize = 18.sp, color = Cupertino.Blue)
+        Text(label, fontSize = 18.sp, color = Nova.Primary)
     }
 }

@@ -25,10 +25,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.service.MonitorService
-import com.familylink.ios.ui.cupertino.CupertinoButton
+import com.familylink.ios.ui.components.NovaButton
 import com.familylink.ios.sync.DeviceRole
 import com.familylink.ios.sync.SyncService
 import com.familylink.ios.ui.screens.AppsScreen
+import com.familylink.ios.ui.screens.AuthScreen
+import com.familylink.ios.ui.screens.DevicesScreen
+import com.familylink.ios.ui.screens.FocusScreen
+import com.familylink.ios.ui.screens.RequestTimeScreen
 import com.familylink.ios.ui.screens.ChildPortalScreen
 import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.screens.HomeScreen
@@ -39,7 +43,7 @@ import com.familylink.ios.ui.screens.ParentPortalScreen
 import com.familylink.ios.ui.screens.PermissionsScreen
 import com.familylink.ios.ui.screens.PinMode
 import com.familylink.ios.ui.screens.PinScreen
-import com.familylink.ios.ui.theme.Cupertino
+import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.ui.theme.FamilyLinkTheme
 
 class MainActivity : ComponentActivity() {
@@ -57,7 +61,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             FamilyLinkTheme {
-                Box(Modifier.fillMaxSize().background(Cupertino.SystemBackground)) {
+                Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
                     RootNav()
                 }
             }
@@ -68,6 +72,7 @@ class MainActivity : ComponentActivity() {
 private sealed class Route {
     // setup wizard
     object SetupRole : Route()
+    object SetupAuth : Route()
     object SetupPairing : Route()
     object SetupPin : Route()
     object SetupPermissions : Route()
@@ -81,6 +86,9 @@ private sealed class Route {
     object PortalPermissions : Route()
     object PortalChangePin : Route()
     object PortalSecurePin : Route()
+    object PortalFocus : Route()
+    object PortalDevices : Route()
+    object RequestTime : Route()
 }
 
 @Composable
@@ -105,8 +113,18 @@ private fun RootNav() {
         Route.SetupRole -> RoleChoiceScreen { chosen ->
             prefs.deviceRole = chosen
             role = chosen
-            route = Route.SetupPairing
+            route = Route.SetupAuth
         }
+
+        // Account step: sign up / sign in and register this device (max 3 per family).
+        Route.SetupAuth -> AuthScreen(
+            role = role,
+            onDone = {
+                SyncService.start(context)
+                route = Route.SetupPin
+            },
+            onSkip = { route = Route.SetupPairing }
+        )
 
         Route.SetupPairing -> PairingScreen(
             role = role,
@@ -146,7 +164,7 @@ private fun RootNav() {
         // The child device gets its own informational portal; the parent keeps the control UI.
         Route.Home -> if (prefs.isChildDevice) {
             ChildPortalScreen(
-                onExtendTime = { route = Route.ExtendTime },
+                onExtendTime = { route = Route.RequestTime },
                 onOpenParentArea = { route = Route.VerifyPin }
             )
         } else {
@@ -171,6 +189,8 @@ private fun RootNav() {
             onOpenPermissions = { route = Route.PortalPermissions },
             onChangePin = { route = Route.PortalChangePin },
             onSetSecurePin = { route = Route.PortalSecurePin },
+            onOpenFocus = { route = Route.PortalFocus },
+            onOpenDevices = { route = Route.PortalDevices },
             onExit = { route = Route.Home }
         )
 
@@ -196,6 +216,15 @@ private fun RootNav() {
             onDone = { route = Route.Portal },
             onCancel = { route = Route.Portal }
         )
+
+        // Headline feature: timed focus sessions pushed to the child device.
+        Route.PortalFocus -> FocusScreen(onBack = { route = Route.Portal })
+
+        // Device management with the three-device limit.
+        Route.PortalDevices -> DevicesScreen(onBack = { route = Route.Portal })
+
+        // Child asks the parent for extra minutes.
+        Route.RequestTime -> RequestTimeScreen(onClose = { route = Route.Home })
     }
 }
 
@@ -205,6 +234,6 @@ private fun SetupFooter(text: String, onClick: () -> Unit) {
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Bottom
     ) {
-        CupertinoButton(text = text, onClick = onClick)
+        NovaButton(text = text, onClick = onClick)
     }
 }
