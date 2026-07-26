@@ -88,9 +88,13 @@ fun ParentPortalScreen(
     // On the parent device the numbers come from the child, live; otherwise they are local.
     var childStatus by remember { mutableStateOf(sync.cachedChildStatus()) }
     LaunchedEffect(Unit) {
+        // The parent app has no background service, so it fetches live data itself while open.
         while (prefs.isParentDevice && prefs.syncConfigured) {
-            childStatus = sync.cachedChildStatus()
-            delay(3000)
+            val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { sync.fetchChildStatus() }.getOrNull()
+            }
+            childStatus = fresh ?: sync.cachedChildStatus()
+            delay(5000)
         }
     }
 
@@ -336,7 +340,10 @@ fun ParentPortalScreen(
         SectionHeader("Verwaltung")
         NovaCard {
             NovaRow(title = "Apps & Kategorien", onClick = onOpenApps) { Chevron() }
-            NovaRow(title = "Berechtigungen", onClick = onOpenPermissions) { Chevron() }
+            if (!prefs.isParentDevice) {
+                // Only the supervised device needs system permissions.
+                NovaRow(title = "Berechtigungen", onClick = onOpenPermissions) { Chevron() }
+            }
             NovaRow(title = "Geräte", subtitle = "Max. 3 pro Konto", onClick = onOpenDevices) { Chevron() }
             NovaRow(title = "Wochenbericht", subtitle = "Nutzung der letzten 7 Tage", onClick = onOpenStats) { Chevron() }
         }
@@ -356,7 +363,8 @@ fun ParentPortalScreen(
             }
         }
 
-        // ---- protection level ----
+        // ---- protection level (supervised device only) ----
+        if (!prefs.isParentDevice) {
         SectionHeader("Schutz-Stufe")
         NovaCard {
             val owner = com.familylink.ios.admin.DeviceOwner.isDeviceOwner(context)
@@ -385,6 +393,8 @@ fun ParentPortalScreen(
                     fontSize = 13.sp, color = Nova.InkMuted
                 )
             }
+        }
+
         }
 
         // ---- instant pause ----

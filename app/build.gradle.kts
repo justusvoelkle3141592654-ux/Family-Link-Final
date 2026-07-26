@@ -77,6 +77,10 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // Fingerprint / face unlock for the parent app (BiometricPrompt needs FragmentActivity)
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.3")
+
     // Overlay lock screen renders Compose inside a WindowManager view; needs savedstate glue.
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")

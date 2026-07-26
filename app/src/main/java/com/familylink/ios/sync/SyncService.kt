@@ -128,7 +128,11 @@ class SyncService : Service() {
         const val ACTION_PUSH_NOW = "com.familylink.ios.PUSH_NOW"
 
         fun start(context: Context) {
-            if (!Prefs.get(context).syncConfigured) return
+            val p = Prefs.get(context)
+            if (!p.syncConfigured) return
+            // The parent app shows no persistent notification and runs no background service —
+            // it syncs while the app is open instead.
+            if (p.isParentDevice) return
             try {
                 val i = Intent(context, SyncService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
@@ -139,7 +143,15 @@ class SyncService : Service() {
 
         /** Ask the service to push immediately (called after a settings change). */
         fun pushNow(context: Context) {
-            if (!Prefs.get(context).syncConfigured) return
+            val p = Prefs.get(context)
+            if (!p.syncConfigured) return
+            // On the parent device push directly on a worker thread, no service involved.
+            if (p.isParentDevice) {
+                kotlin.concurrent.thread(isDaemon = true) {
+                    runCatching { SyncManager(context).pushConfig() }
+                }
+                return
+            }
             try {
                 val i = Intent(context, SyncService::class.java).setAction(ACTION_PUSH_NOW)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)

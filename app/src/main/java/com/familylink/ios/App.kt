@@ -14,8 +14,10 @@ class App : Application() {
         if (prefs.isChildDevice || prefs.deviceRole == com.familylink.ios.sync.DeviceRole.UNSET) {
             runCatching { com.familylink.ios.admin.DeviceOwner.applyPolicies(this) }
         }
-        if (prefs.setupDone) {
-            if (!prefs.isParentDevice) MonitorService.start(this)
+        // Parent app: purely a management app — no guard service, no sync service, no
+        // notification, and no usage tracking of the parent's own phone.
+        if (prefs.setupDone && !prefs.isParentDevice) {
+            MonitorService.start(this)
             com.familylink.ios.sync.SyncService.start(this)
         }
     }

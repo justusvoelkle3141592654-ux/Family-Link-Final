@@ -2,7 +2,7 @@ package com.familylink.ios
 
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -45,23 +45,27 @@ import com.familylink.ios.ui.screens.SecurePinSetupScreen
 import com.familylink.ios.ui.screens.ParentPortalScreen
 import com.familylink.ios.ui.screens.PermissionsScreen
 import com.familylink.ios.ui.screens.PinMode
+import com.familylink.ios.ui.screens.ParentUnlockScreen
 import com.familylink.ios.ui.screens.PinScreen
 import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.ui.theme.ThemeMode
 import com.familylink.ios.ui.theme.FamilyLinkTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
-        }
-        // Self-heal: make sure the guard and the sync link are running on every app start.
         val p = Prefs.get(this)
-        if (p.setupDone) {
-            if (p.isChildDevice || p.deviceRole == DeviceRole.UNSET) MonitorService.start(this)
-            SyncService.start(this)
+        // The parent app is a plain management app: no notifications, no background service,
+        // no usage tracking of the parent's own phone.
+        if (!p.isParentDevice) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
+            }
+            if (p.setupDone) {
+                MonitorService.start(this)
+                SyncService.start(this)
+            }
         }
         setContent {
             val prefs = Prefs.get(this)
@@ -93,6 +97,7 @@ private sealed class Route {
     object Home : Route()
     object ExtendTime : Route()
     object VerifyPin : Route()
+    object ParentUnlock : Route()
     object Portal : Route()
     object PortalApps : Route()
     object PortalPermissions : Route()
@@ -114,6 +119,8 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
     var route by remember {
         mutableStateOf<Route>(
             when {
+                // Parent app: unlock (fingerprint or PIN) and go straight to the menu.
+                prefs.setupDone && prefs.isParentDevice -> Route.ParentUnlock
                 prefs.setupDone -> Route.Home
                 prefs.deviceRole == DeviceRole.UNSET -> Route.SetupRole
                 else -> Route.SetupPairing
@@ -156,7 +163,7 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
                 // Only the supervised device needs system permissions.
                 route = if (role == DeviceRole.CHILD) Route.SetupPermissions else {
                     prefs.setupDone = true
-                    Route.Home
+                    Route.Portal
                 }
             }
         )
@@ -176,17 +183,17 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         }
 
         // ---------------- main ----------------
-        // The child device gets its own informational portal; the parent keeps the control UI.
-        Route.Home -> if (prefs.isChildDevice) {
+        // Parent app entry: fingerprint or PIN, then straight into the management menu.
+        Route.ParentUnlock -> ParentUnlockScreen(onUnlocked = { route = Route.Portal })
+
+        // Only the supervised device shows a home screen at all.
+        Route.Home -> if (prefs.isParentDevice) {
+            ParentUnlockScreen(onUnlocked = { route = Route.Portal })
+        } else {
             ChildPortalScreen(
                 onExtendTime = { route = Route.RequestTime },
                 onOpenChores = { route = Route.ChildChores },
                 onOpenParentArea = { route = Route.VerifyPin }
-            )
-        } else {
-            HomeScreen(
-                onOpenParentPortal = { route = Route.VerifyPin },
-                onExtendTime = { route = Route.ExtendTime }
             )
         }
 
@@ -210,7 +217,7 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
             onOpenChores = { route = Route.PortalChores },
             onOpenStats = { route = Route.PortalStats },
             onThemeChanged = onThemeChanged,
-            onExit = { route = Route.Home }
+            onExit = { route = if (prefs.isParentDevice) Route.ParentUnlock else Route.Home }
         )
 
         Route.PortalApps -> {
