@@ -70,7 +70,7 @@ fun BlockListScreen(
     val prefs = remember { Prefs.get(context) }
     var showPlus by remember { mutableStateOf(false) }
 
-    val focus = remember { prefs.focusSession() }
+    val focus = remember { prefs.effectiveFocusSession() }
     val focusRunning = focus.isRunning()
 
     if (showPlus && !bedtime) {

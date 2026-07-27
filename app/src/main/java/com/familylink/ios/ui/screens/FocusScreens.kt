@@ -239,6 +239,183 @@ fun FocusScreen(onBack: () -> Unit) {
     }
 }
 
+/**
+ * FOCUS MODE — child side ("Handy weglegen").
+ *
+ * The child starts a session on itself: pick how long, decide whether the allowed Plus apps
+ * stay usable, tap start. From then on it behaves exactly like a session the parent pushed —
+ * everything else is blocked and the excluded apps disappear from the home screen.
+ *
+ * Ending early needs the parent PIN on purpose. A session the child could cancel with one tap
+ * would not help anyone put their phone away; the countdown running out ends it by itself.
+ */
+@Composable
+fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { Prefs.get(context) }
+    val apps = remember { InstalledApps.load(context) }
+
+    var tick by remember { mutableStateOf(0) }
+    var session by remember { mutableStateOf(prefs.effectiveFocusSession()) }
+    LaunchedEffect(Unit) {
+        while (true) { delay(1000); tick++; session = prefs.effectiveFocusSession() }
+    }
+    @Suppress("UNUSED_EXPRESSION") tick
+
+    var minutes by remember { mutableStateOf(30) }
+    var allowPlus by remember { mutableStateOf(true) }
+    val fromParent = prefs.focusSession().isRunning()
+
+    Column(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
+            .verticalScroll(rememberScrollState()).padding(20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                    .background(Nova.Focus.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.CenterFocusStrong, null, tint = Nova.Focus, modifier = Modifier.size(24.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Handy weglegen", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                Text("Fokus-Zeit, die du selbst startest", fontSize = 13.sp, color = Nova.InkMuted)
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        if (session.isRunning()) {
+            NovaCard {
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    NovaPill(if (fromParent) "Von den Eltern gestartet" else "Läuft", Nova.Focus)
+                    Spacer(Modifier.height(12.dp))
+                    Text(session.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                    Text(
+                        TimeFmt.hm(session.remainingSeconds()) + " übrig",
+                        fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Focus
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        if (session.allowed.isEmpty()) "Nur Telefon und Notruf sind erlaubt."
+                        else "${session.allowed.size} Apps bleiben erlaubt.",
+                        fontSize = 13.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    if (fromParent) {
+                        Text(
+                            "Diese Fokus-Zeit haben deine Eltern gestartet. Sie endet automatisch.",
+                            fontSize = 13.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
+                        )
+                    } else {
+                        NovaButtonTonal(text = "Früher beenden (Eltern-PIN)", onClick = onRequestEnd)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Sonst endet sie von selbst, wenn die Zeit um ist.",
+                            fontSize = 12.sp, color = Nova.InkFaint, textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            Text(
+                "Leg dein Handy für eine feste Zeit weg. Währenddessen ist alles gesperrt — " +
+                    "die Zeit läuft weiter, auch wenn du die App schließt.",
+                fontSize = 14.sp, color = Nova.InkMuted
+            )
+
+            Spacer(Modifier.height(20.dp))
+            Text("Wie lange?", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.InkMuted)
+            Spacer(Modifier.height(8.dp))
+            val choices = listOf(
+                "Kurz" to 15,
+                "Halbe Stunde" to 30,
+                "Eine Stunde" to 60,
+                "Zwei Stunden" to 120
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                choices.take(2).forEach { (name, m) ->
+                    PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                choices.drop(2).forEach { (name, m) ->
+                    PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text("Was bleibt erlaubt?", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.InkMuted)
+            Spacer(Modifier.height(8.dp))
+            NovaCard {
+                Column {
+                    ChoiceRow(
+                        title = "Zugelassene Plus-Apps",
+                        subtitle = "Schule, Musik und alles, was auf Plus steht, geht weiter.",
+                        selected = allowPlus
+                    ) { allowPlus = true }
+                    ChoiceRow(
+                        title = "Wirklich nichts",
+                        subtitle = "Nur noch Telefon und Notruf. Am konsequentesten.",
+                        selected = !allowPlus
+                    ) { allowPlus = false }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            NovaButton(text = "Jetzt weglegen ($minutes Min)", color = Nova.Focus) {
+                val now = System.currentTimeMillis()
+                val allowed =
+                    if (allowPlus) apps.map { it.packageName }
+                        .filter { prefs.categoryOf(it) == AppCategory.PLUS }
+                    else emptyList()
+                prefs.setSelfFocusSession(
+                    FocusSession(
+                        active = true,
+                        endsAt = now + minutes * 60_000L,
+                        label = "Handy weggelegt",
+                        allowed = allowed,
+                        startedAt = now,
+                        durationSeconds = minutes * 60
+                    )
+                )
+                // Apply at once instead of waiting for the next tick, and let the parent see it.
+                com.familylink.ios.service.MonitorService.recheck(context)
+                SyncService.pushNow(context)
+                session = prefs.effectiveFocusSession()
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        NovaButtonTonal(text = "Zurück", onClick = onBack)
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
+            Text(subtitle, fontSize = 12.sp, color = Nova.InkMuted)
+        }
+        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier.size(22.dp).clip(CircleShape)
+                .background(if (selected) Nova.Focus else Nova.Fill),
+            contentAlignment = Alignment.Center
+        ) {
+            if (selected) Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
 @Composable
 private fun PresetChip(name: String, mins: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(

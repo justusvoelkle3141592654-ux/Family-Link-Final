@@ -71,8 +71,9 @@ class LimitEngine(private val prefs: Prefs) {
         // phone/system usable and makes it non-dismissible. It outranks the off-button.
         if (prefs.isBedtime()) return LockDecision.Bedtime
 
-        // Focus mode (parent-started): only the explicitly allowed apps stay usable.
-        val focus = prefs.focusSession()
+        // Focus mode: only the explicitly allowed apps stay usable. Either the parent pushed
+        // the session, or the child started one on itself to put the phone away.
+        val focus = prefs.effectiveFocusSession()
         if (focus.isRunning()) {
             if (pkg == null) return LockDecision.Allowed
             // The home screen MUST stay reachable — otherwise the block screen fires on the

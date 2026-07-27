@@ -62,6 +62,7 @@ import kotlinx.coroutines.delay
 fun ChildPortalScreen(
     onExtendTime: () -> Unit,
     onOpenChores: () -> Unit,
+    onOpenFocus: () -> Unit,
     onOpenParentArea: () -> Unit
 ) {
     val context = LocalContext.current
@@ -241,6 +242,29 @@ fun ChildPortalScreen(
                     Text("→", color = Color.White, fontSize = 22.sp)
                 }
             }
+            Spacer(Modifier.height(10.dp))
+
+            // Focus you start yourself — for deliberately putting the phone away.
+            val ownFocus = prefs.effectiveFocusSession()
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(Nova.Focus.copy(alpha = 0.14f))
+                    .clickable { onOpenFocus() }.padding(18.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Handy weglegen", color = Nova.Focus, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (ownFocus.isRunning())
+                                "Läuft — noch ${TimeFmt.hm(ownFocus.remainingSeconds())}"
+                            else "Fokus-Zeit selbst starten",
+                            color = Nova.InkMuted, fontSize = 13.sp
+                        )
+                    }
+                    Text("→", color = Nova.Focus, fontSize = 22.sp)
+                }
+            }
+
             Spacer(Modifier.height(10.dp))
             Box(
                 Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(15.dp))

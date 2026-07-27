@@ -181,6 +181,41 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     }
 
     /**
+     * A focus session the CHILD started on itself ("Handy weglegen").
+     *
+     * Deliberately a separate slot from [focusJson]: the parent's config is copied over that one
+     * on every sync, and since the parent's own session is normally OFF, a self-started session
+     * stored there would be wiped a second or two after the child started it.
+     */
+    var selfFocusJson: String
+        get() = sp.getString("self_focus_json", "") ?: ""
+        set(v) = sp.edit().putString("self_focus_json", v).apply()
+
+    fun selfFocusSession(): com.familylink.ios.sync.FocusSession = runCatching {
+        if (selfFocusJson.isBlank()) com.familylink.ios.sync.FocusSession.OFF
+        else com.familylink.ios.sync.FocusSession.fromJson(JSONObject(selfFocusJson))
+    }.getOrDefault(com.familylink.ios.sync.FocusSession.OFF)
+
+    fun setSelfFocusSession(s: com.familylink.ios.sync.FocusSession) {
+        selfFocusJson = s.toJson().toString()
+    }
+
+    /** True while the running session is one the child started itself. */
+    fun isSelfFocusRunning(): Boolean =
+        !focusSession().isRunning() && selfFocusSession().isRunning()
+
+    /**
+     * The session that actually governs the device right now. A session pushed by the parent
+     * always wins over one the child started itself.
+     */
+    fun effectiveFocusSession(): com.familylink.ios.sync.FocusSession {
+        val fromParent = focusSession()
+        if (fromParent.isRunning()) return fromParent
+        val own = selfFocusSession()
+        return if (own.isRunning()) own else com.familylink.ios.sync.FocusSession.OFF
+    }
+
+    /**
      * Packages currently hidden from the launcher because a focus session excludes them.
      * Persisted on purpose: if the monitor service is killed while a session runs, the set
      * would otherwise be lost and those apps would stay hidden forever.

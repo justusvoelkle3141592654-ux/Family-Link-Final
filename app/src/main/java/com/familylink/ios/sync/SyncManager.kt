@@ -229,7 +229,7 @@ class SyncManager(private val context: Context) {
         val counted = runCatching { LimitEngine(prefs).computeGlobalUsedSeconds(usage) }
             .getOrDefault(prefs.globalUsedSeconds)
 
-        val focus = prefs.focusSession()
+        val focus = prefs.effectiveFocusSession()
         val status = ChildStatus(
             globalUsedSeconds = counted,
             totalDeviceSeconds = totalDevice,

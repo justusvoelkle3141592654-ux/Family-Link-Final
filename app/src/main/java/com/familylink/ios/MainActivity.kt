@@ -36,6 +36,7 @@ import com.familylink.ios.ui.screens.StatsScreen
 import com.familylink.ios.ui.screens.DevicesScreen
 import com.familylink.ios.ui.screens.FocusScreen
 import com.familylink.ios.ui.screens.RequestTimeScreen
+import com.familylink.ios.ui.screens.ChildFocusScreen
 import com.familylink.ios.ui.screens.ChildPortalScreen
 import com.familylink.ios.ui.screens.ExtendTimeScreen
 import com.familylink.ios.ui.screens.HomeScreen
@@ -108,6 +109,8 @@ private sealed class Route {
     object RequestTime : Route()
     object PortalChores : Route()
     object ChildChores : Route()
+    object ChildFocus : Route()
+    object ChildFocusEnd : Route()
     object PortalStats : Route()
 }
 
@@ -193,6 +196,7 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
             ChildPortalScreen(
                 onExtendTime = { route = Route.RequestTime },
                 onOpenChores = { route = Route.ChildChores },
+                onOpenFocus = { route = Route.ChildFocus },
                 onOpenParentArea = { route = Route.VerifyPin }
             )
         }
@@ -255,6 +259,22 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         // Chores: parent defines and confirms, child claims.
         Route.PortalChores -> ChoresParentScreen(onBack = { route = Route.Portal })
         Route.ChildChores -> ChoresChildScreen(onBack = { route = Route.Home })
+
+        // Child-started focus ("Handy weglegen"). Ending it early needs the parent PIN, so a
+        // session the child committed to cannot be undone with a single tap.
+        Route.ChildFocus -> ChildFocusScreen(
+            onBack = { route = Route.Home },
+            onRequestEnd = { route = Route.ChildFocusEnd }
+        )
+        Route.ChildFocusEnd -> PinScreen(
+            mode = PinMode.VERIFY,
+            onSuccess = {
+                prefs.setSelfFocusSession(com.familylink.ios.sync.FocusSession.OFF)
+                MonitorService.recheck(context)
+                route = Route.Home
+            },
+            onCancel = { route = Route.ChildFocus }
+        )
 
         // Weekly statistics.
         Route.PortalStats -> StatsScreen(onBack = { route = Route.Portal })

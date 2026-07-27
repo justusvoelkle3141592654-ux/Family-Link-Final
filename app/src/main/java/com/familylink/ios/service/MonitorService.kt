@@ -153,7 +153,7 @@ class MonitorService : Service() {
         // Keyed on the session itself, NOT on the decision: while the child is inside an
         // allowed app the decision is "Allowed", and reading that as "no focus" would reveal
         // every hidden app again on each tick.
-        applyFocusHiding(prefs.focusSession().isRunning())
+        applyFocusHiding(prefs.effectiveFocusSession().isRunning())
 
         // Bedtime ambient sound.
         if (isBedtimeNow && prefs.bedtimeSoundEnabled) {
@@ -223,7 +223,7 @@ class MonitorService : Service() {
             return
         }
 
-        val allowed = prefs.focusSession().allowed.toSet()
+        val allowed = prefs.effectiveFocusSession().allowed.toSet()
         val toHide = managedPackages.filterNot { it in allowed }
         hiddenForFocus = runCatching {
             com.familylink.ios.admin.DeviceOwner.setAppsHidden(this, toHide, true)

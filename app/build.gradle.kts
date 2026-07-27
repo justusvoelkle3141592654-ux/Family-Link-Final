@@ -11,14 +11,39 @@ android {
         applicationId = "com.familylink.ios"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         vectorDrawables { useSupportLibrary = true }
     }
 
+    /**
+     * A FIXED signing key, checked into the repository on purpose.
+     *
+     * Android refuses to install a build over an existing app when the two are signed with
+     * different keys. Without a key of our own, every CI run generated a fresh random debug
+     * keystore, so each new APK could only be installed after uninstalling the old one — which
+     * wiped the setup, the PIN and the pairing every single time.
+     *
+     * With this key every future build installs straight over the previous one as an update.
+     * The key protects nothing secret: the app is distributed by hand to this family's own
+     * phones, not through a store, so there is no signature anyone could usefully forge.
+     */
+    signingConfigs {
+        create("familylink") {
+            storeFile = rootProject.file("familylink-release.jks")
+            storePassword = "familylink"
+            keyAlias = "familylink"
+            keyPassword = "familylink"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("familylink")
+        }
         release {
+            signingConfig = signingConfigs.getByName("familylink")
             // Kept off so a plain `assembleRelease` produces an installable, un-signed-shrink-free APK.
             // Enable for a smaller production build once you have a signing config.
             isMinifyEnabled = false
