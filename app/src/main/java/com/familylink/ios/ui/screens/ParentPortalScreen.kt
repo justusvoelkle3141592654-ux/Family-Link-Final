@@ -17,7 +17,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.Icon
 import androidx.compose.material.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,6 +78,22 @@ fun ParentPortalScreen(
         if (v > 0 && prefs.isParentDevice) SyncService.pushNow(context)
     }
 
+    // Manual refresh: forces a full exchange instead of waiting for the next tick.
+    var refreshing by remember { mutableStateOf(false) }
+    var refreshTick by remember { mutableStateOf(0) }
+    fun refreshNow() {
+        if (refreshing) return
+        refreshing = true
+        thread(isDaemon = true) {
+            runCatching { sync.syncNow() }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                refreshing = false
+                refreshTick++
+                v++
+            }
+        }
+    }
+
     // Live time requests from the child device.
     var pendingRequest by remember { mutableStateOf<TimeRequest?>(null) }
     LaunchedEffect(Unit) {
@@ -98,6 +117,11 @@ fun ParentPortalScreen(
         }
     }
 
+    // Re-read after a manual refresh so the new numbers appear right away.
+    LaunchedEffect(refreshTick) {
+        if (refreshTick > 0) childStatus = sync.cachedChildStatus()
+    }
+
     val remote = childStatus.takeIf { prefs.isParentDevice }
     val used = remote?.globalUsedSeconds ?: prefs.globalUsedSeconds
     val limit = remote?.limitSeconds?.takeIf { it > 0 }
@@ -113,7 +137,27 @@ fun ParentPortalScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Eltern-Portal", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
             Spacer(Modifier.weight(1f))
+            if (prefs.syncConfigured) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(Nova.Primary.copy(alpha = 0.12f))
+                        .clickable(enabled = !refreshing) { refreshNow() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Refresh,
+                        contentDescription = "Aktualisieren",
+                        tint = if (refreshing) Nova.InkFaint else Nova.Primary,
+                        modifier = Modifier.size(21.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+            }
             Text("Fertig", color = Nova.Primary, fontSize = 17.sp, modifier = Modifier.clickable { onExit() })
+        }
+        if (refreshing) {
+            Text("Aktualisiere…", fontSize = 12.sp, color = Nova.InkMuted,
+                modifier = Modifier.padding(top = 4.dp))
         }
 
         // ---- connection status ----
@@ -201,21 +245,55 @@ fun ParentPortalScreen(
 
         // ---- live per-app usage from the child device ----
         if (remote != null && remote.perAppSeconds.isNotEmpty()) {
-            SectionHeader("Apps auf dem Kinder-Gerät")
+            val ranked = remote.perAppSeconds.entries.sortedByDescending { it.value }
+            SectionHeader("Nutzungszeit pro App (${ranked.size})")
             NovaCard {
-                remote.perAppSeconds.entries
-                    .sortedByDescending { it.value }
-                    .take(10)
-                    .forEach { (pkg, secs) ->
+                Column(Modifier.padding(vertical = 6.dp)) {
+                    val top = ranked.first().value.coerceAtLeast(1)
+                    ranked.take(15).forEach { (pkg, secs) ->
                         val label = remote.perAppLabels[pkg] ?: pkg
                         val blocked = pkg in remote.blockedToday
-                        NovaRow(title = label, subtitle = TimeFmt.hm(secs)) {
-                            if (blocked) {
-                                Text("Gesperrt", color = Nova.Danger, fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold)
+                        val cat = prefs.categoryOf(pkg)
+                        val catColor = when (cat) {
+                            com.familylink.ios.data.AppCategory.PLUS -> Nova.CatPlus
+                            com.familylink.ios.data.AppCategory.LIMIT -> Nova.CatLimit
+                            com.familylink.ios.data.AppCategory.BLOCKED -> Nova.CatBlocked
+                            else -> Nova.CatStandard
+                        }
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 7.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(8.dp).clip(CircleShape).background(catColor))
+                                Spacer(Modifier.width(8.dp))
+                                Text(label, fontSize = 15.sp, color = Nova.Ink, modifier = Modifier.weight(1f))
+                                if (blocked) {
+                                    NovaPill("Gesperrt", Nova.Danger)
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    TimeFmt.hm(secs), fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold, color = Nova.InkMuted
+                                )
+                            }
+                            Spacer(Modifier.height(5.dp))
+                            Box(
+                                Modifier.fillMaxWidth().height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp)).background(Nova.Fill)
+                            ) {
+                                Box(
+                                    Modifier.fillMaxWidth((secs.toFloat() / top).coerceIn(0.02f, 1f))
+                                        .height(5.dp).clip(RoundedCornerShape(3.dp)).background(catColor)
+                                )
                             }
                         }
                     }
+                    if (ranked.size > 15) {
+                        Text(
+                            "… und ${ranked.size - 15} weitere",
+                            fontSize = 12.sp, color = Nova.InkFaint,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
         }
 

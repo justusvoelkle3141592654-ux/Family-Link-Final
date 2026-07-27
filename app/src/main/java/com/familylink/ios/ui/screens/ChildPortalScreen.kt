@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +66,16 @@ fun ChildPortalScreen(
 ) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
+    val sync = remember { com.familylink.ios.sync.SyncManager(context) }
+    var refreshing by remember { mutableStateOf(false) }
+    fun refreshNow() {
+        if (refreshing) return
+        refreshing = true
+        kotlin.concurrent.thread(isDaemon = true) {
+            runCatching { sync.syncNow() }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { refreshing = false }
+        }
+    }
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(1000); tick++ } }
     @Suppress("UNUSED_EXPRESSION") tick
@@ -101,6 +112,21 @@ fun ChildPortalScreen(
             Column(Modifier.weight(1f)) {
                 Text("Meine Zeit", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
                 Text(TimeFmt.nowLong(), fontSize = 13.sp, color = Nova.InkMuted)
+            }
+            if (prefs.syncConfigured) {
+                Box(
+                    Modifier.size(38.dp).clip(CircleShape)
+                        .background(Nova.Primary.copy(alpha = 0.12f))
+                        .clickable(enabled = !refreshing) { refreshNow() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Refresh, "Aktualisieren",
+                        tint = if (refreshing) Nova.InkFaint else Nova.Primary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
             }
             SyncBadge(prefs)
         }

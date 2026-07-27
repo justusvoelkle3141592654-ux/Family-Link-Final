@@ -158,6 +158,36 @@ class SyncManager(private val context: Context) {
         return runCatching { ChildStatus.fromJson(json) }.getOrNull()
     }
 
+    /**
+     * Force a full exchange right now, in both directions. Used by the refresh button so a
+     * parent never has to wait for the next polling tick — and so a child can push its usage
+     * immediately after the parent asks for it.
+     *
+     * Blocking; call from a background thread. Returns true when the device's own upload
+     * succeeded.
+     */
+    fun syncNow(): Boolean {
+        if (!prefs.syncConfigured) return false
+        return if (prefs.isParentDevice) {
+            // Publish current rules, then pull the child's latest numbers.
+            val pushed = pushConfig()
+            fetchChildStatus()
+            fetchChoreClaims().takeIf { it.isNotEmpty() }?.let { claims ->
+                // Merge chore claims coming from the child so the portal shows them at once.
+                val local = prefs.getChores().associateBy { it.id }
+                prefs.setChores(claims.map { incoming ->
+                    val l = local[incoming.id]
+                    if (l != null && l.isApproved && !incoming.isApproved) l else incoming
+                })
+            }
+            pushed
+        } else {
+            // Child: apply the newest rules, then report its own usage.
+            fetchConfigOnce()
+            pushStatus()
+        }
+    }
+
     /** Last known child status from cache (no network). */
     fun cachedChildStatus(): ChildStatus? {
         val raw = prefs.cachedChildStatus
