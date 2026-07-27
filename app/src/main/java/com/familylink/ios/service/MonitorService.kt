@@ -59,6 +59,10 @@ class MonitorService : Service() {
     private var focusHidingActive = false
     private var hiddenForFocus: Set<String> = emptySet()
 
+    // Absolute-ceiling escalation timers (see enforceHardCap).
+    private var lastHardCapCountAt = 0L
+    private var lastHardCapLockAt = 0L
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
@@ -124,10 +128,11 @@ class MonitorService : Service() {
         val decision = engine.decide(pkg, usage)
 
         val isBedtimeNow = decision is LockDecision.Bedtime
-        // Only a single app's own limit may be dismissed; day limit, bedtime and an active
-        // focus session are hard locks.
+        // Only a single app's own limit may be dismissed; day limit, bedtime, the absolute
+        // ceiling and an active focus session are hard locks.
         val hardLock = isBedtimeNow ||
             decision is LockDecision.GlobalLimitReached ||
+            decision is LockDecision.HardCapReached ||
             decision is LockDecision.FocusActive
         // Publish state for the accessibility service (multi-window / bypass hardening).
         LockState.update(
@@ -168,10 +173,10 @@ class MonitorService : Service() {
         if (engine.isAlwaysExempt(pkg)) return
 
         val bedtime = isBedtimeNow
-        // Only bedtime blocks literally everything (launcher included). A focus session must
-        // leave the home screen usable, otherwise the child can never reach the apps that the
-        // session allows — which is what made focus mode look broken.
-        val blocksEverything = bedtime
+        // Bedtime and the absolute ceiling block literally everything, launcher included — at
+        // that point the phone is simply done. A focus session is different: it must leave the
+        // home screen usable, otherwise the child can never reach the apps the session allows.
+        val blocksEverything = bedtime || decision is LockDecision.HardCapReached
         if (!blocksEverything) {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
@@ -190,6 +195,7 @@ class MonitorService : Service() {
             is LockDecision.AppLimitReached -> prefs.recordBlocked(decision.pkg)
             is LockDecision.AppBlocked -> prefs.recordBlocked(decision.pkg)
             is LockDecision.GlobalLimitReached -> prefs.recordBlocked(pkg)
+            is LockDecision.HardCapReached -> { prefs.recordBlocked(pkg); enforceHardCap() }
             else -> {}
         }
 
@@ -200,6 +206,34 @@ class MonitorService : Service() {
 
         val (title, detail) = messageFor(decision)
         main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock) }
+    }
+
+    /**
+     * Escalation for the absolute daily ceiling.
+     *
+     * Reaching it shows the block screen like any other lock. Ignoring it and opening something
+     * anyway locks the display. The first attempts get a grace window so a single accidental tap
+     * does not lock the phone over and over; from [Prefs.HARDCAP_LOCK_ALWAYS_FROM] attempts on
+     * the display locks on every further attempt — at that point the child is clearly trying to
+     * sit the ceiling out.
+     *
+     * The phone and emergency dialler are never affected: the engine returns Allowed for those
+     * before this code is ever reached.
+     */
+    private fun enforceHardCap() {
+        val now = SystemClock.uptimeMillis()
+
+        // One "attempt" per window, so a 1.5s tick loop does not inflate the counter.
+        if (now - lastHardCapCountAt >= HARDCAP_ATTEMPT_MS) {
+            lastHardCapCountAt = now
+            prefs.recordHardCapHit()
+        }
+
+        val persistent = prefs.hardCapHitsToday >= Prefs.HARDCAP_LOCK_ALWAYS_FROM
+        val cooldown = if (persistent) HARDCAP_LOCK_PERSISTENT_MS else HARDCAP_LOCK_GRACE_MS
+        if (now - lastHardCapLockAt < cooldown) return
+        lastHardCapLockAt = now
+        runCatching { com.familylink.ios.admin.DeviceAdmin.lockNow(this) }
     }
 
     /**
@@ -245,6 +279,10 @@ class MonitorService : Service() {
             "Einstellungen gesperrt" to "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal."
         is LockDecision.FocusActive ->
             "Fokus: ${decision.label}" to "Noch ${TimeFmt.hm(decision.remainingSeconds)} — nur Fokus-Apps sind erlaubt."
+        is LockDecision.HardCapReached ->
+            "Gesamtlimit erreicht" to
+                "Das Handy wurde heute ${TimeFmt.hm(decision.usedSeconds)} benutzt — das Maximum " +
+                "sind ${TimeFmt.hm(decision.capSeconds)}. Morgen geht es weiter."
         LockDecision.Allowed -> "" to ""
     }
 
@@ -283,6 +321,12 @@ class MonitorService : Service() {
     companion object {
         private const val TICK_MS = 1500L
         private const val RELAUNCH_COOLDOWN_MS = 2500L
+        /** One counted attempt per this window, so ticks do not inflate the counter. */
+        private const val HARDCAP_ATTEMPT_MS = 15_000L
+        /** Grace between screen locks while the child is still under the attempt threshold. */
+        private const val HARDCAP_LOCK_GRACE_MS = 120_000L
+        /** Once the threshold is passed, lock again almost immediately on every attempt. */
+        private const val HARDCAP_LOCK_PERSISTENT_MS = 5_000L
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "family_link_monitor"
         const val ACTION_RECHECK = "com.familylink.ios.RECHECK"

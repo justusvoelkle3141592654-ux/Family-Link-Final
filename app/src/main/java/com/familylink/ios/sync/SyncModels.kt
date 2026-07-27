@@ -103,12 +103,17 @@ data class FamilyConfig(
     val chores: List<Chore> = emptyList(),
     /** How the daily budget is measured on the child device. */
     val usageMode: String = "CATEGORIES",
+    /** Absolute daily ceiling across ALL apps (Plus included). */
+    val hardCapEnabled: Boolean = true,
+    val hardCapMinutes: Int = 180,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("focus", focus.toJson())
         put("chores", Chore.listToJson(chores))
         put("usageMode", usageMode)
+        put("hardCapEnabled", hardCapEnabled)
+        put("hardCapMinutes", hardCapMinutes)
         put("globalLimitMinutes", globalLimitMinutes)
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
@@ -153,6 +158,8 @@ data class FamilyConfig(
                 focus = FocusSession.fromJson(o.optJSONObject("focus")),
                 chores = Chore.listFromJson(o.optJSONArray("chores")),
                 usageMode = o.optString("usageMode", "CATEGORIES"),
+                hardCapEnabled = o.optBoolean("hardCapEnabled", true),
+                hardCapMinutes = o.optInt("hardCapMinutes", 180),
                 updatedAt = o.optLong("updatedAt", 0)
             )
         }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -138,6 +139,34 @@ fun ParentPortalScreen(
     val limit = remote?.limitSeconds?.takeIf { it > 0 }
         ?: (prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday)
 
+    // The parent app opens on a compact dashboard; everything else lives behind the ☰ menu.
+    // The child device keeps the single long page it always had.
+    var showSettings by remember { mutableStateOf(!prefs.isParentDevice) }
+
+    if (prefs.isParentDevice && !showSettings) {
+        ParentDashboard(
+            prefs = prefs,
+            remote = remote,
+            used = used,
+            limit = limit,
+            refreshing = refreshing,
+            pendingRequest = pendingRequest,
+            onRefresh = { refreshNow() },
+            onOpenMenu = { showSettings = true },
+            onGrant = { minutes ->
+                prefs.addBonusMinutes(minutes)
+                v++
+            },
+            onDecideRequest = { req, approve ->
+                thread(isDaemon = true) { sync.decideRequest(req, approve) }
+                pendingRequest = null
+                v++
+            },
+            onExit = onExit
+        )
+        return
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -146,7 +175,17 @@ fun ParentPortalScreen(
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Eltern-Portal", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+            if (prefs.isParentDevice) {
+                Text(
+                    "‹ Übersicht", color = Nova.Primary, fontSize = 17.sp,
+                    modifier = Modifier.clickable { showSettings = false }.padding(end = 12.dp)
+                )
+            }
+            Text(
+                if (prefs.isParentDevice) "Einstellungen" else "Eltern-Portal",
+                fontSize = if (prefs.isParentDevice) 26.sp else 34.sp,
+                fontWeight = FontWeight.Bold, color = Nova.Ink
+            )
             Spacer(Modifier.weight(1f))
             if (prefs.syncConfigured) {
                 Box(
@@ -379,6 +418,36 @@ fun ParentPortalScreen(
                     onMinus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes - 15).coerceAtLeast(0); v++ },
                     onPlus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes + 15).coerceAtMost(Prefs.MAX_GLOBAL_LIMIT_MIN); v++ }
                 )
+            }
+        }
+
+        // ---- absolute ceiling over every app ----
+        SectionHeader("Gesamtlimit (alle Apps)")
+        NovaCard {
+            NovaRow(
+                title = "Gesamtlimit aktiv",
+                subtitle = "Zählt jede App mit — auch Plus. Nicht durch Bonus, Verlängerung " +
+                    "oder den Aus-Knopf zu umgehen."
+            ) {
+                NovaSwitch(checked = prefs.hardCapEnabled) { prefs.hardCapEnabled = it; v++ }
+            }
+            if (prefs.hardCapEnabled) {
+                NovaRow(title = "Maximum", subtitle = "max. ${Prefs.MAX_HARDCAP_MIN / 60} Stunden") {
+                    Stepper(
+                        value = TimeFmt.hm(prefs.hardCapMinutes * 60),
+                        onMinus = { prefs.hardCapMinutes = prefs.hardCapMinutes - 15; v++ },
+                        onPlus = { prefs.hardCapMinutes = prefs.hardCapMinutes + 15; v++ }
+                    )
+                }
+                NovaRow(
+                    title = "Bei Missachtung",
+                    subtitle = "Erst die Sperrseite. Wer trotzdem weitermacht, bekommt den " +
+                        "Bildschirm gesperrt — ab ${Prefs.HARDCAP_LOCK_ALWAYS_FROM} Versuchen " +
+                        "bei jedem weiteren Versuch."
+                ) {
+                    val hits = if (prefs.isParentDevice) 0 else prefs.hardCapHitsToday
+                    if (hits > 0) NovaPill("$hits heute", Nova.Danger)
+                }
             }
         }
 
@@ -648,6 +717,268 @@ fun ParentPortalScreen(
         Text(
             "Das Eltern-Portal ist jederzeit mit der PIN erreichbar.",
             fontSize = 12.sp, color = Nova.InkFaint
+        )
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * The parent app's landing screen: everything that matters at a glance, nothing to scroll for.
+ *
+ *  - how much of the day's budget is gone and what is left,
+ *  - the absolute ceiling across all apps,
+ *  - the three apps the child used most today,
+ *  - one prominent button to grant extra time,
+ *  - a pending request from the child, answerable right here.
+ *
+ * Every setting lives behind the ☰ button instead of on one endless page.
+ */
+@Composable
+private fun ParentDashboard(
+    prefs: Prefs,
+    remote: com.familylink.ios.sync.ChildStatus?,
+    used: Int,
+    limit: Int,
+    refreshing: Boolean,
+    pendingRequest: TimeRequest?,
+    onRefresh: () -> Unit,
+    onOpenMenu: () -> Unit,
+    onGrant: (Int) -> Unit,
+    onDecideRequest: (TimeRequest, Boolean) -> Unit,
+    onExit: () -> Unit
+) {
+    val online = prefs.syncConfigured && System.currentTimeMillis() - prefs.lastSyncAt < 120_000
+    val remaining = (limit - used).coerceAtLeast(0)
+    val total = remote?.totalDeviceSeconds ?: 0
+    val cap = prefs.hardCapMinutes * 60
+
+    Column(
+        Modifier.fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        // ---- header: ☰ leads to every setting ----
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(42.dp).clip(RoundedCornerShape(13.dp))
+                    .background(Nova.Primary.copy(alpha = 0.12f))
+                    .clickable { onOpenMenu() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Menu, "Einstellungen", tint = Nova.Primary, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Übersicht", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                Text(
+                    if (online) remote?.deviceName ?: "Kinder-Gerät" else "Keine aktuelle Verbindung",
+                    fontSize = 12.sp, color = if (online) Nova.Success else Nova.Warning
+                )
+            }
+            if (prefs.syncConfigured) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(Nova.Primary.copy(alpha = 0.12f))
+                        .clickable(enabled = !refreshing) { onRefresh() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Refresh, "Aktualisieren",
+                        tint = if (refreshing) Nova.InkFaint else Nova.Primary,
+                        modifier = Modifier.size(21.dp)
+                    )
+                }
+            }
+        }
+        if (refreshing) {
+            Text("Aktualisiere…", fontSize = 12.sp, color = Nova.InkMuted, modifier = Modifier.padding(top = 6.dp))
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (remote == null) {
+            NovaCard {
+                Column(Modifier.padding(18.dp)) {
+                    Text("Noch keine Daten", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Nova.InkMuted)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (!prefs.syncConfigured) "Dieses Gerät ist mit keinem Konto verbunden."
+                        else "Warte auf das Kinder-Gerät.",
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
+                }
+            }
+        } else {
+            // ---- headline: what is left of the day's budget ----
+            NovaCard {
+                Column(Modifier.padding(20.dp)) {
+                    Text("Noch übrig heute", fontSize = 13.sp, color = Nova.InkMuted)
+                    Text(
+                        TimeFmt.hm(remaining),
+                        fontSize = 46.sp, fontWeight = FontWeight.ExtraBold,
+                        color = if (remaining == 0) Nova.Danger else Nova.Primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)} verbraucht",
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    ProgressBar(if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
+
+                    Spacer(Modifier.height(16.dp))
+                    // ---- the absolute ceiling across every app ----
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Gesamtlimit (alle Apps)", fontSize = 13.sp, color = Nova.InkMuted,
+                            modifier = Modifier.weight(1f))
+                        Text(
+                            if (prefs.hardCapEnabled) "${TimeFmt.hm(total)} / ${TimeFmt.hm(cap)}" else "aus",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            color = if (prefs.hardCapEnabled && total >= cap) Nova.Danger else Nova.Ink
+                        )
+                    }
+                    if (prefs.hardCapEnabled) {
+                        Spacer(Modifier.height(8.dp))
+                        ProgressBar((total.toFloat() / cap.coerceAtLeast(1)).coerceIn(0f, 1f))
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (remote.bedtimeActive) NovaPill("Ruhezeit", Nova.Night)
+                        if (remote.focusLabel.isNotBlank()) NovaPill("Fokus: ${remote.focusLabel}", Nova.Focus)
+                        if (remote.bonusSeconds > 0) NovaPill("+${remote.bonusSeconds / 60} Bonus", Nova.Success)
+                        if (remote.batteryPercent in 0..100) NovaPill(
+                            "Akku ${remote.batteryPercent}%",
+                            if (remote.batteryPercent < 20) Nova.Danger else Nova.InkMuted
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    val age = remote.ageSeconds()
+                    Text(
+                        if (age < 60) "Aktualisiert gerade eben" else "Zuletzt aktualisiert vor ${TimeFmt.hm(age)}",
+                        fontSize = 11.sp, color = Nova.InkFaint
+                    )
+                }
+            }
+
+            // ---- top 3 apps ----
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Meistgenutzt heute")
+            NovaCard {
+                val top3 = remote.perAppSeconds.entries.sortedByDescending { it.value }.take(3)
+                if (top3.isEmpty()) {
+                    Text(
+                        "Heute noch keine App genutzt.",
+                        fontSize = 13.sp, color = Nova.InkMuted, modifier = Modifier.padding(16.dp)
+                    )
+                } else {
+                    Column(Modifier.padding(vertical = 6.dp)) {
+                        val top = top3.first().value.coerceAtLeast(1)
+                        top3.forEachIndexed { i, (pkg, secs) ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "${i + 1}", fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                    color = Nova.InkFaint, modifier = Modifier.width(22.dp)
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        remote.perAppLabels[pkg] ?: pkg,
+                                        fontSize = 15.sp, color = Nova.Ink
+                                    )
+                                    Spacer(Modifier.height(5.dp))
+                                    Box(
+                                        Modifier.fillMaxWidth().height(5.dp)
+                                            .clip(RoundedCornerShape(3.dp)).background(Nova.Fill)
+                                    ) {
+                                        Box(
+                                            Modifier.fillMaxWidth((secs.toFloat() / top).coerceIn(0.02f, 1f))
+                                                .height(5.dp).clip(RoundedCornerShape(3.dp))
+                                                .background(Nova.Primary)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    TimeFmt.hm(secs), fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold, color = Nova.InkMuted
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- a request waiting for an answer ----
+        if (pendingRequest != null) {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Anfrage vom Kind")
+            NovaCard {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "+${pendingRequest.minutes} Minuten",
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
+                    )
+                    Text(pendingRequest.reason, fontSize = 13.sp, color = Nova.InkMuted)
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            NovaButton(text = "Geben", color = Nova.Success) {
+                                onDecideRequest(pendingRequest, true)
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            NovaButtonTonal(text = "Ablehnen") { onDecideRequest(pendingRequest, false) }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- grant extra time straight from here ----
+        Spacer(Modifier.height(16.dp))
+        SectionHeader("Verlängerung geben")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                val left = prefs.remainingBonusMinutes()
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf(10, 15, 30).forEach { m ->
+                        Box(Modifier.weight(1f)) {
+                            NovaButton(
+                                text = "+$m",
+                                color = Nova.Danger,
+                                enabled = left >= m
+                            ) { onGrant(m) }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (left > 0) "Heute noch $left Minuten möglich (max. ${Prefs.MAX_BONUS_MIN} pro Tag)."
+                    else "Das Tagesmaximum an Verlängerung ist aufgebraucht.",
+                    fontSize = 12.sp, color = Nova.InkMuted
+                )
+                if (prefs.hardCapEnabled) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Das Gesamtlimit von ${TimeFmt.hm(cap)} gilt trotzdem — eine Verlängerung " +
+                            "hebt es nicht auf.",
+                        fontSize = 12.sp, color = Nova.InkFaint
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        NovaButtonTonal(text = "Alle Einstellungen", onClick = onOpenMenu)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Fertig", color = Nova.Primary, fontSize = 16.sp,
+            modifier = Modifier.fillMaxWidth().clickable { onExit() }.padding(12.dp)
         )
         Spacer(Modifier.height(24.dp))
     }

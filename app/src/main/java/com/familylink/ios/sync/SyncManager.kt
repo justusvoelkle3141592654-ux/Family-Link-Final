@@ -44,7 +44,9 @@ class SyncManager(private val context: Context) {
             categories = cats,
             focus = prefs.focusSession(),
             chores = prefs.getChores(),
-            usageMode = prefs.usageMode.name
+            usageMode = prefs.usageMode.name,
+            hardCapEnabled = prefs.hardCapEnabled,
+            hardCapMinutes = prefs.hardCapMinutes
         )
     }
 
@@ -363,6 +365,8 @@ class SyncManager(private val context: Context) {
         runCatching {
             prefs.usageMode = com.familylink.ios.data.UsageMode.valueOf(cfg.usageMode)
         }
+        prefs.hardCapEnabled = cfg.hardCapEnabled
+        prefs.hardCapMinutes = cfg.hardCapMinutes
         // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep
         // a claim that has not been seen by the parent yet instead of overwriting it.
         val localChores = prefs.getChores().associateBy { it.id }

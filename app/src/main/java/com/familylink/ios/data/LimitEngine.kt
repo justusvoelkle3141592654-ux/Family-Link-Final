@@ -12,6 +12,11 @@ sealed class LockDecision {
     object SettingsBlocked : LockDecision()
     /** A parent-started focus session is running; only focus apps are allowed. */
     data class FocusActive(val label: String, val remainingSeconds: Int) : LockDecision()
+    /**
+     * The absolute daily ceiling across ALL apps is reached. Outranks everything except
+     * bedtime and cannot be lifted by bonus time, an extension or the off-button.
+     */
+    data class HardCapReached(val usedSeconds: Int, val capSeconds: Int) : LockDecision()
 }
 
 /**
@@ -62,6 +67,20 @@ class LimitEngine(private val prefs: Prefs) {
         return total
     }
 
+    /**
+     * The whole phone's foreground time today — EVERY app counts, Plus apps and the launcher
+     * included. Only our own screens and the phone/emergency surfaces are left out, because
+     * those must stay reachable no matter what. This feeds the absolute ceiling.
+     */
+    fun computeTotalDeviceSeconds(usage: Map<String, Int>): Int {
+        var total = 0
+        for ((pkg, sec) in usage) {
+            if (isAlwaysExempt(pkg)) continue
+            total += sec
+        }
+        return total
+    }
+
     private fun isLauncher(pkg: String): Boolean = pkg in LAUNCHER_EXEMPT
 
     private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
@@ -70,6 +89,19 @@ class LimitEngine(private val prefs: Prefs) {
         // Bedtime is a HARD lock: it blocks EVERYTHING (PLUS included). The service keeps only
         // phone/system usable and makes it non-dismissible. It outranks the off-button.
         if (prefs.isBedtime()) return LockDecision.Bedtime
+
+        // The absolute ceiling across ALL apps. Deliberately checked this early: no bonus
+        // minutes, no granted extension, no off-button and no Plus category may lift it.
+        // Only the phone and emergency surfaces survive it.
+        if (prefs.hardCapEnabled) {
+            val totalToday = computeTotalDeviceSeconds(usage)
+            val cap = prefs.hardCapMinutes * 60
+            if (totalToday >= cap) {
+                if (pkg == null) return LockDecision.Allowed
+                if (isAlwaysExempt(pkg)) return LockDecision.Allowed
+                return LockDecision.HardCapReached(totalToday, cap)
+            }
+        }
 
         // Focus mode: only the explicitly allowed apps stay usable. Either the parent pushed
         // the session, or the child started one on itself to put the phone away.

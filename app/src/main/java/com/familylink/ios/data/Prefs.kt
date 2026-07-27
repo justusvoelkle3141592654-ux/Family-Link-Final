@@ -36,10 +36,20 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_PERAPP_USED = "perapp_used_json"
         private const val K_BLOCKED_TODAY = "blocked_today_json" // pkg -> lastBlocked epoch
         private const val K_BONUS_SEC = "bonus_seconds"          // parent-granted extra time today
+        private const val K_HARDCAP_ON = "hardcap_on"
+        private const val K_HARDCAP_MIN = "hardcap_minutes"
+        private const val K_HARDCAP_HITS = "hardcap_hits"        // ignored-ceiling attempts today
 
         const val DEFAULT_GLOBAL_LIMIT_MIN = 60
         const val MAX_GLOBAL_LIMIT_MIN = 120
         const val MAX_BONUS_MIN = 30
+
+        /** Absolute ceiling across ALL apps. Three hours is the hard maximum. */
+        const val DEFAULT_HARDCAP_MIN = 180
+        const val MAX_HARDCAP_MIN = 180
+        const val MIN_HARDCAP_MIN = 30
+        /** From this many ignored attempts on, the screen is locked every single time. */
+        const val HARDCAP_LOCK_ALWAYS_FROM = 3
         const val SECURE_PIN_MIN_LEN = 6
         const val OWN_PKG = "com.familylink.ios"
 
@@ -276,6 +286,32 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getInt(K_GLOBAL_LIMIT_MIN, DEFAULT_GLOBAL_LIMIT_MIN)
         set(v) = sp.edit().putInt(K_GLOBAL_LIMIT_MIN, v.coerceIn(0, MAX_GLOBAL_LIMIT_MIN)).apply()
 
+    // ---- Absolute daily ceiling (Gesamtlimit) ------------------------------
+    //
+    // Unlike the daily budget above, EVERY app counts towards this one — Plus apps included.
+    // It is a hard ceiling: bonus minutes, the off-button and a granted extension cannot lift
+    // it. Once it is reached the phone is done for the day.
+
+    var hardCapEnabled: Boolean
+        get() = sp.getBoolean(K_HARDCAP_ON, true)
+        set(v) = sp.edit().putBoolean(K_HARDCAP_ON, v).apply()
+
+    var hardCapMinutes: Int
+        get() = sp.getInt(K_HARDCAP_MIN, DEFAULT_HARDCAP_MIN)
+        set(v) = sp.edit().putInt(K_HARDCAP_MIN, v.coerceIn(MIN_HARDCAP_MIN, MAX_HARDCAP_MIN)).apply()
+
+    /** How often the ceiling was ignored today — drives the escalation to a screen lock. */
+    val hardCapHitsToday: Int
+        get() { ensureToday(); return sp.getInt(K_HARDCAP_HITS, 0) }
+
+    /** Count one fresh attempt to keep using the phone past the ceiling. Returns the new count. */
+    fun recordHardCapHit(): Int {
+        ensureToday()
+        val next = sp.getInt(K_HARDCAP_HITS, 0) + 1
+        sp.edit().putInt(K_HARDCAP_HITS, next).apply()
+        return next
+    }
+
     // ---- Bedtime -----------------------------------------------------------
 
     var bedtimeEnabled: Boolean
@@ -396,6 +432,7 @@ class Prefs private constructor(private val sp: SharedPreferences) {
                 .putString(K_PERAPP_USED, "{}")
                 .putString(K_BLOCKED_TODAY, "{}")
                 .putInt(K_BONUS_SEC, 0)
+                .putInt(K_HARDCAP_HITS, 0)
                 .apply()
         }
     }

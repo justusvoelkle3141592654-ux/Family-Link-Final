@@ -181,7 +181,8 @@ fun ChildPortalScreen(
         // Same figure the parent portal shows, so both sides never disagree.
         val totalDevice = perAppAll.values.sum()
         Text(
-            "Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}",
+            "Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}" +
+                if (prefs.hardCapEnabled) " von max. ${TimeFmt.hm(prefs.hardCapMinutes * 60)}" else "",
             fontSize = 13.sp, color = Nova.InkFaint,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
         )
