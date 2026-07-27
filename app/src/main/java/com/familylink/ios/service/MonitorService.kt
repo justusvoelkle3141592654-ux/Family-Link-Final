@@ -107,7 +107,8 @@ class MonitorService : Service() {
         // Report upward from here as well (every ~9s). The monitor is the component that
         // always runs on the child and holds the freshest numbers, so the parent no longer
         // depends on SyncService alone to see live usage.
-        if (prefs.syncConfigured && ticksSinceStatusPush++ >= 6) {
+        // ~4.5s cadence: fast enough that the parent portal feels live.
+        if (prefs.syncConfigured && ticksSinceStatusPush++ >= 3) {
             ticksSinceStatusPush = 0
             runCatching { syncManager.pushStatus() }
         }

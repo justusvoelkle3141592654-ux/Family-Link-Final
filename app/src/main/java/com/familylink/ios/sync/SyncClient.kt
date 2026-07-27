@@ -22,6 +22,10 @@ class SyncClient(private val databaseUrl: String) {
 
     private fun url(path: String) = URL(databaseUrl.trimEnd('/') + "/" + path.trim('/') + ".json")
 
+    /** Last transport error, so the UI can explain why nothing arrives. */
+    var lastError: String? = null
+        private set
+
     /** Write (replace) the JSON at [path]. Returns true on success. */
     fun put(path: String, body: JSONObject): Boolean = try {
         val conn = (url(path).openConnection() as HttpURLConnection).apply {
@@ -32,10 +36,19 @@ class SyncClient(private val databaseUrl: String) {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
         }
         OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
-        val ok = conn.responseCode in 200..299
+        val code = conn.responseCode
+        val ok = code in 200..299
+        lastError = if (ok) null else {
+            // Read the server's explanation — this is where Firebase reports rejected keys.
+            val detail = runCatching {
+                conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(200)
+            }.getOrNull().orEmpty()
+            "HTTP $code $detail".trim()
+        }
         conn.disconnect()
         ok
-    } catch (_: Throwable) {
+    } catch (t: Throwable) {
+        lastError = t.message ?: t.javaClass.simpleName
         false
     }
 

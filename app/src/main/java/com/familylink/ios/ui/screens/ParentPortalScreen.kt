@@ -94,7 +94,7 @@ fun ParentPortalScreen(
                 runCatching { sync.fetchChildStatus() }.getOrNull()
             }
             childStatus = fresh ?: sync.cachedChildStatus()
-            delay(5000)
+            delay(2500)
         }
     }
 
@@ -132,6 +132,15 @@ fun ParentPortalScreen(
                     if (online) "Verbunden mit ${remote?.deviceName ?: "Kinder-Gerät"}"
                     else "Keine aktuelle Verbindung zum Kinder-Gerät",
                     fontSize = 13.sp, color = c
+                )
+            }
+            // Never fail silently: if the server rejected a write, say exactly why.
+            val err = prefs.lastSyncError
+            if (err.isNotBlank()) {
+                Text(
+                    "Server-Fehler: $err",
+                    fontSize = 11.sp, color = Nova.Danger,
+                    modifier = Modifier.padding(top = 6.dp, start = 4.dp)
                 )
             }
         }

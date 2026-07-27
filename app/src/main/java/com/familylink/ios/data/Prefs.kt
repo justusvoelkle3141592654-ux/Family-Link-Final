@@ -131,6 +131,11 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getLong("last_sync_at", 0)
         set(v) = sp.edit().putLong("last_sync_at", v).apply()
 
+    /** Last sync failure message, shown in the portal so problems are not invisible. */
+    var lastSyncError: String
+        get() = sp.getString("last_sync_error", "") ?: ""
+        set(v) = sp.edit().putString("last_sync_error", v).apply()
+
     /** Latest config revision applied from the server (avoids redundant writes). */
     var lastConfigStamp: Long
         get() = sp.getLong("last_config_stamp", 0)

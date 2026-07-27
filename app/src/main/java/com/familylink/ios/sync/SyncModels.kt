@@ -1,13 +1,42 @@
 package com.familylink.ios.sync
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Which side of the pair this installation is. */
 enum class DeviceRole { UNSET, PARENT, CHILD }
 
 /**
+ * IMPORTANT — why package names are never used as JSON keys here.
+ *
+ * Firebase Realtime Database rejects keys containing '.', '$', '#', '[', ']' or '/'.
+ * Android package names always contain dots, so a payload like
+ *     {"com.whatsapp": 300}
+ * makes the server refuse the ENTIRE write — silently, from the app's point of view.
+ * That is why app categories never reached the child and the app list never reached the
+ * parent, while plain numbers went through fine.
+ *
+ * Everything keyed by package is therefore serialised as an ARRAY of objects, which only
+ * uses numeric indices. Reading still accepts the old map format so devices that already
+ * wrote legacy data keep working.
+ */
+private object Keys {
+    const val PKG = "p"
+    const val VALUE = "v"
+    const val SECONDS = "s"
+    const val NAME = "n"
+}
+
+/** Read a legacy map-shaped node, if present. */
+private fun legacyMap(o: JSONObject, name: String): Map<String, String> {
+    val node = o.optJSONObject(name) ?: return emptyMap()
+    val out = HashMap<String, String>()
+    node.keys().forEach { out[it] = node.optString(it, "") }
+    return out
+}
+
+/**
  * The rules the parent owns and the child obeys. Parent writes it, child applies it.
- * Serialised as flat JSON so it maps 1:1 onto a Firebase RTDB node.
  */
 data class FamilyConfig(
     val globalLimitMinutes: Int,
@@ -41,15 +70,28 @@ data class FamilyConfig(
         put("offUntilEpoch", offUntilEpoch)
         put("settingsUnlockedUntil", settingsUnlockedUntil)
         put("updatedAt", updatedAt)
-        put("categories", JSONObject().also { c -> categories.forEach { (k, v) -> c.put(k, v) } })
+        // Array form — package names must never become keys (see Keys doc above).
+        put("categoryList", JSONArray().also { arr ->
+            categories.forEach { (pkg, value) ->
+                arr.put(JSONObject().put(Keys.PKG, pkg).put(Keys.VALUE, value))
+            }
+        })
     }
 
     companion object {
         fun fromJson(o: JSONObject): FamilyConfig {
             val cats = HashMap<String, String>()
-            o.optJSONObject("categories")?.let { c ->
-                c.keys().forEach { k -> cats[k] = c.optString(k, "STANDARD:30") }
+            // Preferred: array form.
+            o.optJSONArray("categoryList")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val e = arr.optJSONObject(i) ?: continue
+                    val pkg = e.optString(Keys.PKG, "")
+                    if (pkg.isNotBlank()) cats[pkg] = e.optString(Keys.VALUE, "STANDARD:30")
+                }
             }
+            // Fallback: legacy map form written by older builds.
+            if (cats.isEmpty()) cats.putAll(legacyMap(o, "categories"))
+
             return FamilyConfig(
                 globalLimitMinutes = o.optInt("globalLimitMinutes", 60),
                 bedtimeEnabled = o.optBoolean("bedtimeEnabled", true),
@@ -101,17 +143,44 @@ data class ChildStatus(
         put("bedtimeActive", bedtimeActive)
         put("deviceName", deviceName)
         put("updatedAt", updatedAt)
-        put("perAppSeconds", JSONObject().also { a -> perAppSeconds.forEach { (k, v) -> a.put(k, v) } })
-        put("perAppLabels", JSONObject().also { a -> perAppLabels.forEach { (k, v) -> a.put(k, v) } })
-        put("blockedToday", org.json.JSONArray(blockedToday))
+        put("blockedToday", JSONArray(blockedToday))
+        // One array carrying package, seconds and label together — no dotted keys.
+        put("apps", JSONArray().also { arr ->
+            perAppSeconds.entries
+                .sortedByDescending { it.value }
+                .take(40) // keep the payload small; the tail is noise anyway
+                .forEach { (pkg, secs) ->
+                    arr.put(
+                        JSONObject()
+                            .put(Keys.PKG, pkg)
+                            .put(Keys.SECONDS, secs)
+                            .put(Keys.NAME, perAppLabels[pkg] ?: pkg)
+                    )
+                }
+        })
     }
 
     companion object {
         fun fromJson(o: JSONObject): ChildStatus {
             val usage = HashMap<String, Int>()
-            o.optJSONObject("perAppSeconds")?.let { a -> a.keys().forEach { usage[it] = a.optInt(it) } }
             val labels = HashMap<String, String>()
-            o.optJSONObject("perAppLabels")?.let { a -> a.keys().forEach { labels[it] = a.optString(it) } }
+
+            // Preferred: array form.
+            o.optJSONArray("apps")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val e = arr.optJSONObject(i) ?: continue
+                    val pkg = e.optString(Keys.PKG, "")
+                    if (pkg.isBlank()) continue
+                    usage[pkg] = e.optInt(Keys.SECONDS, 0)
+                    labels[pkg] = e.optString(Keys.NAME, pkg)
+                }
+            }
+            // Fallback: legacy map form.
+            if (usage.isEmpty()) {
+                o.optJSONObject("perAppSeconds")?.let { a -> a.keys().forEach { usage[it] = a.optInt(it) } }
+                o.optJSONObject("perAppLabels")?.let { a -> a.keys().forEach { labels[it] = a.optString(it) } }
+            }
+
             val blocked = ArrayList<String>()
             o.optJSONArray("blockedToday")?.let { arr ->
                 for (i in 0 until arr.length()) blocked.add(arr.optString(i))
@@ -121,13 +190,13 @@ data class ChildStatus(
                 totalDeviceSeconds = o.optInt("totalDeviceSeconds", 0),
                 limitSeconds = o.optInt("limitSeconds", 0),
                 bonusSeconds = o.optInt("bonusSeconds", 0),
-                focusLabel = o.optString("focusLabel", ""),
-                batteryPercent = o.optInt("batteryPercent", -1),
                 perAppSeconds = usage,
                 perAppLabels = labels,
                 blockedToday = blocked,
                 bedtimeActive = o.optBoolean("bedtimeActive", false),
+                focusLabel = o.optString("focusLabel", ""),
                 deviceName = o.optString("deviceName", "Kindergerät"),
+                batteryPercent = o.optInt("batteryPercent", -1),
                 updatedAt = o.optLong("updatedAt", 0)
             )
         }

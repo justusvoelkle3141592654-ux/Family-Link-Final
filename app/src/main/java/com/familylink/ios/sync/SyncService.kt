@@ -123,8 +123,8 @@ class SyncService : Service() {
     companion object {
         private const val NOTIF_ID = 1002
         private const val CHANNEL_ID = "family_link_sync"
-        private const val CHILD_PUSH_MS = 10_000L
-        private const val PARENT_PUSH_MS = 30_000L
+        private const val CHILD_PUSH_MS = 5_000L
+        private const val PARENT_PUSH_MS = 20_000L
         const val ACTION_PUSH_NOW = "com.familylink.ios.PUSH_NOW"
 
         fun start(context: Context) {

@@ -140,7 +140,12 @@ class SyncManager(private val context: Context) {
     fun pushConfig(): Boolean {
         val c = client() ?: return false
         val ok = c.put(SyncClient.configPath(prefs.familyId), buildConfig().toJson())
-        if (ok) prefs.lastSyncAt = System.currentTimeMillis()
+        if (ok) {
+            prefs.lastSyncAt = System.currentTimeMillis()
+            prefs.lastSyncError = ""
+        } else {
+            prefs.lastSyncError = c.lastError.orEmpty()
+        }
         return ok
     }
 
@@ -187,7 +192,12 @@ class SyncManager(private val context: Context) {
             batteryPercent = readBattery()
         )
         val ok = c.put(SyncClient.statusPath(prefs.familyId), status.toJson())
-        if (ok) prefs.lastSyncAt = System.currentTimeMillis()
+        if (ok) {
+            prefs.lastSyncAt = System.currentTimeMillis()
+            prefs.lastSyncError = ""
+        } else {
+            prefs.lastSyncError = c.lastError.orEmpty()
+        }
         return ok
     }
 
