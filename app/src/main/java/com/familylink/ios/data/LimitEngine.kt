@@ -17,6 +17,8 @@ sealed class LockDecision {
      * bedtime and cannot be lifted by bonus time, an extension or the off-button.
      */
     data class HardCapReached(val usedSeconds: Int, val capSeconds: Int) : LockDecision()
+    /** The parent locked the device by hand. Stays until they lift it again. */
+    data class ManualLock(val reason: String) : LockDecision()
 }
 
 /**
@@ -75,7 +77,11 @@ class LimitEngine(private val prefs: Prefs) {
     fun computeTotalDeviceSeconds(usage: Map<String, Int>): Int {
         var total = 0
         for ((pkg, sec) in usage) {
+            // Our own screens, the phone and the emergency dialler never count.
             if (isAlwaysExempt(pkg)) continue
+            // Neither does the home screen: sitting on the launcher is not "using an app", and
+            // billing it made the ceiling fill up on its own without the child doing anything.
+            if (isLauncher(pkg)) continue
             total += sec
         }
         return total
@@ -88,6 +94,14 @@ class LimitEngine(private val prefs: Prefs) {
     fun decide(pkg: String?, usage: Map<String, Int>): LockDecision {
         // Bedtime is a HARD lock: it blocks EVERYTHING (PLUS included). The service keeps only
         // phone/system usable and makes it non-dismissible. It outranks the off-button.
+        // A manual lock is the parent's direct instruction, so nothing overrides it. Only the
+        // phone and emergency dialler stay reachable.
+        if (prefs.manualLockEnabled) {
+            if (pkg == null) return LockDecision.Allowed
+            if (isAlwaysExempt(pkg)) return LockDecision.Allowed
+            return LockDecision.ManualLock(prefs.manualLockReason)
+        }
+
         if (prefs.isBedtime()) return LockDecision.Bedtime
 
         // The absolute ceiling across ALL apps. Deliberately checked this early: no bonus

@@ -111,13 +111,18 @@ fun ChoresParentScreen(onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Box(Modifier.weight(1f)) {
                                 NovaButton(text = "Bestätigen", color = Nova.Success) {
-                                    sync.approveChore(c.id); v++
+                                    // approveChore pushes the config, which is a network call:
+                                    // on the main thread it fails silently and the child never
+                                    // learns about the granted bonus.
+                                    thread(isDaemon = true) { sync.approveChore(c.id) }
+                                    v++
                                     SyncService.pushNow(context)
                                 }
                             }
                             Box(Modifier.weight(1f)) {
                                 NovaButtonTonal(text = "Zurückgeben", color = Nova.Danger) {
-                                    sync.rejectChore(c.id); v++
+                                    thread(isDaemon = true) { sync.rejectChore(c.id) }
+                                    v++
                                     SyncService.pushNow(context)
                                 }
                             }

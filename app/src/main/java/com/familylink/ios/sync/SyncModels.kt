@@ -106,6 +106,9 @@ data class FamilyConfig(
     /** Absolute daily ceiling across ALL apps (Plus included). */
     val hardCapEnabled: Boolean = true,
     val hardCapMinutes: Int = 180,
+    /** Parent locked the device by hand; stays until they lift it. */
+    val manualLock: Boolean = false,
+    val manualLockReason: String = "",
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
@@ -114,6 +117,8 @@ data class FamilyConfig(
         put("usageMode", usageMode)
         put("hardCapEnabled", hardCapEnabled)
         put("hardCapMinutes", hardCapMinutes)
+        put("manualLock", manualLock)
+        put("manualLockReason", manualLockReason)
         put("globalLimitMinutes", globalLimitMinutes)
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
@@ -160,6 +165,8 @@ data class FamilyConfig(
                 usageMode = o.optString("usageMode", "CATEGORIES"),
                 hardCapEnabled = o.optBoolean("hardCapEnabled", true),
                 hardCapMinutes = o.optInt("hardCapMinutes", 180),
+                manualLock = o.optBoolean("manualLock", false),
+                manualLockReason = o.optString("manualLockReason", ""),
                 updatedAt = o.optLong("updatedAt", 0)
             )
         }

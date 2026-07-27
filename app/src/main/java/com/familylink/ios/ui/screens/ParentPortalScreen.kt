@@ -162,6 +162,15 @@ fun ParentPortalScreen(
                 pendingRequest = null
                 v++
             },
+            onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
+            onLockNow = { sync.lockDevice(); v++ },
+            onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
+            onApproveChore = { id ->
+                // Network call inside — never on the main thread.
+                thread(isDaemon = true) { sync.approveChore(id) }
+                v++
+            },
+            onOpenChores = onOpenChores,
             onExit = onExit
         )
         return
@@ -554,16 +563,65 @@ fun ParentPortalScreen(
         }
 
         // ---- focus mode (headline feature) ----
-        SectionHeader("Fokus-Modus")
+        SectionHeader("Sperren")
         NovaCard {
             val focus = prefs.focusSession()
+            // Manual lock: no end time, stays until it is lifted.
             NovaRow(
-                title = if (focus.isRunning()) "Fokus läuft: ${focus.label}" else "Fokus-Session starten",
-                subtitle = if (focus.isRunning()) "Noch ${TimeFmt.hm(focus.remainingSeconds())}"
-                else "Nur ausgewählte Apps, auf Zeit",
+                title = "Gerät komplett sperren",
+                subtitle = if (prefs.manualLockEnabled) "Gesperrt — tippe zum Aufheben"
+                else "Ohne Zeitende. Telefon und Notruf bleiben erreichbar."
+            ) {
+                NovaSwitch(checked = prefs.manualLockEnabled) {
+                    prefs.manualLockEnabled = it
+                    if (!it) prefs.manualLockReason = ""
+                    v++
+                }
+            }
+            // Timed lock: nothing but phone and emergency for a fixed stretch.
+            NovaRow(
+                title = if (focus.isRunning() && focus.allowed.isEmpty())
+                    "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}"
+                else "Sperren auf Zeit",
+                subtitle = "30 Min · 1 Std · 2 Std"
+            ) {
+                if (focus.isRunning() && focus.allowed.isEmpty()) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(Nova.Success.copy(alpha = 0.15f))
+                            .clickable { sync.stopFocus(); v++ }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text("Freigeben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(30, 60, 120).forEach { m ->
+                            Box(
+                                Modifier.clip(RoundedCornerShape(9.dp))
+                                    .background(Nova.Danger.copy(alpha = 0.13f))
+                                    .clickable { sync.lockForMinutes(m); v++ }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    if (m >= 60) "${m / 60}h" else "${m}m",
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            // Focus keeps its own entry: unlike a lock it leaves chosen apps usable.
+            NovaRow(
+                title = if (focus.isRunning() && focus.allowed.isNotEmpty())
+                    "Fokus läuft: ${focus.label}" else "Fokus (nur bestimmte Apps)",
+                subtitle = if (focus.isRunning() && focus.allowed.isNotEmpty())
+                    "Noch ${TimeFmt.hm(focus.remainingSeconds())}"
+                else "Ausgewählte Apps bleiben erlaubt, auf Zeit",
                 onClick = onOpenFocus
             ) {
-                if (focus.isRunning()) NovaPill("Aktiv", Nova.Focus) else Chevron()
+                if (focus.isRunning() && focus.allowed.isNotEmpty()) NovaPill("Aktiv", Nova.Focus) else Chevron()
             }
         }
 
@@ -745,12 +803,20 @@ private fun ParentDashboard(
     onOpenMenu: () -> Unit,
     onGrant: (Int) -> Unit,
     onDecideRequest: (TimeRequest, Boolean) -> Unit,
+    onLockFor: (Int) -> Unit,
+    onLockNow: () -> Unit,
+    onUnlock: () -> Unit,
+    onApproveChore: (String) -> Unit,
+    onOpenChores: () -> Unit,
     onExit: () -> Unit
 ) {
     val online = prefs.syncConfigured && System.currentTimeMillis() - prefs.lastSyncAt < 120_000
     val remaining = (limit - used).coerceAtLeast(0)
     val total = remote?.totalDeviceSeconds ?: 0
     val cap = prefs.hardCapMinutes * 60
+    val timedLock = prefs.focusSession()
+    val lockedNow = prefs.manualLockEnabled
+    val lockedTimed = timedLock.isRunning()
 
     Column(
         Modifier.fillMaxSize()
@@ -936,6 +1002,108 @@ private fun ParentDashboard(
                         }
                     }
                 }
+            }
+        }
+
+        // ---- lock the device, on a timer or outright ----
+        Spacer(Modifier.height(16.dp))
+        SectionHeader("Gerät sperren")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                when {
+                    lockedNow -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NovaPill("Gesperrt", Nova.Danger)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Ohne Zeitende — bis du es aufhebst.", fontSize = 13.sp, color = Nova.InkMuted)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        NovaButton(text = "Sperre aufheben", color = Nova.Success) { onUnlock() }
+                    }
+                    lockedTimed -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NovaPill("Gesperrt auf Zeit", Nova.Danger)
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "Noch ${TimeFmt.hm(timedLock.remainingSeconds())}",
+                                fontSize = 13.sp, color = Nova.InkMuted
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        NovaButton(text = "Jetzt freigeben", color = Nova.Success) { onUnlock() }
+                    }
+                    else -> {
+                        Text("Auf Zeit sperren", fontSize = 13.sp, color = Nova.InkMuted)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(30, 60, 120).forEach { m ->
+                                Box(Modifier.weight(1f)) {
+                                    NovaButtonTonal(
+                                        text = if (m >= 60) "${m / 60} Std" else "$m Min",
+                                        color = Nova.Danger
+                                    ) { onLockFor(m) }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        NovaButton(text = "Komplett sperren", color = Nova.Danger) { onLockNow() }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Telefon und Notruf bleiben immer erreichbar.",
+                            fontSize = 12.sp, color = Nova.InkFaint
+                        )
+                    }
+                }
+            }
+        }
+
+        // ---- chores waiting to be confirmed ----
+        val chores = prefs.getChores()
+        val claimed = chores.filter { it.isClaimed }
+        Spacer(Modifier.height(16.dp))
+        SectionHeader("Aufgaben")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                if (claimed.isEmpty()) {
+                    Text(
+                        if (chores.isEmpty()) "Noch keine Aufgaben angelegt."
+                        else "${chores.count { it.isOpen }} offen · nichts zu bestätigen.",
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
+                } else {
+                    Text(
+                        "${claimed.size} erledigt gemeldet",
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    claimed.take(3).forEach { chore ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(chore.title, fontSize = 15.sp, color = Nova.Ink)
+                                Text(
+                                    "+${chore.rewardMinutes} Min Bonus",
+                                    fontSize = 12.sp, color = Nova.InkMuted
+                                )
+                            }
+                            Box(
+                                Modifier.clip(RoundedCornerShape(10.dp))
+                                    .background(Nova.Success.copy(alpha = 0.15f))
+                                    .clickable { onApproveChore(chore.id) }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    "Bestätigen", fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold, color = Nova.Success
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                NovaButtonTonal(text = "Aufgaben verwalten", onClick = onOpenChores)
             }
         }
 

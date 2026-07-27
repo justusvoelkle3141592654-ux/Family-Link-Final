@@ -133,6 +133,7 @@ class MonitorService : Service() {
         val hardLock = isBedtimeNow ||
             decision is LockDecision.GlobalLimitReached ||
             decision is LockDecision.HardCapReached ||
+            decision is LockDecision.ManualLock ||
             decision is LockDecision.FocusActive
         // Publish state for the accessibility service (multi-window / bypass hardening).
         LockState.update(
@@ -176,7 +177,9 @@ class MonitorService : Service() {
         // Bedtime and the absolute ceiling block literally everything, launcher included — at
         // that point the phone is simply done. A focus session is different: it must leave the
         // home screen usable, otherwise the child can never reach the apps the session allows.
-        val blocksEverything = bedtime || decision is LockDecision.HardCapReached
+        val blocksEverything = bedtime ||
+            decision is LockDecision.HardCapReached ||
+            decision is LockDecision.ManualLock
         if (!blocksEverything) {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
@@ -195,7 +198,13 @@ class MonitorService : Service() {
             is LockDecision.AppLimitReached -> prefs.recordBlocked(decision.pkg)
             is LockDecision.AppBlocked -> prefs.recordBlocked(decision.pkg)
             is LockDecision.GlobalLimitReached -> prefs.recordBlocked(pkg)
-            is LockDecision.HardCapReached -> { prefs.recordBlocked(pkg); enforceHardCap() }
+            is LockDecision.HardCapReached -> {
+                prefs.recordBlocked(pkg)
+                // Escalate ONLY when a real app was opened. The home screen is shown after
+                // every screen unlock, so counting it as an "attempt" made the counter climb
+                // to the threshold on its own within seconds and locked the phone in a loop.
+                if (!engine.isForegroundExempt(pkg) && pkg in managedPackages) enforceHardCap()
+            }
             else -> {}
         }
 
@@ -224,12 +233,15 @@ class MonitorService : Service() {
         val now = SystemClock.uptimeMillis()
 
         // One "attempt" per window, so a 1.5s tick loop does not inflate the counter.
-        if (now - lastHardCapCountAt >= HARDCAP_ATTEMPT_MS) {
-            lastHardCapCountAt = now
-            prefs.recordHardCapHit()
-        }
+        if (now - lastHardCapCountAt < HARDCAP_ATTEMPT_MS) return
+        lastHardCapCountAt = now
+        val hits = prefs.recordHardCapHit()
 
-        val persistent = prefs.hardCapHitsToday >= Prefs.HARDCAP_LOCK_ALWAYS_FROM
+        // The first time the ceiling is hit, the block screen alone is the answer — the child
+        // has not ignored anything yet. Locking the display starts with the second attempt.
+        if (hits < 2) return
+
+        val persistent = hits >= Prefs.HARDCAP_LOCK_ALWAYS_FROM
         val cooldown = if (persistent) HARDCAP_LOCK_PERSISTENT_MS else HARDCAP_LOCK_GRACE_MS
         if (now - lastHardCapLockAt < cooldown) return
         lastHardCapLockAt = now
@@ -279,6 +291,11 @@ class MonitorService : Service() {
             "Einstellungen gesperrt" to "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal."
         is LockDecision.FocusActive ->
             "Fokus: ${decision.label}" to "Noch ${TimeFmt.hm(decision.remainingSeconds)} — nur Fokus-Apps sind erlaubt."
+        is LockDecision.ManualLock ->
+            "Gesperrt" to (
+                if (decision.reason.isNotBlank()) decision.reason
+                else "Deine Eltern haben das Handy gesperrt."
+            )
         is LockDecision.HardCapReached ->
             "Gesamtlimit erreicht" to
                 "Das Handy wurde heute ${TimeFmt.hm(decision.usedSeconds)} benutzt — das Maximum " +

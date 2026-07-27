@@ -46,7 +46,9 @@ class SyncManager(private val context: Context) {
             chores = prefs.getChores(),
             usageMode = prefs.usageMode.name,
             hardCapEnabled = prefs.hardCapEnabled,
-            hardCapMinutes = prefs.hardCapMinutes
+            hardCapMinutes = prefs.hardCapMinutes,
+            manualLock = prefs.manualLockEnabled,
+            manualLockReason = prefs.manualLockReason
         )
     }
 
@@ -70,6 +72,25 @@ class SyncManager(private val context: Context) {
     }
 
     fun stopFocus() = prefs.setFocusSession(FocusSession.OFF)
+
+    /**
+     * Parent: lock the child's device for a fixed time. Implemented as a focus session with an
+     * empty allow-list — nothing but the phone and emergency dialler survives — so it inherits
+     * the same clock-skew-proof countdown and automatic end.
+     */
+    fun lockForMinutes(minutes: Int, reason: String = "") =
+        startFocus(if (reason.isBlank()) "Gesperrt" else reason, minutes, emptyList())
+
+    /** Parent: lock the device with no end time, until it is lifted again. */
+    fun lockDevice(reason: String = "") {
+        prefs.manualLockReason = reason
+        prefs.manualLockEnabled = true
+    }
+
+    fun unlockDevice() {
+        prefs.manualLockEnabled = false
+        prefs.manualLockReason = ""
+    }
 
     // ---------------- chores ----------------
 
@@ -224,11 +245,15 @@ class SyncManager(private val context: Context) {
         for (pkg in usage.keys) labels[pkg] = InstalledApps.labelFor(context, pkg)
 
         // Whole-phone screen time today, across every app — this is what a parent means by
-        // "how much has the phone been used", regardless of categories and limits.
-        val totalDevice = usage.filterKeys { it != Prefs.OWN_PKG }.values.sum()
-        // The share that counts against the limit, recomputed from the same fresh numbers so
-        // the two values a parent sees can never contradict each other.
-        val counted = runCatching { LimitEngine(prefs).computeGlobalUsedSeconds(usage) }
+        // "how much has the phone been used", regardless of categories and limits. Computed by
+        // the engine so it is the exact same figure the absolute ceiling is measured against;
+        // summing it differently here made the portal show one number and the ceiling use
+        // another.
+        val engine = LimitEngine(prefs)
+        val totalDevice = runCatching { engine.computeTotalDeviceSeconds(usage) }.getOrDefault(0)
+        // The share that counts against the daily budget, recomputed from the same fresh
+        // numbers so the two values a parent sees can never contradict each other.
+        val counted = runCatching { engine.computeGlobalUsedSeconds(usage) }
             .getOrDefault(prefs.globalUsedSeconds)
 
         val focus = prefs.effectiveFocusSession()
@@ -367,6 +392,8 @@ class SyncManager(private val context: Context) {
         }
         prefs.hardCapEnabled = cfg.hardCapEnabled
         prefs.hardCapMinutes = cfg.hardCapMinutes
+        prefs.manualLockEnabled = cfg.manualLock
+        prefs.manualLockReason = cfg.manualLockReason
         // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep
         // a claim that has not been seen by the parent yet instead of overwriting it.
         val localChores = prefs.getChores().associateBy { it.id }

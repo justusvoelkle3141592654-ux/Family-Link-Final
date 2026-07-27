@@ -36,6 +36,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_PERAPP_USED = "perapp_used_json"
         private const val K_BLOCKED_TODAY = "blocked_today_json" // pkg -> lastBlocked epoch
         private const val K_BONUS_SEC = "bonus_seconds"          // parent-granted extra time today
+        private const val K_MANUAL_LOCK = "manual_lock"
+        private const val K_MANUAL_LOCK_WHY = "manual_lock_reason"
         private const val K_HARDCAP_ON = "hardcap_on"
         private const val K_HARDCAP_MIN = "hardcap_minutes"
         private const val K_HARDCAP_HITS = "hardcap_hits"        // ignored-ceiling attempts today
@@ -285,6 +287,20 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     var globalLimitMinutes: Int
         get() = sp.getInt(K_GLOBAL_LIMIT_MIN, DEFAULT_GLOBAL_LIMIT_MIN)
         set(v) = sp.edit().putInt(K_GLOBAL_LIMIT_MIN, v.coerceIn(0, MAX_GLOBAL_LIMIT_MIN)).apply()
+
+    // ---- Manual device lock ------------------------------------------------
+    //
+    // The parent locks the phone by hand from their own device. Unlike a focus session this
+    // has no end time: it stays locked until the parent lifts it again.
+
+    var manualLockEnabled: Boolean
+        get() = sp.getBoolean(K_MANUAL_LOCK, false)
+        set(v) = sp.edit().putBoolean(K_MANUAL_LOCK, v).apply()
+
+    /** Optional note shown on the child's block screen ("Beim Essen", "Bis Hausaufgaben fertig"). */
+    var manualLockReason: String
+        get() = sp.getString(K_MANUAL_LOCK_WHY, "") ?: ""
+        set(v) = sp.edit().putString(K_MANUAL_LOCK_WHY, v).apply()
 
     // ---- Absolute daily ceiling (Gesamtlimit) ------------------------------
     //

@@ -178,8 +178,11 @@ fun ChildPortalScreen(
             fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
         )
-        // Same figure the parent portal shows, so both sides never disagree.
-        val totalDevice = perAppAll.values.sum()
+        // Computed by the engine, exactly like the parent portal and the ceiling itself, so all
+        // three can never show different numbers for the same thing.
+        val totalDevice = remember(perAppAll) {
+            com.familylink.ios.data.LimitEngine(prefs).computeTotalDeviceSeconds(perAppAll)
+        }
         Text(
             "Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}" +
                 if (prefs.hardCapEnabled) " von max. ${TimeFmt.hm(prefs.hardCapMinutes * 60)}" else "",
