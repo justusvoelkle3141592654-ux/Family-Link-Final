@@ -71,16 +71,33 @@ data class FamilyConfig(
 
 /** What the child reports upward: live usage so the parent sees it in real time. */
 data class ChildStatus(
+    /** Time charged against the daily budget (PLUS apps excluded). */
     val globalUsedSeconds: Int,
+    /** Total foreground time of the whole phone today, across every app. */
+    val totalDeviceSeconds: Int = 0,
+    /** The limit in force on the child right now, so the parent sees the real ratio. */
+    val limitSeconds: Int = 0,
+    val bonusSeconds: Int = 0,
     val perAppSeconds: Map<String, Int>,
     val perAppLabels: Map<String, String>,
     val blockedToday: List<String>,
     val bedtimeActive: Boolean,
+    val focusLabel: String = "",
     val deviceName: String,
+    val batteryPercent: Int = -1,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
+    /** How old this snapshot is, in seconds. */
+    fun ageSeconds(now: Long = System.currentTimeMillis()): Int =
+        (((now - updatedAt) / 1000L).toInt()).coerceAtLeast(0)
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("globalUsedSeconds", globalUsedSeconds)
+        put("totalDeviceSeconds", totalDeviceSeconds)
+        put("limitSeconds", limitSeconds)
+        put("bonusSeconds", bonusSeconds)
+        put("focusLabel", focusLabel)
+        put("batteryPercent", batteryPercent)
         put("bedtimeActive", bedtimeActive)
         put("deviceName", deviceName)
         put("updatedAt", updatedAt)
@@ -101,6 +118,11 @@ data class ChildStatus(
             }
             return ChildStatus(
                 globalUsedSeconds = o.optInt("globalUsedSeconds", 0),
+                totalDeviceSeconds = o.optInt("totalDeviceSeconds", 0),
+                limitSeconds = o.optInt("limitSeconds", 0),
+                bonusSeconds = o.optInt("bonusSeconds", 0),
+                focusLabel = o.optString("focusLabel", ""),
+                batteryPercent = o.optInt("batteryPercent", -1),
                 perAppSeconds = usage,
                 perAppLabels = labels,
                 blockedToday = blocked,

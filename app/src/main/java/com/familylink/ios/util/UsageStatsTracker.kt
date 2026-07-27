@@ -67,6 +67,16 @@ object UsageStatsTracker {
     }
 
     /**
+     * Total foreground time of the whole phone today, across every app. This is the number a
+     * parent means by "how much has the phone been used" — independent of categories, limits
+     * or which apps are allowed.
+     */
+    fun totalDeviceSecondsToday(context: Context): Int =
+        todayUsageSeconds(context)
+            .filterKeys { it != "com.familylink.ios" }
+            .values.sum()
+
+    /**
      * The package currently in the foreground according to the OS. Works without the
      * accessibility service, so tracking/locking still functions on Usage-access + Overlay alone.
      */

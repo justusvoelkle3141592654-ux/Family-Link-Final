@@ -41,6 +41,7 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val MAX_GLOBAL_LIMIT_MIN = 120
         const val MAX_BONUS_MIN = 30
         const val SECURE_PIN_MIN_LEN = 6
+        const val OWN_PKG = "com.familylink.ios"
 
         @Volatile private var instance: Prefs? = null
 

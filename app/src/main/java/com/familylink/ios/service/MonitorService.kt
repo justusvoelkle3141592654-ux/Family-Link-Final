@@ -46,6 +46,8 @@ class MonitorService : Service() {
 
     private var lastBlockLaunchAt = 0L
     private var lastSettingsHidden: Boolean? = null
+    private var ticksSinceStatusPush = 0
+    private val syncManager by lazy { com.familylink.ios.sync.SyncManager(this) }
 
     // Only real, user-launchable apps are ever blocked. Everything else (keyboards, ad SDKs,
     // Play services, system surfaces) is left alone so it can never appear over a PLUS app.
@@ -101,6 +103,14 @@ class MonitorService : Service() {
 
         val globalUsed = engine.computeGlobalUsedSeconds(usage)
         prefs.cacheUsage(globalUsed, usage)
+
+        // Report upward from here as well (every ~9s). The monitor is the component that
+        // always runs on the child and holds the freshest numbers, so the parent no longer
+        // depends on SyncService alone to see live usage.
+        if (prefs.syncConfigured && ticksSinceStatusPush++ >= 6) {
+            ticksSinceStatusPush = 0
+            runCatching { syncManager.pushStatus() }
+        }
 
         val decision = engine.decide(pkg, usage)
 

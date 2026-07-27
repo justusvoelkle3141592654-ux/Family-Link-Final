@@ -170,18 +170,31 @@ class SyncManager(private val context: Context) {
         val labels = HashMap<String, String>()
         for (pkg in usage.keys) labels[pkg] = InstalledApps.labelFor(context, pkg)
 
+        val focus = prefs.focusSession()
         val status = ChildStatus(
             globalUsedSeconds = prefs.globalUsedSeconds,
+            // Whole-phone screen time today — this is what a parent means by "how much has the
+            // phone been used", regardless of categories.
+            totalDeviceSeconds = usage.filterKeys { it != Prefs.OWN_PKG }.values.sum(),
+            limitSeconds = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday,
+            bonusSeconds = prefs.bonusSecondsToday,
             perAppSeconds = usage,
             perAppLabels = labels,
             blockedToday = prefs.getBlockedToday().keys.toList(),
             bedtimeActive = prefs.isBedtime(),
-            deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
+            focusLabel = if (focus.isRunning()) focus.label else "",
+            deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
+            batteryPercent = readBattery()
         )
         val ok = c.put(SyncClient.statusPath(prefs.familyId), status.toJson())
         if (ok) prefs.lastSyncAt = System.currentTimeMillis()
         return ok
     }
+
+    private fun readBattery(): Int = runCatching {
+        val bm = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+        bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    }.getOrDefault(-1)
 
     /** Child: apply a config received from the parent. */
     fun applyConfig(cfg: FamilyConfig) {

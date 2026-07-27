@@ -77,10 +77,8 @@ fun ChildPortalScreen(
     val bedtime = prefs.isBedtime()
     val disabled = prefs.limitsDisabled()
 
-    val perApp = prefs.getPerAppSeconds()
-        .filterKeys { it != "com.familylink.ios" }
-        .entries.sortedByDescending { it.value }
-        .take(12)
+    val perAppAll = prefs.getPerAppSeconds().filterKeys { it != "com.familylink.ios" }
+    val perApp = perAppAll.entries.sortedByDescending { it.value }.take(12)
 
     val accent = when {
         disabled -> Nova.Success
@@ -148,9 +146,17 @@ fun ChildPortalScreen(
 
         Spacer(Modifier.height(12.dp))
         Text(
-            "Genutzt ${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}" + if (bonus > 0) " (+${bonus / 60} Bonus)" else "",
+            "Angerechnet ${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}" +
+                if (bonus > 0) " (+${bonus / 60} Bonus)" else "",
             fontSize = 13.sp, color = Nova.InkMuted,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+        )
+        // Same figure the parent portal shows, so both sides never disagree.
+        val totalDevice = perAppAll.values.sum()
+        Text(
+            "Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}",
+            fontSize = 13.sp, color = Nova.InkFaint,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
         )
 
         Spacer(Modifier.height(8.dp))

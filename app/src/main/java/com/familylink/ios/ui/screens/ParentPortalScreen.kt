@@ -100,7 +100,8 @@ fun ParentPortalScreen(
 
     val remote = childStatus.takeIf { prefs.isParentDevice }
     val used = remote?.globalUsedSeconds ?: prefs.globalUsedSeconds
-    val limit = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
+    val limit = remote?.limitSeconds?.takeIf { it > 0 }
+        ?: (prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday)
 
     Column(
         Modifier
@@ -139,10 +140,53 @@ fun ParentPortalScreen(
         SectionHeader(if (prefs.isParentDevice) "Nutzung des Kindes heute" else "Heute genutzt")
         NovaCard {
             Column(Modifier.padding(16.dp)) {
-                Text(TimeFmt.hm(used), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
-                Text("von ${TimeFmt.hm(limit)} Tageslimit", fontSize = 14.sp, color = Nova.InkMuted)
-                Spacer(Modifier.height(12.dp))
-                ProgressBar(fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
+                if (prefs.isParentDevice && remote == null) {
+                    // Be explicit instead of silently showing 0 — that looked like "never used".
+                    Text("Noch keine Daten", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Nova.InkMuted)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (!prefs.syncConfigured)
+                            "Dieses Gerät ist mit keinem Konto verbunden."
+                        else
+                            "Warte auf das Kinder-Gerät. Es meldet sich, sobald es online ist " +
+                            "und der Nutzungszugriff dort erteilt wurde.",
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
+                } else {
+                    // Whole-phone screen time — the number a parent actually asks about.
+                    val totalDevice = remote?.totalDeviceSeconds ?: used
+                    Text(TimeFmt.hm(totalDevice), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                    Text("Handynutzung gesamt heute", fontSize = 13.sp, color = Nova.InkMuted)
+
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Angerechnet", fontSize = 13.sp, color = Nova.InkMuted, modifier = Modifier.weight(1f))
+                        Text(
+                            "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    ProgressBar(fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
+
+                    remote?.let { r ->
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (r.bedtimeActive) NovaPill("Ruhezeit", Nova.Night)
+                            if (r.focusLabel.isNotBlank()) NovaPill("Fokus: ${r.focusLabel}", Nova.Focus)
+                            if (r.bonusSeconds > 0) NovaPill("+${r.bonusSeconds / 60} Bonus", Nova.Success)
+                            if (r.batteryPercent in 0..100) NovaPill("Akku ${r.batteryPercent}%",
+                                if (r.batteryPercent < 20) Nova.Danger else Nova.InkMuted)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        val age = r.ageSeconds()
+                        Text(
+                            if (age < 60) "Aktualisiert gerade eben"
+                            else "Zuletzt aktualisiert vor ${TimeFmt.hm(age)}",
+                            fontSize = 11.sp, color = Nova.InkFaint
+                        )
+                    }
+                }
             }
         }
 
