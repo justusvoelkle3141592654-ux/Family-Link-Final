@@ -67,13 +67,29 @@ fun FocusScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
     val sync = remember { SyncManager(context) }
-    val apps = remember { InstalledApps.load(context) }
+    // The session runs on the CHILD's phone, so the list to choose from must be the child's
+    // apps. Picking from the parent's own installed apps produced allow-lists full of packages
+    // that do not exist on the child — the session then blocked everything.
+    var pulled by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        if (prefs.isParentDevice && prefs.syncConfigured) {
+            withIo { runCatching { sync.fetchChildApps() } }
+            pulled++
+        }
+    }
+    val apps = remember(pulled) {
+        if (!prefs.isParentDevice) InstalledApps.load(context)
+        else sync.cachedChildApps()
+            .map { InstalledApps.Entry(it.pkg, it.label) }
+            .ifEmpty { InstalledApps.load(context) }
+            .sortedBy { it.label.lowercase() }
+    }
 
     var session by remember { mutableStateOf(prefs.focusSession()) }
     var minutes by remember { mutableStateOf(45) }
     var label by remember { mutableStateOf("Hausaufgaben") }
-    // Focus apps default to whatever the parent already marked as always-allowed.
-    var allowed by remember {
+    // Focus apps default to whatever is already marked as always-allowed on the child.
+    var allowed by remember(apps) {
         mutableStateOf(
             apps.map { it.packageName }
                 .filter { prefs.categoryOf(it) == AppCategory.PLUS }
@@ -158,13 +174,36 @@ fun FocusScreen(onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(20.dp))
-            Text(
-                "Erlaubte Apps (${allowed.size})",
-                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.InkMuted
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Erlaubte Apps (${allowed.size} von ${apps.size})",
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.InkMuted,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "Keine", fontSize = 13.sp, color = Nova.Primary,
+                    modifier = Modifier.clickable { allowed = mutableSetOf<String>() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+                Text(
+                    "Nur Plus", fontSize = 13.sp, color = Nova.Primary,
+                    modifier = Modifier.clickable {
+                        allowed = apps.map { it.packageName }
+                            .filter { prefs.categoryOf(it) == AppCategory.PLUS }
+                            .toMutableSet()
+                    }.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            if (prefs.isParentDevice && apps.isEmpty()) {
+                Text(
+                    "Noch keine App-Liste vom Kinder-Gerät empfangen.",
+                    fontSize = 12.sp, color = Nova.Warning
+                )
+            }
             Spacer(Modifier.height(8.dp))
             NovaCard {
-                apps.take(25).forEach { app ->
+                // The full list — truncating it at 25 made most apps unselectable.
+                apps.forEach { app ->
                     val on = app.packageName in allowed
                     Row(
                         Modifier.fillMaxWidth().clickable {

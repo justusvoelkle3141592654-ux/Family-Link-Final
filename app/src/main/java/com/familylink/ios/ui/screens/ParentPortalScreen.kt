@@ -117,6 +117,17 @@ fun ParentPortalScreen(
         }
     }
 
+    // The child's app list with its real categories. Much slower cadence than the status: it is
+    // a bigger payload and only changes when apps are installed, removed or re-categorised.
+    LaunchedEffect(Unit) {
+        while (prefs.isParentDevice && prefs.syncConfigured) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { sync.fetchChildApps() }
+            }
+            delay(20_000)
+        }
+    }
+
     // Re-read after a manual refresh so the new numbers appear right away.
     LaunchedEffect(refreshTick) {
         if (refreshTick > 0) childStatus = sync.cachedChildStatus()

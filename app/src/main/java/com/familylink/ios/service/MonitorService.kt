@@ -54,6 +54,11 @@ class MonitorService : Service() {
     @Volatile private var managedPackages: Set<String> = emptySet()
     private var ticksSincePkgRefresh = 0
 
+    // Focus mode hides the apps a session does not allow; remember exactly which ones we hid
+    // so the same set is revealed again when it ends.
+    private var focusHidingActive = false
+    private var hiddenForFocus: Set<String> = emptySet()
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
@@ -66,6 +71,9 @@ class MonitorService : Service() {
         prefs = Prefs.get(this)
         engine = LimitEngine(prefs)
         startForeground(NOTIF_ID, buildNotification())
+        // If a previous run was killed while a focus session was hiding apps, treat the
+        // persisted set as "still hiding" so the first tick without a session reveals it again.
+        focusHidingActive = prefs.focusHiddenPackages.isNotEmpty()
         refreshManagedPackages()
         workerThread.start()
         worker = Handler(workerThread.looper)
@@ -138,6 +146,15 @@ class MonitorService : Service() {
             }
         }
 
+        // Focus mode: take the apps the session does not allow off the launcher entirely, so
+        // an allowed-plus app that is not part of this session is not sitting there tempting
+        // the child. Restored the moment the session ends.
+        //
+        // Keyed on the session itself, NOT on the decision: while the child is inside an
+        // allowed app the decision is "Allowed", and reading that as "no focus" would reveal
+        // every hidden app again on each tick.
+        applyFocusHiding(prefs.focusSession().isRunning())
+
         // Bedtime ambient sound.
         if (isBedtimeNow && prefs.bedtimeSoundEnabled) {
             main.post { BedtimeSound.start(this) }
@@ -151,8 +168,10 @@ class MonitorService : Service() {
         if (engine.isAlwaysExempt(pkg)) return
 
         val bedtime = isBedtimeNow
-        // Bedtime and focus sessions block everything that is not always-exempt.
-        val blocksEverything = bedtime || decision is LockDecision.FocusActive
+        // Only bedtime blocks literally everything (launcher included). A focus session must
+        // leave the home screen usable, otherwise the child can never reach the apps that the
+        // session allows — which is what made focus mode look broken.
+        val blocksEverything = bedtime
         if (!blocksEverything) {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
@@ -181,6 +200,36 @@ class MonitorService : Service() {
 
         val (title, detail) = messageFor(decision)
         main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock) }
+    }
+
+    /**
+     * Hide every managed app that the running focus session does not allow, and put them all
+     * back when it ends. Only does anything as device owner; without that the focus block
+     * screen remains the enforcement, as before.
+     */
+    private fun applyFocusHiding(focusRunning: Boolean) {
+        if (focusRunning == focusHidingActive) return
+        focusHidingActive = focusRunning
+
+        if (!focusRunning) {
+            // Read the set back from disk, not from memory: if we were killed mid-session this
+            // is the only record of what has to be revealed again.
+            val restore = prefs.focusHiddenPackages.toList()
+            hiddenForFocus = emptySet()
+            prefs.focusHiddenPackages = emptySet()
+            if (restore.isNotEmpty()) {
+                runCatching { com.familylink.ios.admin.DeviceOwner.setAppsHidden(this, restore, false) }
+            }
+            return
+        }
+
+        val allowed = prefs.focusSession().allowed.toSet()
+        val toHide = managedPackages.filterNot { it in allowed }
+        hiddenForFocus = runCatching {
+            com.familylink.ios.admin.DeviceOwner.setAppsHidden(this, toHide, true)
+        }.getOrDefault(emptySet())
+        // Keep anything an earlier, killed session had hidden in the set as well.
+        prefs.focusHiddenPackages = prefs.focusHiddenPackages + hiddenForFocus
     }
 
     private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {

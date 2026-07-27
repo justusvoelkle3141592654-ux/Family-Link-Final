@@ -25,6 +25,54 @@ private object Keys {
     const val VALUE = "v"
     const val SECONDS = "s"
     const val NAME = "n"
+    const val CATEGORY = "c"
+    const val LIMIT = "l"
+}
+
+/**
+ * One app installed on the child device, with the category currently in force there.
+ *
+ * This is the missing direction of the sync: the parent used to know only the apps the child
+ * had actually *used* today, and only its own idea of their categories. An app the child never
+ * opened could not be classified at all, and a PLUS mark made on the child device was invisible
+ * in the parent portal. The child now publishes its full launchable app list together with the
+ * category each app really has.
+ */
+data class ChildApp(
+    val pkg: String,
+    val label: String,
+    val category: String,
+    val limitMinutes: Int
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put(Keys.PKG, pkg)
+        .put(Keys.NAME, label)
+        .put(Keys.CATEGORY, category)
+        .put(Keys.LIMIT, limitMinutes)
+
+    companion object {
+        fun listToJson(apps: List<ChildApp>): JSONArray =
+            JSONArray().also { arr -> apps.forEach { arr.put(it.toJson()) } }
+
+        fun listFromJson(arr: JSONArray?): List<ChildApp> {
+            if (arr == null) return emptyList()
+            val out = ArrayList<ChildApp>(arr.length())
+            for (i in 0 until arr.length()) {
+                val e = arr.optJSONObject(i) ?: continue
+                val pkg = e.optString(Keys.PKG, "")
+                if (pkg.isBlank()) continue
+                out.add(
+                    ChildApp(
+                        pkg = pkg,
+                        label = e.optString(Keys.NAME, pkg),
+                        category = e.optString(Keys.CATEGORY, "STANDARD"),
+                        limitMinutes = e.optInt(Keys.LIMIT, 30)
+                    )
+                )
+            }
+            return out
+        }
+    }
 }
 
 /** Read a legacy map-shaped node, if present. */

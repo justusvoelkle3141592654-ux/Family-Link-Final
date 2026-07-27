@@ -49,10 +49,19 @@ data class TimeRequest(
  */
 data class FocusSession(
     val active: Boolean,
+    /**
+     * Absolute end time **on this device's own clock**. Never taken from the wire: the two
+     * phones' clocks can be minutes apart, which used to make a session expire instantly or
+     * run far too long. The child recomputes this locally from [durationSeconds].
+     */
     val endsAt: Long,
     val label: String,
     /** Packages that stay usable during the session. */
-    val allowed: List<String>
+    val allowed: List<String>,
+    /** Identity of the session as issued by the parent — only compared, never used as a time. */
+    val startedAt: Long = 0,
+    /** How long the session should run. This is what actually travels between the devices. */
+    val durationSeconds: Int = 0
 ) {
     fun isRunning(now: Long = System.currentTimeMillis()) = active && now < endsAt
 
@@ -62,8 +71,26 @@ data class FocusSession(
     fun toJson(): JSONObject = JSONObject()
         .put("active", active)
         .put("endsAt", endsAt)
+        .put("startedAt", startedAt)
+        .put("durationSeconds", durationSeconds)
         .put("label", label)
         .put("allowed", org.json.JSONArray(allowed))
+
+    /**
+     * Re-anchor a session received over the wire onto the local clock. [previous] is what this
+     * device already knows: if it is the same session (same [startedAt]) its countdown keeps
+     * running instead of restarting on every sync tick.
+     */
+    fun anchorLocally(previous: FocusSession, now: Long = System.currentTimeMillis()): FocusSession {
+        if (!active) return OFF
+        val sameSession = previous.active && previous.startedAt == startedAt && startedAt != 0L
+        // Same session, just re-delivered: keep the countdown we already started.
+        if (sameSession) return copy(endsAt = previous.endsAt)
+        // A brand-new session: start counting the full duration from now, on our own clock.
+        val seconds = if (durationSeconds > 0) durationSeconds
+        else ((endsAt - now) / 1000L).toInt().coerceAtLeast(0) // legacy payload without a duration
+        return copy(endsAt = now + seconds * 1000L)
+    }
 
     companion object {
         val OFF = FocusSession(false, 0, "", emptyList())
@@ -78,7 +105,9 @@ data class FocusSession(
                 active = o.optBoolean("active", false),
                 endsAt = o.optLong("endsAt", 0),
                 label = o.optString("label", "Fokus"),
-                allowed = allowed
+                allowed = allowed,
+                startedAt = o.optLong("startedAt", 0),
+                durationSeconds = o.optInt("durationSeconds", 0)
             )
         }
 

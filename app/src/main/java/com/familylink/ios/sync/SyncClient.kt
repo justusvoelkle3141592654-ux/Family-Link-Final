@@ -129,5 +129,12 @@ class SyncClient(private val databaseUrl: String) {
         fun familyPath(familyId: String) = "families/$familyId"
         fun configPath(familyId: String) = "${familyPath(familyId)}/config"
         fun statusPath(familyId: String) = "${familyPath(familyId)}/status"
+
+        /**
+         * The child's installed apps with their current categories. A separate node on purpose:
+         * it is far larger than the status and changes only when apps are installed, removed or
+         * re-categorised, so it must not ride along on the every-few-seconds status push.
+         */
+        fun appsPath(familyId: String) = "${familyPath(familyId)}/apps"
     }
 }

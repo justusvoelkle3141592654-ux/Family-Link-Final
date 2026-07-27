@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,23 +51,47 @@ fun AppsScreen() {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
 
-    // On the parent device we manage the CHILD's apps (reported through sync), not the ones
-    // installed on the parent phone. Falls back to local apps when nothing has synced yet.
-    val remoteApps = remember {
+    val sync = remember { com.familylink.ios.sync.SyncManager(context) }
+    // local mirror so the UI updates immediately; persisted on each change
+    var version by remember { mutableStateOf(0) }
+    var pulled by remember { mutableStateOf(0) }
+
+    // Pull the child's app list once when this screen opens, so a parent that just installed
+    // the app does not have to wait for the portal's slow poll.
+    LaunchedEffect(Unit) {
+        if (prefs.isParentDevice && prefs.syncConfigured) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { sync.fetchChildApps() }
+            }
+            pulled++
+        }
+    }
+
+    // On the parent device we manage the CHILD's apps, not the ones installed on the parent
+    // phone. Preferred source is the child's full launchable app list; the apps it merely used
+    // today are the fallback, and only if neither arrived do we fall back to local apps.
+    val remoteApps = remember(pulled, version) {
         if (!prefs.isParentDevice) emptyList()
-        else com.familylink.ios.sync.SyncManager(context).cachedChildStatus()
-            ?.perAppLabels?.map { (pkg, label) -> InstalledApps.Entry(pkg, label) }
-            ?.sortedBy { it.label.lowercase() }
-            ?: emptyList()
+        else sync.cachedChildApps()
+            .map { InstalledApps.Entry(it.pkg, it.label) }
+            .ifEmpty {
+                sync.cachedChildStatus()?.perAppLabels
+                    ?.map { (pkg, label) -> InstalledApps.Entry(pkg, label) }
+                    .orEmpty()
+            }
+            .sortedBy { it.label.lowercase() }
     }
     val apps = remember(remoteApps) {
         if (remoteApps.isNotEmpty()) remoteApps else InstalledApps.load(context)
     }
     val managingRemote = remoteApps.isNotEmpty()
-    // local mirror so the UI updates immediately; persisted on each change
-    var version by remember { mutableStateOf(0) }
 
-    val perApp = remember(version) { prefs.getPerAppSeconds() }
+    // Usage must come from the child too — reading the parent phone's own numbers here made
+    // every app show "Heute noch nicht genutzt".
+    val perApp = remember(version, pulled) {
+        if (prefs.isParentDevice) sync.cachedChildStatus()?.perAppSeconds.orEmpty()
+        else prefs.getPerAppSeconds()
+    }
 
     Column(
         Modifier.fillMaxSize()

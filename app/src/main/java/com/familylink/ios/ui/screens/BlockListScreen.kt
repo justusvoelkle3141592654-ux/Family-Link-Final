@@ -70,10 +70,23 @@ fun BlockListScreen(
     val prefs = remember { Prefs.get(context) }
     var showPlus by remember { mutableStateOf(false) }
 
+    val focus = remember { prefs.focusSession() }
+    val focusRunning = focus.isRunning()
+
     if (showPlus && !bedtime) {
         val apps = remember { InstalledApps.load(context) }
-        val plusApps = remember { apps.filter { prefs.categoryOf(it.packageName) == AppCategory.PLUS } }
-        PlusAppsView(plusApps = plusApps, onLaunchApp = onLaunchApp, onBack = { showPlus = false })
+        // While a focus session runs, an allowed-plus app that the session does not include is
+        // hidden here as well — the child should not even be offered it.
+        val plusApps = remember(focusRunning) {
+            if (focusRunning) apps.filter { it.packageName in focus.allowed }
+            else apps.filter { prefs.categoryOf(it.packageName) == AppCategory.PLUS }
+        }
+        PlusAppsView(
+            plusApps = plusApps,
+            title = if (focusRunning) "Fokus-Apps" else "Zugelassen + Apps",
+            onLaunchApp = onLaunchApp,
+            onBack = { showPlus = false }
+        )
         return
     }
 
@@ -111,7 +124,10 @@ fun BlockListScreen(
 
         // During bedtime this is a hard lock: no allowed apps, no extension, no close/portal.
         if (!bedtime) {
-            BigButton("Zugelassen + Apps", Nova.Success) { showPlus = true }
+            BigButton(
+                if (focusRunning) "Fokus-Apps" else "Zugelassen + Apps",
+                Nova.Success
+            ) { showPlus = true }
             Spacer(Modifier.height(12.dp))
             BigButton("Verlängerung", Nova.Primary) { onExtend() }
             Spacer(Modifier.height(24.dp))
@@ -163,6 +179,7 @@ private fun BigButton(text: String, color: Color, onClick: () -> Unit) {
 @Composable
 private fun PlusAppsView(
     plusApps: List<InstalledApps.Entry>,
+    title: String,
     onLaunchApp: (String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -178,7 +195,7 @@ private fun PlusAppsView(
             }
         }
         Text(
-            "Zugelassene Apps", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink,
+            title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink,
             modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)
         )
         Text(
@@ -188,7 +205,8 @@ private fun PlusAppsView(
 
         if (plusApps.isEmpty()) {
             Text(
-                "Es sind keine Plus-Apps festgelegt. Im Eltern-Portal können Apps auf Plus gestellt werden.",
+                "Es sind keine Apps freigegeben. Im Eltern-Portal können Apps auf Plus gestellt " +
+                    "oder für den Fokus freigegeben werden.",
                 fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.padding(horizontal = 16.dp)
             )
         } else {

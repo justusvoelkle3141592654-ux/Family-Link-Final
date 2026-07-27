@@ -104,6 +104,30 @@ object DeviceOwner {
     }
 
     /**
+     * Hide [packages] from the launcher (and from search and the app drawer), or reveal them
+     * again. Used by focus mode: an allowed app the session does not include should not just be
+     * blocked after tapping it — it should not be sitting there tempting the child at all.
+     *
+     * Hiding is fully reversible and touches no data: the app stays installed with everything
+     * in place, Android merely stops showing and starting it.
+     *
+     * Returns the packages it actually managed to change, so the caller can restore exactly
+     * those later. Never hides our own app or the phone.
+     */
+    fun setAppsHidden(context: Context, packages: Collection<String>, hidden: Boolean): Set<String> {
+        if (!isDeviceOwner(context)) return emptySet()
+        val dpm = dpm(context)
+        val admin = DeviceAdmin.componentName(context)
+        val changed = HashSet<String>()
+        for (pkg in packages) {
+            if (pkg == context.packageName || pkg in NEVER_HIDE) continue
+            val ok = runCatching { dpm.setApplicationHidden(admin, pkg, hidden) }.getOrDefault(false)
+            if (ok) changed.add(pkg)
+        }
+        return changed
+    }
+
+    /**
      * Pin the current activity so HOME and Recents are disabled (kiosk mode). Used for hard
      * locks: bedtime, day limit and focus sessions.
      */
@@ -119,5 +143,21 @@ object DeviceOwner {
     private val SETTINGS_PACKAGES = listOf(
         "com.android.settings",
         "com.samsung.android.settings"
+    )
+
+    /** Hiding these would strand the child: no home screen, no phone, no emergency call. */
+    private val NEVER_HIDE = setOf(
+        "com.android.systemui",
+        "com.android.dialer",
+        "com.google.android.dialer",
+        "com.android.phone",
+        "com.android.emergency",
+        "com.android.server.telecom",
+        "com.android.launcher",
+        "com.android.launcher3",
+        "com.google.android.apps.nexuslauncher",
+        "com.sec.android.app.launcher",
+        "com.microsoft.launcher",
+        "com.teslacoilsw.launcher"
     )
 }

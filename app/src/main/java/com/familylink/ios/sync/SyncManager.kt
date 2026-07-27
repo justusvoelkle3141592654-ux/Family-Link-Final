@@ -52,12 +52,17 @@ class SyncManager(private val context: Context) {
 
     /** Parent: start a focus session that takes effect on the child within ~1s. */
     fun startFocus(label: String, minutes: Int, allowed: List<String>) {
+        val now = System.currentTimeMillis()
         prefs.setFocusSession(
             FocusSession(
                 active = true,
-                endsAt = System.currentTimeMillis() + minutes * 60_000L,
+                endsAt = now + minutes * 60_000L,
                 label = label,
-                allowed = allowed
+                allowed = allowed,
+                // The child anchors the countdown on its own clock using the duration; startedAt
+                // only identifies the session so a resync does not restart it.
+                startedAt = now,
+                durationSeconds = minutes * 60
             )
         )
     }
@@ -171,9 +176,10 @@ class SyncManager(private val context: Context) {
     fun syncNow(): Boolean {
         if (!prefs.syncConfigured) return false
         return if (prefs.isParentDevice) {
-            // Publish current rules, then pull the child's latest numbers.
+            // Publish current rules, then pull the child's latest numbers and app list.
             val pushed = pushConfig()
             fetchChildStatus()
+            runCatching { fetchChildApps() }
             fetchChoreClaims().takeIf { it.isNotEmpty() }?.let { claims ->
                 // Merge chore claims coming from the child so the portal shows them at once.
                 val local = prefs.getChores().associateBy { it.id }
@@ -184,9 +190,11 @@ class SyncManager(private val context: Context) {
             }
             pushed
         } else {
-            // Child: apply the newest rules, then report its own usage.
+            // Child: apply the newest rules, then report its own usage and app list.
             fetchConfigOnce()
-            pushStatus()
+            val ok = pushStatus()
+            runCatching { pushAppList(force = true) }
+            ok
         }
     }
 
@@ -242,7 +250,91 @@ class SyncManager(private val context: Context) {
         } else {
             prefs.lastSyncError = c.lastError.orEmpty()
         }
+        // Publish the app list too. Fingerprinted, so this is a no-op unless something changed.
+        runCatching { pushAppList() }
         return ok
+    }
+
+    // ---------------- child app list (child -> parent) ----------------
+
+    /**
+     * Child -> server: the full launchable app list with the category each app really has.
+     *
+     * Without this the parent only ever saw apps the child had *used today*, and only its own
+     * local idea of their categories — so a Plus/Limit/Blocked mark made on the child device
+     * never showed up in the parent app, and an app the child had never opened could not be
+     * classified at all.
+     *
+     * Gated on a fingerprint: the list is large and changes rarely, so it is uploaded only when
+     * something actually differs, not on every status push.
+     */
+    fun pushAppList(force: Boolean = false): Boolean {
+        val c = client() ?: return false
+        val apps = runCatching { InstalledApps.load(context) }.getOrDefault(emptyList())
+        if (apps.isEmpty()) return false
+
+        val list = apps.map { app ->
+            ChildApp(
+                pkg = app.packageName,
+                label = app.label,
+                category = prefs.categoryOf(app.packageName).name,
+                limitMinutes = prefs.limitMinutesOf(app.packageName)
+            )
+        }.sortedBy { it.label.lowercase() }
+
+        val hash = list.joinToString("|") { "${it.pkg}:${it.category}:${it.limitMinutes}" }.hashCode()
+        if (!force && hash == prefs.lastAppListHash) return true
+
+        val ok = c.put(
+            SyncClient.appsPath(prefs.familyId),
+            JSONObject()
+                .put("list", ChildApp.listToJson(list))
+                .put("updatedAt", System.currentTimeMillis())
+        )
+        if (ok) prefs.lastAppListHash = hash else prefs.lastSyncError = c.lastError.orEmpty()
+        return ok
+    }
+
+    /**
+     * Parent: read the child's app list and adopt the categories for every package the parent
+     * has not classified itself, so the portal shows what is really in force on the child.
+     */
+    fun fetchChildApps(): List<ChildApp> {
+        val c = client() ?: return emptyList()
+        val node = c.get(SyncClient.appsPath(prefs.familyId)) ?: return emptyList()
+        val list = ChildApp.listFromJson(node.optJSONArray("list"))
+        if (list.isEmpty()) return emptyList()
+
+        prefs.cachedChildApps = node.toString()
+        adoptChildCategories(list)
+        return list
+    }
+
+    /** Last app list received from the child, without touching the network. */
+    fun cachedChildApps(): List<ChildApp> {
+        val raw = prefs.cachedChildApps
+        if (raw.isBlank()) return emptyList()
+        return runCatching { ChildApp.listFromJson(JSONObject(raw).optJSONArray("list")) }
+            .getOrDefault(emptyList())
+    }
+
+    /**
+     * Fill in the categories the parent has no opinion on yet. Packages the parent has set
+     * explicitly are left untouched — the parent stays the owner of the rules, this only stops
+     * the portal from showing "Standard" for apps the child has long had marked otherwise.
+     */
+    private fun adoptChildCategories(list: List<ChildApp>) {
+        val own = prefs.getCategories()
+        var changed = false
+        val merged = HashMap<String, Pair<AppCategory, Int>>(own)
+        for (app in list) {
+            if (own.containsKey(app.pkg)) continue
+            val cat = runCatching { AppCategory.valueOf(app.category) }.getOrDefault(AppCategory.STANDARD)
+            if (cat == AppCategory.STANDARD && app.limitMinutes == 30) continue // nothing to learn
+            merged[app.pkg] = cat to app.limitMinutes
+            changed = true
+        }
+        if (changed) prefs.replaceCategories(merged)
     }
 
     private fun readBattery(): Int = runCatching {
@@ -264,7 +356,10 @@ class SyncManager(private val context: Context) {
         prefs.setBonusMinutesAbsolute(cfg.bonusMinutes)
         prefs.setOffUntilEpoch(cfg.offUntilEpoch)
         prefs.setSettingsUnlockedUntil(cfg.settingsUnlockedUntil)
-        prefs.setFocusSession(cfg.focus)
+        // Re-anchor the focus countdown on this device's clock. Taking the parent's absolute
+        // end time literally made a session expire instantly (or run far too long) whenever the
+        // two phones' clocks were a few minutes apart.
+        prefs.setFocusSession(cfg.focus.anchorLocally(prefs.focusSession()))
         runCatching {
             prefs.usageMode = com.familylink.ios.data.UsageMode.valueOf(cfg.usageMode)
         }

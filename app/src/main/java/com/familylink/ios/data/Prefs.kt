@@ -180,6 +180,27 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         focusJson = s.toJson().toString()
     }
 
+    /**
+     * Packages currently hidden from the launcher because a focus session excludes them.
+     * Persisted on purpose: if the monitor service is killed while a session runs, the set
+     * would otherwise be lost and those apps would stay hidden forever.
+     */
+    var focusHiddenPackages: Set<String>
+        get() = sp.getStringSet("focus_hidden", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("focus_hidden", HashSet(v)).apply()
+
+    // ---- Child app list mirrored on the parent device ----------------------
+
+    /** Last app list received from the child (JSON array), so the parent can manage it. */
+    var cachedChildApps: String
+        get() = sp.getString("child_apps", "") ?: ""
+        set(v) = sp.edit().putString("child_apps", v).apply()
+
+    /** Fingerprint of the app list the child last uploaded, so it only re-sends on change. */
+    var lastAppListHash: Int
+        get() = sp.getInt("app_list_hash", 0)
+        set(v) = sp.edit().putInt("app_list_hash", v).apply()
+
     // ---- Time requests ----------------------------------------------------
 
     /** Latest request as JSON (child writes, parent decides). */

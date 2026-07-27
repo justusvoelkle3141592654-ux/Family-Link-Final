@@ -75,7 +75,10 @@ class LimitEngine(private val prefs: Prefs) {
         val focus = prefs.focusSession()
         if (focus.isRunning()) {
             if (pkg == null) return LockDecision.Allowed
-            if (isAlwaysExempt(pkg) || pkg in focus.allowed) return LockDecision.Allowed
+            // The home screen MUST stay reachable — otherwise the block screen fires on the
+            // launcher itself and the child can never open any of the allowed apps, which made
+            // focus mode look completely broken. (Bedtime is different: there it blocks all.)
+            if (isForegroundExempt(pkg) || pkg in focus.allowed) return LockDecision.Allowed
             return LockDecision.FocusActive(focus.label, focus.remainingSeconds())
         }
 
