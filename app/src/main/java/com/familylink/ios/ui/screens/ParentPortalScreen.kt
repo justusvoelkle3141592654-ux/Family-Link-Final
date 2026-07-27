@@ -293,6 +293,26 @@ fun ParentPortalScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                         )
                     }
+                    // The total, spelled out under the breakdown, so the sum of the list and the
+                    // whole-phone number are always visible next to each other.
+                    Box(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                            .height(1.dp).background(Nova.Fill)
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Gesamte Nutzungszeit heute", fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold, color = Nova.Ink,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            TimeFmt.hm(remote.totalDeviceSeconds), fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold, color = Nova.Ink
+                        )
+                    }
                 }
             }
         }

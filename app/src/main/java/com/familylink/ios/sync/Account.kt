@@ -18,7 +18,7 @@ import java.util.UUID
  */
 object Account {
 
-    const val MAX_DEVICES = 3
+    const val MAX_DEVICES = 5
 
     fun emailKey(email: String): String =
         sha256(email.trim().lowercase()).take(24)

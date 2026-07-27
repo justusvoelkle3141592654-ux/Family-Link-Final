@@ -171,7 +171,7 @@ Familie liegt im Jahr bei deutlich unter 1 % dieses Kontingents. Wichtig ist nur
 
 ### Konto & Geräte-Limit
 - Beim Einrichten legt man ein **Familien-Konto** (E-Mail + Passwort) an bzw. meldet sich an.
-- Pro Konto sind **maximal 3 Geräte** erlaubt. Ein viertes Gerät wird abgewiesen, bis im Portal
+- Pro Konto sind **maximal 5 Geräte** erlaubt. Ein sechstes Gerät wird abgewiesen, bis im Portal
   unter **Geräte** eines entfernt wurde.
 - Das Portal zeigt alle Geräte mit Namen, Rolle und Online-Status.
 

@@ -3,9 +3,11 @@ package com.familylink.ios.sync
 import android.content.Context
 import android.os.Build
 import com.familylink.ios.data.AppCategory
+import com.familylink.ios.data.LimitEngine
 import com.familylink.ios.data.UsageMode
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
+import com.familylink.ios.util.UsageStatsTracker
 import org.json.JSONObject
 
 /**
@@ -200,17 +202,29 @@ class SyncManager(private val context: Context) {
     /** Child -> server: report live usage. */
     fun pushStatus(): Boolean {
         val c = client() ?: return false
-        val usage = prefs.getPerAppSeconds()
+        // Read the usage straight from the OS at push time. The cached numbers written by the
+        // monitor service are only a fallback now: if the service was killed, or has not ticked
+        // since midnight, the cache is stale and the parent used to receive a total of zero.
+        val live = runCatching { UsageStatsTracker.todayUsageSeconds(context) }.getOrDefault(emptyMap())
+        val cached = prefs.getPerAppSeconds()
+        val usage = if (live.isNotEmpty()) live else cached
+
         // Only send labels for apps that were actually used, to keep the payload small.
         val labels = HashMap<String, String>()
         for (pkg in usage.keys) labels[pkg] = InstalledApps.labelFor(context, pkg)
 
+        // Whole-phone screen time today, across every app — this is what a parent means by
+        // "how much has the phone been used", regardless of categories and limits.
+        val totalDevice = usage.filterKeys { it != Prefs.OWN_PKG }.values.sum()
+        // The share that counts against the limit, recomputed from the same fresh numbers so
+        // the two values a parent sees can never contradict each other.
+        val counted = runCatching { LimitEngine(prefs).computeGlobalUsedSeconds(usage) }
+            .getOrDefault(prefs.globalUsedSeconds)
+
         val focus = prefs.focusSession()
         val status = ChildStatus(
-            globalUsedSeconds = prefs.globalUsedSeconds,
-            // Whole-phone screen time today — this is what a parent means by "how much has the
-            // phone been used", regardless of categories.
-            totalDeviceSeconds = usage.filterKeys { it != Prefs.OWN_PKG }.values.sum(),
+            globalUsedSeconds = counted,
+            totalDeviceSeconds = totalDevice,
             limitSeconds = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday,
             bonusSeconds = prefs.bonusSecondsToday,
             perAppSeconds = usage,
