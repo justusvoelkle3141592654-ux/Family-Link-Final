@@ -88,7 +88,7 @@ fun ChoresParentScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("Aufgaben", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                Text("Aufgaben", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
                 Text("Erledigte Aufgaben geben Bonuszeit", fontSize = 13.sp, color = Nova.InkMuted)
             }
         }
@@ -239,7 +239,7 @@ fun ChoresChildScreen(onBack: () -> Unit) {
         Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
-        Text("Aufgaben", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+        Text("Aufgaben", fontSize = 26.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Text("Erledige Aufgaben und verdiene Extra-Zeit", fontSize = 13.sp, color = Nova.InkMuted)
         Spacer(Modifier.height(20.dp))
 

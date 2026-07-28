@@ -337,7 +337,7 @@ fun ParentPortalScreen(
                 } else {
                     // Whole-phone screen time — the number a parent actually asks about.
                     val totalDevice = remote?.totalDeviceSeconds ?: used
-                    Text(TimeFmt.hm(totalDevice), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                    Text(TimeFmt.hm(totalDevice), fontSize = 30.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
                     Text("Handynutzung gesamt heute", fontSize = 13.sp, color = Nova.InkMuted)
 
                     Spacer(Modifier.height(16.dp))
@@ -439,7 +439,7 @@ fun ParentPortalScreen(
                         )
                         Text(
                             TimeFmt.hm(remote.totalDeviceSeconds), fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold, color = Nova.Ink
+                            fontWeight = FontWeight.Medium, color = Nova.Ink
                         )
                     }
                 }
@@ -977,7 +977,7 @@ private fun UsageDetailScreen(
                 "‹ Zurück", color = Nova.Primary, fontSize = 17.sp,
                 modifier = Modifier.clickable { onBack() }.padding(end = 12.dp)
             )
-            Text("Nutzung im Detail", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+            Text("Nutzung im Detail", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         }
 
         if (remote == null) {
@@ -1135,45 +1135,48 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier 
         Triple(1, "Einstellungen", Icons.Filled.Person),
         Triple(2, "Aufgaben", Icons.Filled.CheckCircle)
     )
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(Nova.Surface)
-            .padding(top = 8.dp, bottom = 14.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        items.forEach { (index, label, icon) ->
-            val selected = current == index
-            Column(
-                Modifier
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) { onSelect(index) }
-                    .padding(horizontal = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
+    Column(modifier.fillMaxWidth().background(Nova.Surface)) {
+        // Hairline above the bar so it reads as a separate surface on a white card below it.
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
+        Row(
+            Modifier.fillMaxWidth().height(80.dp).padding(top = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Top
+        ) {
+            items.forEach { (index, label, icon) ->
+                val selected = current == index
+                Column(
                     Modifier
-                        .width(64.dp).height(32.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (selected) Nova.Accent else Color.Transparent),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { onSelect(index) },
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        icon, label,
-                        tint = if (selected) Nova.Primary else Nova.InkMuted,
-                        modifier = Modifier.size(20.dp)
+                    // Material 3's active indicator: a 64x32 pill behind the glyph only.
+                    Box(
+                        Modifier
+                            .width(64.dp).height(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (selected) Nova.Accent else Color.Transparent),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            icon, label,
+                            tint = if (selected) Nova.Primary else Nova.InkMuted,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        label,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (selected) Nova.Ink else Nova.InkMuted,
+                        maxLines = 1
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    label,
-                    fontSize = 12.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected) Nova.Primary else Nova.InkMuted
-                )
             }
         }
     }
@@ -1212,7 +1215,7 @@ private fun SettingsList(onPick: (String) -> Unit) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("Einstellungen", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Text("Einstellungen", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Spacer(Modifier.height(16.dp))
         NovaCard {
             MENU_ENTRIES.forEachIndexed { i, e ->
@@ -1332,7 +1335,7 @@ private fun ParentDashboard(
             }
         }
         Spacer(Modifier.height(18.dp))
-        Text("Bildschirmzeit", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Text("Bildschirmzeit", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         if (refreshing) {
             Text("Aktualisiere…", fontSize = 12.sp, color = Nova.InkMuted, modifier = Modifier.padding(top = 6.dp))
         }
@@ -1364,7 +1367,7 @@ private fun ParentDashboard(
                     }
                     Text(
                         TimeFmt.hm(remaining),
-                        fontSize = 46.sp, fontWeight = FontWeight.ExtraBold,
+                        fontSize = 52.sp, fontWeight = FontWeight.Normal,
                         color = if (remaining == 0) Nova.Danger else Nova.Primary
                     )
                     Spacer(Modifier.height(4.dp))

@@ -54,7 +54,7 @@ fun StatsScreen(onBack: () -> Unit) {
         Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
-        Text("Wochenbericht", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+        Text("Wochenbericht", fontSize = 26.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Text("Die letzten 7 Tage", fontSize = 13.sp, color = Nova.InkMuted)
         Spacer(Modifier.height(20.dp))
 
@@ -174,7 +174,7 @@ private fun StatTile(label: String, value: String, color: androidx.compose.ui.gr
             .padding(vertical = 16.dp, horizontal = 10.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            Text(value, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = color)
+            Text(value, fontSize = 17.sp, fontWeight = FontWeight.Normal, color = color)
             Spacer(Modifier.height(2.dp))
             Text(label, fontSize = 11.sp, color = Nova.InkMuted)
         }

@@ -134,7 +134,7 @@ fun ParentUnlockScreen(onUnlocked: () -> Unit) {
             Icon(Icons.Filled.Shield, null, tint = Color.White, modifier = Modifier.size(38.dp))
         }
         Spacer(Modifier.height(20.dp))
-        Text("Eltern-Bereich", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+        Text("Eltern-Bereich", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Spacer(Modifier.height(6.dp))
         Text(
             "Zum Entsperren bestätigen.",

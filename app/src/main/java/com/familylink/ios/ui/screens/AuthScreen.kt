@@ -85,7 +85,7 @@ fun AuthScreen(role: DeviceRole, onDone: () -> Unit, onSkip: () -> Unit) {
         Spacer(Modifier.height(18.dp))
         Text(
             if (signUp) "Familien-Konto erstellen" else "Anmelden",
-            fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink
+            fontSize = 26.sp, fontWeight = FontWeight.Normal, color = Nova.Ink
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -239,7 +239,7 @@ fun DevicesScreen(onBack: () -> Unit) {
         Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
-        Text("Geräte", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+        Text("Geräte", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Text(
             "${devices.size} von ${Account.MAX_DEVICES} Geräten verbunden",
             fontSize = 14.sp, color = Nova.InkMuted

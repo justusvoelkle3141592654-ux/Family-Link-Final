@@ -114,7 +114,7 @@ fun FocusScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Fokus-Modus", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                Text("Fokus-Modus", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
                 Text("Nur ausgewählte Apps, auf Zeit", fontSize = 13.sp, color = Nova.InkMuted)
             }
         }
@@ -130,7 +130,7 @@ fun FocusScreen(onBack: () -> Unit) {
                     Text(session.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
                     Text(
                         TimeFmt.hm(session.remainingSeconds()) + " verbleibend",
-                        fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Focus
+                        fontSize = 32.sp, fontWeight = FontWeight.Normal, color = Nova.Focus
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -280,7 +280,7 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Handy weglegen", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                Text("Handy weglegen", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
                 Text("Fokus-Zeit, die du selbst startest", fontSize = 13.sp, color = Nova.InkMuted)
             }
         }
@@ -295,7 +295,7 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                     Text(session.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
                     Text(
                         TimeFmt.hm(session.remainingSeconds()) + " übrig",
-                        fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Focus
+                        fontSize = 32.sp, fontWeight = FontWeight.Normal, color = Nova.Focus
                     )
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -472,7 +472,7 @@ fun RequestTimeScreen(onClose: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(48.dp))
-        Text("Mehr Zeit anfragen", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+        Text("Mehr Zeit anfragen", fontSize = 26.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Spacer(Modifier.height(8.dp))
 
         if (!sent) {
@@ -485,7 +485,7 @@ fun RequestTimeScreen(onClose: () -> Unit) {
                 RoundBtn("−") { minutes = (minutes - 5).coerceAtLeast(5) }
                 Text(
                     "$minutes Min", modifier = Modifier.weight(1f), textAlign = TextAlign.Center,
-                    fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Primary
+                    fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Primary
                 )
                 RoundBtn("+") { minutes = (minutes + 5).coerceAtMost(60) }
             }

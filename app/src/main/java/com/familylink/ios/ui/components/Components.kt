@@ -22,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -40,21 +39,23 @@ fun NovaButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    val brush = if (color != null) Brush.horizontalGradient(listOf(color, color))
-    else Brush.horizontalGradient(Nova.BrandGradient)
+    val fill = if (enabled) (color ?: Nova.Primary) else Nova.Fill
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(54.dp)
-            .clip(RoundedCornerShape(Nova.RadiusControl.dp))
-            .background(
-                if (enabled) brush
-                else Brush.horizontalGradient(listOf(Nova.InkFaint, Nova.InkFaint))
-            )
+            .height(52.dp)
+            // Fully round: Material 3 buttons are pills, not rounded rectangles.
+            .clip(RoundedCornerShape(50))
+            .background(fill)
             .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = textColor, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text,
+            color = if (enabled) textColor else Nova.InkFaint,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -69,13 +70,13 @@ fun NovaButtonTonal(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
-            .clip(RoundedCornerShape(Nova.RadiusControl.dp))
-            .background(color.copy(alpha = 0.12f))
+            .height(52.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (color == Nova.Primary) Nova.Accent else color.copy(alpha = 0.14f))
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = color, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = color, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -147,7 +148,7 @@ fun NovaRow(
 @Composable
 fun NovaDivider() {
     Box(
-        Modifier.fillMaxWidth().padding(start = 16.dp).height(1.dp).background(Nova.Line)
+        Modifier.fillMaxWidth().padding(start = 70.dp).height(1.dp).background(Nova.Line)
     )
 }
 
@@ -156,9 +157,9 @@ fun SectionHeader(text: String) {
     Text(
         text = text,
         color = Nova.InkMuted,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp)
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(start = 8.dp, top = 26.dp, bottom = 10.dp)
     )
 }
 
