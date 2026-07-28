@@ -288,6 +288,63 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getInt(K_GLOBAL_LIMIT_MIN, DEFAULT_GLOBAL_LIMIT_MIN)
         set(v) = sp.edit().putInt(K_GLOBAL_LIMIT_MIN, v.coerceIn(0, MAX_GLOBAL_LIMIT_MIN)).apply()
 
+    // ---- Parent notifications ----------------------------------------------
+    //
+    // Off by default and entirely opt-in. The parent app runs no background service unless
+    // notifications are switched on — that is the only reason it would need one, and it is
+    // also what puts a permanent (minimum-importance) entry in the shade.
+
+    var notifyEnabled: Boolean
+        get() = sp.getBoolean("notify_on", false)
+        set(v) = sp.edit().putBoolean("notify_on", v).apply()
+
+    var notifyRequest: Boolean
+        get() = sp.getBoolean("notify_request", true)
+        set(v) = sp.edit().putBoolean("notify_request", v).apply()
+
+    var notifyChore: Boolean
+        get() = sp.getBoolean("notify_chore", true)
+        set(v) = sp.edit().putBoolean("notify_chore", v).apply()
+
+    var notifyLimit: Boolean
+        get() = sp.getBoolean("notify_limit", true)
+        set(v) = sp.edit().putBoolean("notify_limit", v).apply()
+
+    var notifyHardCap: Boolean
+        get() = sp.getBoolean("notify_hardcap", true)
+        set(v) = sp.edit().putBoolean("notify_hardcap", v).apply()
+
+    var notifyOffline: Boolean
+        get() = sp.getBoolean("notify_offline", false)
+        set(v) = sp.edit().putBoolean("notify_offline", v).apply()
+
+    // --- de-duplication state, so nothing is ever announced twice ---
+
+    var notifiedRequestAt: Long
+        get() = sp.getLong("notified_request_at", 0)
+        set(v) = sp.edit().putLong("notified_request_at", v).apply()
+
+    /** Chore ids already announced as done; cleared again when a chore leaves the DONE state. */
+    var notifiedChoreIds: Set<String>
+        get() = sp.getStringSet("notified_chores", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("notified_chores", HashSet(v)).apply()
+
+    /** Day marker of the last "limit reached" notice, so it fires once per day. */
+    var notifiedLimitDay: Int
+        get() = sp.getInt("notified_limit_day", -1)
+        set(v) = sp.edit().putInt("notified_limit_day", v).apply()
+
+    var notifiedCapDay: Int
+        get() = sp.getInt("notified_cap_day", -1)
+        set(v) = sp.edit().putInt("notified_cap_day", v).apply()
+
+    var notifiedOfflineAt: Long
+        get() = sp.getLong("notified_offline_at", 0)
+        set(v) = sp.edit().putLong("notified_offline_at", v).apply()
+
+    /** Today's marker, shared with the notification de-duplication above. */
+    fun todayMarker(): Int = dayMarker()
+
     // ---- Manual device lock ------------------------------------------------
     //
     // The parent locks the phone by hand from their own device. Unlike a focus session this

@@ -1,5 +1,8 @@
 package com.familylink.ios.ui.screens
 
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.familylink.ios.service.ParentNotifications
+import com.familylink.ios.service.ParentWatchService
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.data.UsageMode
@@ -151,6 +156,21 @@ fun ParentPortalScreen(
     var menuOpen by remember { mutableStateOf(false) }
 
     fun showGroup(group: String): Boolean = settingsGroup == null || settingsGroup == group
+
+    // Android 13+ needs an explicit grant before any notification is shown.
+    var notificationsAllowed by remember { mutableStateOf(ParentNotifications.permitted(context)) }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> notificationsAllowed = granted }
+
+    fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsAllowed) {
+            runCatching { notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+        }
+    }
+
+    // Keep the watcher in step with the setting whenever the portal is opened.
+    LaunchedEffect(Unit) { ParentWatchService.sync(context) }
 
     if (prefs.isParentDevice && !showSettings) {
         Box(Modifier.fillMaxSize()) {
@@ -757,6 +777,56 @@ fun ParentPortalScreen(
         }
 
         // ---- appearance ----
+        // ---- notifications (parent device only) ----
+        if (prefs.isParentDevice && showGroup("meldungen")) {
+        SectionHeader("Benachrichtigungen")
+        NovaCard {
+            NovaRow(
+                title = "Benachrichtigungen",
+                subtitle = "Aus lässt die App völlig still — sie läuft dann auch nicht im " +
+                    "Hintergrund. An bedeutet einen unauffälligen Dauer-Eintrag in der Leiste, " +
+                    "den Android für Hintergrund-Apps vorschreibt."
+            ) {
+                NovaSwitch(checked = prefs.notifyEnabled) { on ->
+                    prefs.notifyEnabled = on
+                    if (on) askNotificationPermission()
+                    ParentWatchService.sync(context)
+                    v++
+                }
+            }
+            if (prefs.notifyEnabled) {
+                NovaRow(title = "Verlängerung angefragt", subtitle = "Wenn dein Kind um Zeit bittet") {
+                    NovaSwitch(checked = prefs.notifyRequest) {
+                        prefs.notifyRequest = it; v++
+                    }
+                }
+                NovaRow(title = "Aufgabe erledigt", subtitle = "Wenn eine Aufgabe zum Bestätigen ansteht") {
+                    NovaSwitch(checked = prefs.notifyChore) { prefs.notifyChore = it; v++ }
+                }
+                NovaRow(title = "Tageslimit erreicht", subtitle = "Einmal pro Tag") {
+                    NovaSwitch(checked = prefs.notifyLimit) { prefs.notifyLimit = it; v++ }
+                }
+                NovaRow(title = "Gesamtlimit erreicht", subtitle = "Einmal pro Tag") {
+                    NovaSwitch(checked = prefs.notifyHardCap) { prefs.notifyHardCap = it; v++ }
+                }
+                NovaRow(
+                    title = "Kind offline",
+                    subtitle = "Wenn sich das Gerät über 30 Minuten nicht meldet"
+                ) {
+                    NovaSwitch(checked = prefs.notifyOffline) { prefs.notifyOffline = it; v++ }
+                }
+                if (!notificationsAllowed) {
+                    Text(
+                        "Android erlaubt der App noch keine Benachrichtigungen. Bitte in den " +
+                            "Systemeinstellungen für Family Link freigeben.",
+                        fontSize = 12.sp, color = Nova.Warning,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+        }
+
         if (showGroup("geraet")) {
         SectionHeader("Darstellung")
         NovaCard {
@@ -838,6 +908,7 @@ private val GROUP_TITLES = mapOf(
     "sperren" to "Sperren & Fokus",
     "verwaltung" to "Verwaltung",
     "schutz" to "Schutz",
+    "meldungen" to "Benachrichtigungen",
     "geraet" to "Gerät & Design"
 )
 
@@ -848,6 +919,7 @@ private val MENU_ENTRIES = listOf(
     Triple("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus, Sofort-Pause"),
     Triple("verwaltung", "Verwaltung", "Apps & Kategorien, Aufgaben, Bericht, Geräte"),
     Triple("schutz", "Schutz", "Schutz-Stufe und Bypass-Sicherung"),
+    Triple("meldungen", "Benachrichtigungen", "Anfragen, Aufgaben und Limits melden lassen"),
     Triple("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen")
 )
 

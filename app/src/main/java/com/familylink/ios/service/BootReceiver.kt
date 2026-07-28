@@ -14,6 +14,8 @@ class BootReceiver : BroadcastReceiver() {
                 // MonitorService.start() already refuses to run on a parent device.
                 MonitorService.start(context)
                 com.familylink.ios.sync.SyncService.start(context)
+                // Parent side: only comes back if notifications were switched on.
+                ParentWatchService.sync(context)
             }
         }
     }

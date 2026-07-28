@@ -105,6 +105,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Parent side only, and only while notifications are switched on -->
+        <service
+            android:name=".service.ParentWatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <receiver
             android:name=".service.BootReceiver"
             android:exported="true">
