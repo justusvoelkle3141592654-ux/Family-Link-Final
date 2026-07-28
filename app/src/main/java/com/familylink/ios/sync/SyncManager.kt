@@ -52,6 +52,8 @@ class SyncManager(private val context: Context) {
             hardCapScope = prefs.hardCapScope.name,
             weeklyHardCapMinutes = prefs.weeklyHardCapMinutes,
             screenLockUntil = prefs.screenLockUntil,
+            extensionMinutes = prefs.extensionMinutesToday,
+            bonusUntilEpoch = prefs.bonusUntilEpoch,
             manualLock = prefs.manualLockEnabled,
             manualLockReason = prefs.manualLockReason
         )
@@ -99,6 +101,13 @@ class SyncManager(private val context: Context) {
     fun lockScreenForMinutes(minutes: Int) = prefs.startScreenLock(minutes)
 
     fun releaseScreenLock() = prefs.stopScreenLock()
+
+    /**
+     * Parent: hand out more time, either as an extension of the limits or as a free countdown.
+     * Returns the minutes actually granted after the daily allowance.
+     */
+    fun grantTime(minutes: Int, asBonusCountdown: Boolean): Int =
+        if (asBonusCountdown) prefs.grantBonusCountdown(minutes) else prefs.grantExtension(minutes)
 
     fun unlockDevice() {
         prefs.manualLockEnabled = false
@@ -414,6 +423,7 @@ class SyncManager(private val context: Context) {
         prefs.weeklyLimitMinutes = cfg.weeklyLimitMinutes
         prefs.weeklyHardCapMinutes = cfg.weeklyHardCapMinutes
         prefs.screenLockUntil = cfg.screenLockUntil
+        prefs.applyGrants(cfg.extensionMinutes, cfg.bonusUntilEpoch)
         prefs.manualLockEnabled = cfg.manualLock
         prefs.manualLockReason = cfg.manualLockReason
         // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep

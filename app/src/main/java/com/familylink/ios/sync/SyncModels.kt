@@ -113,6 +113,10 @@ data class FamilyConfig(
     val weeklyHardCapMinutes: Int = 600,
     /** Epoch until which the display itself is locked (max 15 min, expires by itself). */
     val screenLockUntil: Long = 0,
+    /** Minutes granted today as a limit extension (raises budget, ceiling and bedtime). */
+    val extensionMinutes: Int = 0,
+    /** Epoch at which a running free-time countdown ends. */
+    val bonusUntilEpoch: Long = 0,
     /** Parent locked the device by hand; stays until they lift it. */
     val manualLock: Boolean = false,
     val manualLockReason: String = "",
@@ -129,6 +133,8 @@ data class FamilyConfig(
         put("hardCapScope", hardCapScope)
         put("weeklyHardCapMinutes", weeklyHardCapMinutes)
         put("screenLockUntil", screenLockUntil)
+        put("extensionMinutes", extensionMinutes)
+        put("bonusUntilEpoch", bonusUntilEpoch)
         put("manualLock", manualLock)
         put("manualLockReason", manualLockReason)
         put("globalLimitMinutes", globalLimitMinutes)
@@ -182,6 +188,8 @@ data class FamilyConfig(
                 hardCapScope = o.optString("hardCapScope", "DAY"),
                 weeklyHardCapMinutes = o.optInt("weeklyHardCapMinutes", 600),
                 screenLockUntil = o.optLong("screenLockUntil", 0),
+                extensionMinutes = o.optInt("extensionMinutes", 0),
+                bonusUntilEpoch = o.optLong("bonusUntilEpoch", 0),
                 manualLock = o.optBoolean("manualLock", false),
                 manualLockReason = o.optString("manualLockReason", ""),
                 updatedAt = o.optLong("updatedAt", 0)

@@ -199,8 +199,8 @@ fun ParentPortalScreen(
             pendingRequest = pendingRequest,
             onRefresh = { refreshNow() },
             onOpenMenu = { menuOpen = true },
-            onGrant = { minutes ->
-                prefs.addBonusMinutes(minutes)
+            onGrant = { minutes, asBonus ->
+                sync.grantTime(minutes, asBonus)
                 v++
             },
             onDecideRequest = { req, approve ->
@@ -1221,7 +1221,7 @@ private fun ParentDashboard(
     pendingRequest: TimeRequest?,
     onRefresh: () -> Unit,
     onOpenMenu: () -> Unit,
-    onGrant: (Int) -> Unit,
+    onGrant: (Int, Boolean) -> Unit,
     onDecideRequest: (TimeRequest, Boolean) -> Unit,
     onLockFor: (Int) -> Unit,
     onLockNow: () -> Unit,
@@ -1245,6 +1245,7 @@ private fun ParentDashboard(
     LaunchedEffect(Unit) { while (true) { delay(1000); secondTick++ } }
     @Suppress("UNUSED_EXPRESSION") secondTick
     val screenLockLeft = prefs.screenLockRemainingSeconds()
+    var grantAsBonus by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize()
@@ -1610,10 +1611,52 @@ private fun ParentDashboard(
 
         // ---- grant extra time straight from here ----
         Spacer(Modifier.height(16.dp))
-        SectionHeader("Verlängerung geben")
+        SectionHeader("Mehr Zeit geben")
         NovaCard {
             Column(Modifier.padding(16.dp)) {
                 val left = prefs.remainingBonusMinutes()
+                val bonusLeft = prefs.bonusCountdownRemainingSeconds()
+
+                if (bonusLeft > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        NovaPill("Bonuszeit läuft", Nova.Success)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Noch ${TimeFmt.hm(bonusLeft)}", fontSize = 13.sp, color = Nova.InkMuted)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                // Which kind of time is being handed out.
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(false to "Verlängerung", true to "Bonuszeit").forEach { (isBonus, label) ->
+                        val sel = grantAsBonus == isBonus
+                        Box(
+                            Modifier.weight(1f)
+                                .clip(RoundedCornerShape(Nova.RadiusControl.dp))
+                                .background(if (sel) Nova.Primary else Nova.Fill)
+                                .clickable { grantAsBonus = isBonus }
+                                .padding(vertical = 11.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                color = if (sel) Color.White else Nova.InkMuted
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (grantAsBonus)
+                        "Bonuszeit: ein Countdown, in dem alles offen ist. Läuft er ab, ist " +
+                            "wieder gesperrt — egal was benutzt wurde."
+                    else
+                        "Verlängerung: hebt Tageslimit, Gesamtlimit und den Beginn der Ruhezeit " +
+                            "um dieselbe Zeit an.",
+                    fontSize = 12.sp, color = Nova.InkMuted
+                )
+
+                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     listOf(10, 15, 30).forEach { m ->
                         Box(Modifier.weight(1f)) {
@@ -1621,24 +1664,16 @@ private fun ParentDashboard(
                                 text = "+$m",
                                 color = Nova.Danger,
                                 enabled = left >= m
-                            ) { onGrant(m) }
+                            ) { onGrant(m, grantAsBonus) }
                         }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
                     if (left > 0) "Heute noch $left Minuten möglich (max. ${Prefs.MAX_BONUS_MIN} pro Tag)."
-                    else "Das Tagesmaximum an Verlängerung ist aufgebraucht.",
+                    else "Das Tagesmaximum ist aufgebraucht.",
                     fontSize = 12.sp, color = Nova.InkMuted
                 )
-                if (prefs.hardCapEnabled) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Das Gesamtlimit von ${TimeFmt.hm(cap)} gilt trotzdem — eine Verlängerung " +
-                            "hebt es nicht auf.",
-                        fontSize = 12.sp, color = Nova.InkFaint
-                    )
-                }
             }
         }
 

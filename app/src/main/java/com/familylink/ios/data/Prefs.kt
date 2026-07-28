@@ -519,10 +519,15 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     /** True when [nowMinutes] falls inside the (possibly midnight-crossing) bedtime window. */
     fun isBedtime(nowMinutes: Int = minutesSinceMidnight()): Boolean {
         if (!bedtimeEnabled) return false
-        val s = bedtimeStartMin
+        // A granted extension pushes the start of bedtime back by the same amount, otherwise
+        // "15 minutes more" would be worthless right before bedtime.
+        val s = (bedtimeStartMin + extensionMinutesToday) % 1440
         val e = bedtimeEndMin
         return if (s <= e) nowMinutes in s until e else (nowMinutes >= s || nowMinutes < e)
     }
+
+    /** Bedtime start with a granted extension already applied — for display. */
+    fun effectiveBedtimeStartMin(): Int = (bedtimeStartMin + extensionMinutesToday) % 1440
 
     var bedtimeSoundEnabled: Boolean
         get() = sp.getBoolean(K_BEDTIME_SOUND, true)
@@ -624,11 +629,85 @@ class Prefs private constructor(private val sp: SharedPreferences) {
                 .putInt(K_BONUS_SEC, 0)
                 .putInt(K_HARDCAP_HITS, 0)
                 .putInt(K_TOTAL_USED, 0)
+                .putInt("extension_min", 0)
+                .putLong("bonus_until", 0)
                 .apply()
         }
     }
 
     // ---- Bonus time (parent-granted extension, max 30 min/day) -------------
+
+    /**
+     * Two ways to give the child more time, chosen per grant:
+     *
+     *  EXTENSION — raises the limits by N minutes: the daily budget, the absolute ceiling and
+     *              the start of bedtime all move by the same amount. The child still has to
+     *              spend the time on apps that count.
+     *  BONUS     — a plain N-minute countdown during which everything is open. It runs on the
+     *              clock and ends on the clock, whatever was used.
+     *
+     * Both draw from the same daily allowance of [MAX_BONUS_MIN] minutes.
+     */
+    var extensionMinutesToday: Int
+        get() { ensureToday(); return sp.getInt("extension_min", 0) }
+        private set(v) { ensureToday(); sp.edit().putInt("extension_min", v.coerceAtLeast(0)).apply() }
+
+    /** Epoch at which a running bonus countdown ends. */
+    var bonusUntilEpoch: Long
+        get() = sp.getLong("bonus_until", 0)
+        private set(v) = sp.edit().putLong("bonus_until", v).apply()
+
+    fun bonusCountdownActive(now: Long = System.currentTimeMillis()): Boolean = now < bonusUntilEpoch
+
+    fun bonusCountdownRemainingSeconds(now: Long = System.currentTimeMillis()): Int =
+        ((bonusUntilEpoch - now) / 1000L).toInt().coerceAtLeast(0)
+
+    /** Minutes of the daily allowance already handed out, in either form. */
+    fun grantedMinutesToday(): Int = bonusSecondsToday / 60
+
+    /**
+     * Grant [minutes] as a straight extension of the limits. Returns the minutes actually given
+     * after the daily allowance is applied.
+     */
+    fun grantExtension(minutes: Int): Int {
+        ensureToday()
+        val before = bonusSecondsToday / 60
+        val after = addBonusMinutes(minutes)
+        val given = after - before
+        if (given > 0) extensionMinutesToday = extensionMinutesToday + given
+        return given
+    }
+
+    /**
+     * Grant [minutes] as a free countdown. Also drawn from the daily allowance, so a parent
+     * cannot hand out unlimited time by switching between the two forms.
+     */
+    fun grantBonusCountdown(minutes: Int): Int {
+        ensureToday()
+        val before = bonusSecondsToday / 60
+        val after = addBonusMinutes(minutes)
+        val given = after - before
+        if (given > 0) {
+            // Extend a countdown that is still running rather than restarting it.
+            val base = maxOf(System.currentTimeMillis(), bonusUntilEpoch)
+            bonusUntilEpoch = base + given * 60_000L
+        }
+        return given
+    }
+
+    fun stopBonusCountdown() { bonusUntilEpoch = 0 }
+
+    /**
+     * Child side: take the two grant values straight from the parent's config. Absolute values,
+     * not increments, so a repeated sync can never hand out the same minutes twice.
+     */
+    fun applyGrants(extensionMinutes: Int, bonusUntil: Long) {
+        ensureToday()
+        sp.edit()
+            .putInt("extension_min", extensionMinutes.coerceIn(0, MAX_BONUS_MIN))
+            .putLong("bonus_until", bonusUntil)
+            .apply()
+    }
 
     /** Extra global seconds granted by a parent today (capped at MAX_BONUS_MIN). */
     val bonusSecondsToday: Int

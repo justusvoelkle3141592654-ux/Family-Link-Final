@@ -96,6 +96,17 @@ class LimitEngine(private val prefs: Prefs) {
         return total
     }
 
+    /**
+     * States that seal the device: the lock must cover even the home screen and must not be
+     * dismissible. The plain day limit is not one of them — there the child may still reach the
+     * allowed apps and ask for an extension.
+     */
+    fun sealsDevice(decision: LockDecision): Boolean =
+        decision is LockDecision.Bedtime ||
+            decision is LockDecision.HardCapReached ||
+            decision is LockDecision.ManualLock ||
+            decision is LockDecision.FocusActive
+
     private fun isLauncher(pkg: String): Boolean = pkg in LAUNCHER_EXEMPT
 
     private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
@@ -124,15 +135,24 @@ class LimitEngine(private val prefs: Prefs) {
 
         if (prefs.isBedtime()) return LockDecision.Bedtime
 
+        // A running bonus countdown opens everything for its duration — that is the whole
+        // difference to an extension, which raises the limits instead. It expires on the clock,
+        // no matter which app was used.
+        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
+
         // The absolute ceiling across ALL apps. Deliberately checked this early: no bonus
         // minutes, no granted extension, no off-button and no Plus category may lift it.
         // Only the phone and emergency surfaces survive it.
         if (prefs.hardCapEnabled) {
             val totalToday = computeTotalDeviceSeconds(usage)
             val scope = prefs.hardCapScope
-            val dayHit = scope != LimitScope.WEEK && totalToday >= prefs.hardCapMinutes * 60
+            // A granted extension raises the ceiling as well — otherwise "15 minutes more"
+            // would be handed out and immediately swallowed by the ceiling instead.
+            val extension = prefs.extensionMinutesToday * 60
+            val dayCap = prefs.hardCapMinutes * 60 + extension
+            val dayHit = scope != LimitScope.WEEK && totalToday >= dayCap
             val weekSpent = prefs.weekTotalSeconds()
-            val weekCap = prefs.weeklyHardCapMinutes * 60
+            val weekCap = prefs.weeklyHardCapMinutes * 60 + extension
             val weekHit = scope != LimitScope.DAY && weekSpent >= weekCap
             if (dayHit || weekHit) {
                 if (pkg == null) return LockDecision.Allowed
@@ -140,7 +160,7 @@ class LimitEngine(private val prefs: Prefs) {
                 // Report the week when that is what ran out, so the child is told the truth
                 // about when the phone works again.
                 return if (weekHit) LockDecision.HardCapReached(weekSpent, weekCap, weekly = true)
-                else LockDecision.HardCapReached(totalToday, prefs.hardCapMinutes * 60)
+                else LockDecision.HardCapReached(totalToday, dayCap)
             }
         }
 

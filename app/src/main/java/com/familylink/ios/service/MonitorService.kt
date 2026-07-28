@@ -99,6 +99,7 @@ class MonitorService : Service() {
         // lock itself, no matter how the service got started (boot, accessibility, self-heal).
         if (prefs.isParentDevice) {
             LockState.update(lockActive = false, hardLock = false, bedtime = false)
+            com.familylink.ios.util.LockOverlay.hide(this)
             stopSelf()
             return
         }
@@ -111,6 +112,7 @@ class MonitorService : Service() {
         // A running screen lock outranks everything: the display itself goes off and every
         // unlock puts it straight back, until the timer expires on its own.
         if (prefs.screenLockActive()) {
+            com.familylink.ios.util.LockOverlay.hide(this)
             val now = SystemClock.uptimeMillis()
             if (now - lastScreenLockAt >= SCREEN_LOCK_REPEAT_MS) {
                 lastScreenLockAt = now
@@ -187,6 +189,12 @@ class MonitorService : Service() {
             main.post { BedtimeSound.stop() }
         }
 
+        // Whatever happens below, the overlay must disappear the moment nothing seals the
+        // device any more — otherwise it would outlive the lock that raised it.
+        if (!engine.sealsDevice(decision)) {
+            com.familylink.ios.util.LockOverlay.hide(this)
+        }
+
         if (decision is LockDecision.Allowed) return
         if (pkg == null) return
         // Phone / system / our own screens are never blocked (even during bedtime).
@@ -242,10 +250,33 @@ class MonitorService : Service() {
         // day limit: that one still allows the Plus apps and an extension request.
         val sealedLock = bedtime ||
             decision is LockDecision.HardCapReached ||
-            decision is LockDecision.ManualLock
+            decision is LockDecision.ManualLock ||
+            decision is LockDecision.FocusActive
 
         val (title, detail) = messageFor(decision)
+
+        // A sealed lock goes up as a system overlay, not an Activity. An Activity can always be
+        // left with HOME — that is exactly why the lock "could be closed the whole time". The
+        // overlay sits above everything including the home screen, and the device itself is
+        // never switched off for it.
+        if (sealedLock && com.familylink.ios.util.Permissions.hasOverlay(this)) {
+            showSealedOverlay(title, detail, bedtime)
+            return
+        }
+
         main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealedLock) }
+    }
+
+    /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
+    private fun showSealedOverlay(title: String, detail: String, bedtime: Boolean) {
+        com.familylink.ios.util.LockOverlay.show(this, key = "$title|$detail|$bedtime") {
+            com.familylink.ios.ui.screens.LockOverlayContent(
+                title = title,
+                detail = detail,
+                bedtime = bedtime,
+                onOpenPortal = { com.familylink.ios.ui.screens.openParentPortal(this) }
+            )
+        }
     }
 
     /**
@@ -371,6 +402,7 @@ class MonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        com.familylink.ios.util.LockOverlay.hide(this)
         worker.removeCallbacks(tickRunnable)
         workerThread.quitSafely()
         main.post { BedtimeSound.stop() }

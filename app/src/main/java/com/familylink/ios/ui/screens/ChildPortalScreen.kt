@@ -162,6 +162,13 @@ fun ChildPortalScreen(
                             Text("Ruhezeit", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Nova.Night)
                             Text("bis ${TimeFmt.clock(prefs.bedtimeEndMin)}", fontSize = 13.sp, color = Nova.InkMuted)
                         }
+                        prefs.bonusCountdownActive() -> {
+                            Text(
+                                TimeFmt.hm(prefs.bonusCountdownRemainingSeconds()),
+                                fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Success
+                            )
+                            Text("Bonuszeit", fontSize = 13.sp, color = Nova.InkMuted)
+                        }
                         else -> {
                             Text(TimeFmt.hm(remaining), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
                             Text("übrig", fontSize = 13.sp, color = Nova.InkMuted)
@@ -214,7 +221,8 @@ fun ChildPortalScreen(
 
         // ---- next bedtime hint ----
         if (!bedtime && prefs.bedtimeEnabled) {
-            InfoStrip("Ruhezeit beginnt um ${TimeFmt.clock(prefs.bedtimeStartMin)} Uhr", Nova.Night)
+            // Shows the shifted start, so a granted extension is visible here too.
+            InfoStrip("Ruhezeit beginnt um ${TimeFmt.clock(prefs.effectiveBedtimeStartMin())} Uhr", Nova.Night)
         }
 
         Spacer(Modifier.height(16.dp))
