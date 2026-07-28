@@ -163,6 +163,24 @@ object DeviceOwner {
     }
 
     /**
+     * Switch the status bar off entirely (device owner only).
+     *
+     * The lock overlay covers the screen, but it cannot stop the child pulling the notification
+     * shade down over it — and quick settings is a way straight into the system. Disabling the
+     * status bar closes that route for as long as the lock lasts.
+     *
+     * Purely a display restriction: nothing is changed or deleted, and it is lifted again the
+     * moment the lock ends.
+     */
+    fun setStatusBarDisabled(context: Context, disabled: Boolean): Boolean {
+        if (!isDeviceOwner(context)) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        return runCatching {
+            dpm(context).setStatusBarDisabled(DeviceAdmin.componentName(context), disabled)
+        }.getOrDefault(false)
+    }
+
+    /**
      * Pin the current activity so HOME and Recents are disabled (kiosk mode). Used for hard
      * locks: bedtime, day limit and focus sessions.
      */

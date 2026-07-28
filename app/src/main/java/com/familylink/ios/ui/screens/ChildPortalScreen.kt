@@ -22,6 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
@@ -37,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -102,7 +103,7 @@ fun ChildPortalScreen(
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
     ) {
         // ---- header ----
@@ -111,13 +112,13 @@ fun ChildPortalScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Meine Zeit", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                Text("Meine Zeit", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
                 Text(TimeFmt.nowLong(), fontSize = 13.sp, color = Nova.InkMuted)
             }
             if (prefs.syncConfigured) {
                 Box(
-                    Modifier.size(38.dp).clip(CircleShape)
-                        .background(Nova.Primary.copy(alpha = 0.12f))
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(Nova.Surface)
                         .clickable(enabled = !refreshing) { refreshNow() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -142,7 +143,7 @@ fun ChildPortalScreen(
                     val arcSize = Size(size.width - stroke, size.height - stroke)
                     val topLeft = Offset(stroke / 2, stroke / 2)
                     drawArc(
-                        color = Color(0x14000000), startAngle = 0f, sweepAngle = 360f,
+                        color = Nova.Fill, startAngle = 0f, sweepAngle = 360f,
                         useCenter = false, topLeft = topLeft, size = arcSize,
                         style = Stroke(stroke, cap = StrokeCap.Round)
                     )
@@ -155,22 +156,22 @@ fun ChildPortalScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     when {
                         disabled -> {
-                            Text("Frei", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Nova.Success)
+                            Text("Frei", fontSize = 30.sp, fontWeight = FontWeight.Medium, color = Nova.Success)
                             Text("bis 23:00", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                         bedtime -> {
-                            Text("Ruhezeit", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Nova.Night)
+                            Text("Ruhezeit", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = Nova.Night)
                             Text("bis ${TimeFmt.clock(prefs.bedtimeEndMin)}", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                         prefs.bonusCountdownActive() -> {
                             Text(
                                 TimeFmt.hm(prefs.bonusCountdownRemainingSeconds()),
-                                fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Success
+                                fontSize = 28.sp, fontWeight = FontWeight.Medium, color = Nova.Success
                             )
                             Text("Bonuszeit", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                         else -> {
-                            Text(TimeFmt.hm(remaining), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+                            Text(TimeFmt.hm(remaining), fontSize = 34.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
                             Text("übrig", fontSize = 13.sp, color = Nova.InkMuted)
                         }
                     }
@@ -257,53 +258,71 @@ fun ChildPortalScreen(
             // Chores: earn extra time by doing jobs.
             val chores = prefs.getChores()
             val openChores = chores.count { it.isOpen }
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(Brush.horizontalGradient(Nova.BrandGradient))
-                    .clickable { onOpenChores() }.padding(18.dp)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                    .background(Nova.Surface)
+                    .clickable { onOpenChores() }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Aufgaben erledigen", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (openChores > 0) "$openChores offen · verdiene Extra-Zeit"
-                            else "Keine offenen Aufgaben",
-                            color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp
-                        )
-                    }
-                    Text("→", color = Color.White, fontSize = 22.sp)
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.CheckCircle, null, tint = Nova.Primary,
+                        modifier = Modifier.size(21.dp))
                 }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Aufgaben erledigen", color = Nova.Ink, fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium)
+                    Text(
+                        if (openChores > 0) "$openChores offen · verdiene Extra-Zeit"
+                        else "Keine offenen Aufgaben",
+                        color = Nova.InkMuted, fontSize = 13.sp
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint,
+                    modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.height(10.dp))
 
             // Focus you start yourself — for deliberately putting the phone away.
             val ownFocus = prefs.effectiveFocusSession()
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(Nova.Focus.copy(alpha = 0.14f))
-                    .clickable { onOpenFocus() }.padding(18.dp)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                    .background(Nova.Surface)
+                    .clickable { onOpenFocus() }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Handy weglegen", color = Nova.Focus, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (ownFocus.isRunning())
-                                "Läuft — noch ${TimeFmt.hm(ownFocus.remainingSeconds())}"
-                            else "Fokus-Zeit selbst starten",
-                            color = Nova.InkMuted, fontSize = 13.sp
-                        )
-                    }
-                    Text("→", color = Nova.Focus, fontSize = 22.sp)
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Lock, null, tint = Nova.Primary, modifier = Modifier.size(21.dp))
                 }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Handy weglegen", color = Nova.Ink, fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium)
+                    Text(
+                        if (ownFocus.isRunning())
+                            "Läuft — noch ${TimeFmt.hm(ownFocus.remainingSeconds())}"
+                        else "Fokus-Zeit selbst starten",
+                        color = Nova.InkMuted, fontSize = 13.sp
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint,
+                    modifier = Modifier.size(20.dp))
             }
 
             Spacer(Modifier.height(10.dp))
             Box(
-                Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(15.dp))
-                    .background(Nova.Fill).clickable { onExtendTime() },
+                Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(50))
+                    .background(Nova.Accent).clickable { onExtendTime() },
                 contentAlignment = Alignment.Center
             ) {
-                Text("Mehr Zeit anfragen", color = Nova.Primary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Mehr Zeit anfragen", color = Nova.Primary, fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium)
             }
             Spacer(Modifier.height(10.dp))
             Text(

@@ -7,11 +7,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
@@ -28,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +51,9 @@ import kotlinx.coroutines.delay
  * this cannot be dismissed. Two things stay reachable, because locking a child out of them
  * would be irresponsible: the phone (and with it the emergency dialler) and the PIN-protected
  * parent entry.
+ *
+ * Laid out like the rest of the app now: a flat page, one white card carrying the reason, and
+ * Material 3 proportions throughout.
  */
 @Composable
 fun LockOverlayContent(
@@ -69,63 +74,83 @@ fun LockOverlayContent(
         var clock by remember { mutableStateOf(TimeFmt.now()) }
         LaunchedEffect(Unit) { while (true) { clock = TimeFmt.now(); delay(1000) } }
 
+        val accent = if (bedtime) Nova.Night else Nova.Primary
+
         Column(
-            Modifier.fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        if (bedtime) listOf(Color(0xFFEDE9FB), Nova.Canvas) else Nova.PageGradient
-                    )
-                )
-                .padding(24.dp),
+            Modifier.fillMaxSize().background(Nova.Canvas).padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(64.dp))
-            val accent = if (bedtime) Nova.Night else Nova.Primary
+            Spacer(Modifier.height(72.dp))
+
+            // ---- the clock, as the page's own headline ----
+            Text(TimeFmt.nowLong(), fontSize = 15.sp, color = Nova.InkMuted)
+            Spacer(Modifier.height(2.dp))
+            Text(clock, fontSize = 76.sp, fontWeight = FontWeight.Light, color = Nova.Ink)
+
+            Spacer(Modifier.height(28.dp))
+
+            // ---- the reason, in the same card style as everywhere else ----
             Box(
-                Modifier.size(64.dp).clip(CircleShape).background(accent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                    .background(Nova.Surface)
+                    .padding(24.dp)
             ) {
-                Icon(Icons.Filled.Lock, null, tint = accent, modifier = Modifier.size(28.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier.size(56.dp).clip(CircleShape)
+                            .background(accent.copy(alpha = 0.13f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Lock, null, tint = accent, modifier = Modifier.size(26.dp))
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        title, fontSize = 22.sp, fontWeight = FontWeight.Medium,
+                        color = Nova.Ink, textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        detail, fontSize = 15.sp, color = Nova.InkMuted,
+                        textAlign = TextAlign.Center, lineHeight = 21.sp
+                    )
+                }
             }
-            Spacer(Modifier.height(16.dp))
-            Text(TimeFmt.nowLong(), fontSize = 16.sp, color = Nova.InkMuted)
-            Text(clock, fontSize = 72.sp, fontWeight = FontWeight.Thin, color = Nova.Ink)
-            Spacer(Modifier.height(16.dp))
-            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Nova.Ink,
-                textAlign = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            Text(detail, fontSize = 16.sp, color = Nova.InkMuted, textAlign = TextAlign.Center)
 
             Spacer(Modifier.weight(1f))
 
-            // The phone is never taken away.
-            Box(
-                Modifier.size(60.dp).clip(CircleShape).background(Color(0x1A34C759))
+            // ---- the phone, as a filled tonal button rather than a bare disc ----
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Nova.SurfaceAlt)
                     .clickable {
                         val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         runCatching { context.startActivity(dial) }
-                    },
-                contentAlignment = Alignment.Center
+                    }
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.Phone, "Telefon", tint = Nova.Success, modifier = Modifier.size(26.dp))
+                Icon(Icons.Filled.Phone, null, tint = Nova.Primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Telefon", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Nova.Primary)
             }
-            Spacer(Modifier.height(6.dp))
-            Text("Telefon", fontSize = 13.sp, color = Nova.InkMuted)
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(20.dp))
             if (bedtime) {
                 Text("Gute Nacht", fontSize = 14.sp, color = Nova.InkFaint)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
             }
             Text(
-                "Eltern-Portal", fontSize = 15.sp, color = Nova.Primary,
+                "Eltern-Portal", fontSize = 14.sp, color = Nova.InkMuted,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(50))
                     .clickable { onOpenPortal() }
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(28.dp))
         }
     }
 }

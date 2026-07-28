@@ -63,6 +63,14 @@ class MonitorService : Service() {
     private var lastHardCapCountAt = 0L
     private var lastHardCapLockAt = 0L
     private var lastScreenLockAt = 0L
+    private var statusBarBlocked: Boolean? = null
+
+    /** Toggle the status bar only when the state actually changes — it is a policy call. */
+    private fun setStatusBarBlocked(blocked: Boolean) {
+        if (statusBarBlocked == blocked) return
+        statusBarBlocked = blocked
+        runCatching { com.familylink.ios.admin.DeviceOwner.setStatusBarDisabled(this, blocked) }
+    }
 
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -100,6 +108,7 @@ class MonitorService : Service() {
         if (prefs.isParentDevice) {
             LockState.update(lockActive = false, hardLock = false, bedtime = false)
             com.familylink.ios.util.LockOverlay.hide(this)
+            setStatusBarBlocked(false)
             stopSelf()
             return
         }
@@ -193,6 +202,7 @@ class MonitorService : Service() {
         // device any more — otherwise it would outlive the lock that raised it.
         if (!engine.sealsDevice(decision)) {
             com.familylink.ios.util.LockOverlay.hide(this)
+            setStatusBarBlocked(false)
         }
 
         if (decision is LockDecision.Allowed) return
@@ -269,6 +279,10 @@ class MonitorService : Service() {
 
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
     private fun showSealedOverlay(title: String, detail: String, bedtime: Boolean) {
+        // The shade would otherwise slide down over the overlay and hand the child quick
+        // settings. Only possible as device owner; without it the overlay still covers the
+        // screen, the shade just remains reachable.
+        setStatusBarBlocked(true)
         com.familylink.ios.util.LockOverlay.show(this, key = "$title|$detail|$bedtime") {
             com.familylink.ios.ui.screens.LockOverlayContent(
                 title = title,
@@ -403,6 +417,7 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         com.familylink.ios.util.LockOverlay.hide(this)
+        setStatusBarBlocked(false)
         worker.removeCallbacks(tickRunnable)
         workerThread.quitSafely()
         main.post { BedtimeSound.stop() }

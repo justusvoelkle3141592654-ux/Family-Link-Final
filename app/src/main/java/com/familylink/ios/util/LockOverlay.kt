@@ -52,7 +52,7 @@ object LockOverlay {
         content: @androidx.compose.runtime.Composable () -> Unit
     ) {
         main.post {
-            if (shownKey == key && view != null) return@post
+            if (shownKey == key && stillAttached()) return@post
             if (view != null) removeNow(context)
             runCatching { addNow(context, content) }.onSuccess { shownKey = key }
         }
@@ -71,7 +71,13 @@ object LockOverlay {
         val o = OverlayOwner().also { owner = it }
         o.start()
 
-        val cv = ComposeView(context).apply {
+        // A ComposeView that eats BACK. The window is focusable, so the key arrives here first;
+        // swallowing it means BACK does nothing at all rather than reaching whatever is behind.
+        val cv = object : ComposeView(context) {
+            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+                if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) true
+                else super.dispatchKeyEvent(event)
+        }.apply {
             setViewTreeLifecycleOwner(o)
             setViewTreeViewModelStoreOwner(o)
             setViewTreeSavedStateRegistryOwner(o)
@@ -87,14 +93,29 @@ object LockOverlay {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            // Focusable so BACK is delivered to us and swallowed rather than reaching whatever
-            // is underneath. Not "watch outside touch": every touch belongs to the overlay.
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-            PixelFormat.TRANSLUCENT
+            // LAYOUT_IN_SCREEN + LAYOUT_NO_LIMITS make the window cover the ENTIRE display,
+            // including the strips behind the status and navigation bars. Without them the
+            // overlay stopped short of both, which left the child a visible, tappable way out.
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.OPAQUE
         )
+        // Draw into the display cutout as well, so there is no uncovered notch area.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         wm.addView(cv, params)
         view = cv
     }
+
+    /**
+     * True when the window really is on screen. The service re-asserts the overlay from this,
+     * so a window the system tore down (process death, configuration change) comes straight
+     * back instead of leaving the lock silently gone.
+     */
+    private fun stillAttached(): Boolean = view?.isAttachedToWindow == true
 
     private fun removeNow(context: Context) {
         val cv = view ?: return
