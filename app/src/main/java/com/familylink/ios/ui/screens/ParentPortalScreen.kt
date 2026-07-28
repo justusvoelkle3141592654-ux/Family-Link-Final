@@ -523,8 +523,8 @@ fun ParentPortalScreen(
         NovaCard {
             NovaRow(
                 title = "Gesamtlimit aktiv",
-                subtitle = "Zählt jede App mit — auch Plus. Nicht durch Bonus, Verlängerung " +
-                    "oder den Aus-Knopf zu umgehen."
+                subtitle = "Zählt jede App mit — auch Plus. Der Aus-Knopf hebt es nicht auf; " +
+                    "eine Verlängerung hebt es um genau die geschenkte Zeit an."
             ) {
                 NovaSwitch(checked = prefs.hardCapEnabled) { prefs.hardCapEnabled = it; v++ }
             }
@@ -1664,7 +1664,7 @@ private fun ParentDashboard(
         SectionHeader("Mehr Zeit geben")
         NovaCard {
             Column(Modifier.padding(16.dp)) {
-                val left = prefs.remainingBonusMinutes()
+                val already = prefs.grantedBonusMinutes()
                 val bonusLeft = prefs.bonusCountdownRemainingSeconds()
 
                 if (bonusLeft > 0) {
@@ -1701,8 +1701,8 @@ private fun ParentDashboard(
                         "Bonuszeit: ein Countdown, in dem alles offen ist. Läuft er ab, ist " +
                             "wieder gesperrt — egal was benutzt wurde."
                     else
-                        "Verlängerung: hebt Tageslimit, Gesamtlimit und den Beginn der Ruhezeit " +
-                            "um dieselbe Zeit an.",
+                        "Verlängerung: hebt Tageslimit, Wochenlimit, Gesamtlimit und den Beginn " +
+                            "der Ruhezeit um dieselbe Zeit an.",
                     fontSize = 12.sp, color = Nova.InkMuted
                 )
 
@@ -1710,18 +1710,14 @@ private fun ParentDashboard(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     listOf(10, 15, 30).forEach { m ->
                         Box(Modifier.weight(1f)) {
-                            NovaButton(
-                                text = "+$m",
-                                color = Nova.Danger,
-                                enabled = left >= m
-                            ) { onGrant(m, grantAsBonus) }
+                            NovaButton(text = "+$m", color = Nova.Danger) { onGrant(m, grantAsBonus) }
                         }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    if (left > 0) "Heute noch $left Minuten möglich (max. ${Prefs.MAX_BONUS_MIN} pro Tag)."
-                    else "Das Tagesmaximum ist aufgebraucht.",
+                    if (already > 0) "Heute bereits $already Minuten gegeben — ohne Obergrenze."
+                    else "Keine Obergrenze: du entscheidest, wie viel Zeit dazukommt.",
                     fontSize = 12.sp, color = Nova.InkMuted
                 )
             }

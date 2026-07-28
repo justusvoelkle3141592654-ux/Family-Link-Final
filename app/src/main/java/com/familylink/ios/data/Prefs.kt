@@ -48,7 +48,11 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
         const val DEFAULT_GLOBAL_LIMIT_MIN = 60
         const val MAX_GLOBAL_LIMIT_MIN = 120
-        const val MAX_BONUS_MIN = 30
+        /**
+         * No longer a cap — the parent decides how much time to hand out and nothing overrules
+         * that. Kept only as the step used where a "typical" grant is needed.
+         */
+        const val TYPICAL_BONUS_MIN = 30
 
         /** Absolute ceiling across ALL apps. Three hours is the hard maximum. */
         const val DEFAULT_HARDCAP_MIN = 180
@@ -519,15 +523,27 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     /** True when [nowMinutes] falls inside the (possibly midnight-crossing) bedtime window. */
     fun isBedtime(nowMinutes: Int = minutesSinceMidnight()): Boolean {
         if (!bedtimeEnabled) return false
-        // A granted extension pushes the start of bedtime back by the same amount, otherwise
-        // "15 minutes more" would be worthless right before bedtime.
-        val s = (bedtimeStartMin + extensionMinutesToday) % 1440
+        val s = effectiveBedtimeStartMin()
         val e = bedtimeEndMin
         return if (s <= e) nowMinutes in s until e else (nowMinutes >= s || nowMinutes < e)
     }
 
-    /** Bedtime start with a granted extension already applied — for display. */
-    fun effectiveBedtimeStartMin(): Int = (bedtimeStartMin + extensionMinutesToday) % 1440
+    /**
+     * Bedtime start with a granted extension already applied: "15 minutes more" right before
+     * bedtime would be worthless otherwise.
+     *
+     * The shift is clamped so at least a minute of bedtime always survives. Grants are no
+     * longer capped, and an hours-long one would otherwise push the start past the end and
+     * invert the window into "bedtime all day" — the opposite of what was intended.
+     */
+    fun effectiveBedtimeStartMin(): Int {
+        val start = bedtimeStartMin
+        val end = bedtimeEndMin
+        val windowLength = ((end - start) + 1440) % 1440
+        if (windowLength == 0) return start
+        val shift = extensionMinutesToday.coerceIn(0, windowLength - 1)
+        return (start + shift) % 1440
+    }
 
     var bedtimeSoundEnabled: Boolean
         get() = sp.getBoolean(K_BEDTIME_SOUND, true)
@@ -646,7 +662,7 @@ class Prefs private constructor(private val sp: SharedPreferences) {
      *  BONUS     — a plain N-minute countdown during which everything is open. It runs on the
      *              clock and ends on the clock, whatever was used.
      *
-     * Both draw from the same daily allowance of [MAX_BONUS_MIN] minutes.
+     * Neither is capped: how much time the child gets is the parent's call.
      */
     var extensionMinutesToday: Int
         get() { ensureToday(); return sp.getInt("extension_min", 0) }
@@ -704,21 +720,22 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     fun applyGrants(extensionMinutes: Int, bonusUntil: Long) {
         ensureToday()
         sp.edit()
-            .putInt("extension_min", extensionMinutes.coerceIn(0, MAX_BONUS_MIN))
+            .putInt("extension_min", extensionMinutes.coerceAtLeast(0))
             .putLong("bonus_until", bonusUntil)
             .apply()
     }
 
-    /** Extra global seconds granted by a parent today (capped at MAX_BONUS_MIN). */
+    /** Extra global seconds granted by a parent today. Uncapped. */
     val bonusSecondsToday: Int
         get() { ensureToday(); return sp.getInt(K_BONUS_SEC, 0) }
 
-    fun remainingBonusMinutes(): Int = (MAX_BONUS_MIN - bonusSecondsToday / 60).coerceAtLeast(0)
+    /** Minutes handed out today, in either form. Informational only — there is no ceiling. */
+    fun grantedBonusMinutes(): Int = bonusSecondsToday / 60
 
     // Absolute setters used when applying a config pushed from the parent device.
     fun setBonusMinutesAbsolute(minutes: Int) {
         ensureToday()
-        sp.edit().putInt(K_BONUS_SEC, (minutes * 60).coerceIn(0, MAX_BONUS_MIN * 60)).apply()
+        sp.edit().putInt(K_BONUS_SEC, (minutes * 60).coerceAtLeast(0)).apply()
     }
 
     fun setOffUntilEpoch(epoch: Long) = sp.edit().putLong(K_OFF_UNTIL, epoch).apply()
@@ -734,13 +751,13 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         sp.edit().putString(K_CATEGORIES, obj.toString()).apply()
     }
 
-    /** Add [minutes] of bonus time, capped at MAX_BONUS_MIN/day. Returns the new total minutes. */
+    /** Add [minutes] of bonus time. Returns the new total for today. */
     fun addBonusMinutes(minutes: Int): Int {
         ensureToday()
         val current = sp.getInt(K_BONUS_SEC, 0)
-        val capped = (current + minutes * 60).coerceAtMost(MAX_BONUS_MIN * 60).coerceAtLeast(0)
-        sp.edit().putInt(K_BONUS_SEC, capped).apply()
-        return capped / 60
+        val total = (current + minutes * 60).coerceAtLeast(0)
+        sp.edit().putInt(K_BONUS_SEC, total).apply()
+        return total / 60
     }
 
     /** Called by the monitor service with the freshly measured usage numbers. */

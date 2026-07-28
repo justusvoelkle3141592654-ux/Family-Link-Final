@@ -43,7 +43,7 @@ fun ExtendTimeScreen(onClose: () -> Unit) {
     var step by remember { mutableStateOf(if (prefs.isSecurePinSet) "pin" else "nopin") }
     var entered by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
-    var minutes by remember { mutableStateOf(minOf(15, prefs.remainingBonusMinutes().coerceAtLeast(5))) }
+    var minutes by remember { mutableStateOf(15) }
     var granted by remember { mutableStateOf(0) }
 
     Box(Modifier.fillMaxSize().background(Nova.Canvas), contentAlignment = Alignment.Center) {
@@ -65,21 +65,22 @@ fun ExtendTimeScreen(onClose: () -> Unit) {
                 onDigit = { if (entered.length < 12) { error = false; entered += it } },
                 onDelete = { error = false; if (entered.isNotEmpty()) entered = entered.dropLast(1) },
                 onConfirm = {
-                    if (prefs.checkSecurePin(entered)) {
-                        if (prefs.remainingBonusMinutes() <= 0) step = "max" else step = "minutes"
-                    } else { error = true; entered = "" }
+                    // No daily ceiling any more: with the right PIN there is always time to give.
+                    if (prefs.checkSecurePin(entered)) step = "minutes"
+                    else { error = true; entered = "" }
                 }
             )
 
             "minutes" -> {
-                val remaining = prefs.remainingBonusMinutes()
+                val already = prefs.grantedBonusMinutes()
                 Column(
                     Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text("Zeit freigeben", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Heute noch verfügbar: $remaining Min (max. ${Prefs.MAX_BONUS_MIN} Min/Tag)",
+                        if (already > 0) "Heute bereits freigegeben: $already Min"
+                        else "Hebt Tageslimit, Gesamtlimit und den Beginn der Ruhezeit an.",
                         fontSize = 14.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(28.dp))
@@ -90,23 +91,17 @@ fun ExtendTimeScreen(onClose: () -> Unit) {
                             modifier = Modifier.padding(horizontal = 20.dp),
                             fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
                         )
-                        StepBtn("+") { minutes = (minutes + 5).coerceAtMost(remaining) }
+                        StepBtn("+") { minutes = (minutes + 5).coerceAtMost(240) }
                     }
                     Spacer(Modifier.height(28.dp))
                     NovaButton(text = "$minutes Min freigeben", color = Nova.Success) {
-                        granted = prefs.addBonusMinutes(minutes.coerceAtMost(remaining))
+                        granted = prefs.grantExtension(minutes)
                         step = "done"
                     }
                     Spacer(Modifier.height(10.dp))
                     Text("Abbrechen", color = Nova.Primary, fontSize = 16.sp, modifier = Modifier.clickable { onClose() }.padding(8.dp))
                 }
             }
-
-            "max" -> InfoCard(
-                title = "Maximum erreicht",
-                text = "Heute wurden bereits ${Prefs.MAX_BONUS_MIN} Minuten zusätzlich freigegeben.",
-                onClose = onClose
-            )
 
             "done" -> InfoCard(
                 title = "Zeit freigegeben",
