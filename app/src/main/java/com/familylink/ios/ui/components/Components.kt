@@ -15,21 +15,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.ui.theme.Nova
 
-/** Primary action: brand gradient, soft brand-tinted shadow, generous rounding. */
+/** Primary action: solid fill, generous rounding, flat like the rest of the surface. */
 @Composable
 fun NovaButton(
     text: String,
@@ -45,12 +46,6 @@ fun NovaButton(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
-            .shadow(
-                elevation = if (enabled) 10.dp else 0.dp,
-                shape = RoundedCornerShape(Nova.RadiusControl.dp),
-                ambientColor = (color ?: Nova.Primary).copy(alpha = 0.5f),
-                spotColor = (color ?: Nova.Primary).copy(alpha = 0.5f)
-            )
             .clip(RoundedCornerShape(Nova.RadiusControl.dp))
             .background(
                 if (enabled) brush
@@ -84,7 +79,13 @@ fun NovaButtonTonal(
     }
 }
 
-/** Elevated content card. */
+/**
+ * Content card.
+ *
+ * Flat on purpose — no drop shadow. The reference design separates cards from the page by
+ * colour and a large corner radius alone, and a shadow under every card makes a list of them
+ * look muddy.
+ */
 @Composable
 fun NovaCard(
     modifier: Modifier = Modifier,
@@ -93,12 +94,6 @@ fun NovaCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(Nova.RadiusCard.dp),
-                ambientColor = Nova.Ink.copy(alpha = 0.10f),
-                spotColor = Nova.Ink.copy(alpha = 0.10f)
-            )
             .clip(RoundedCornerShape(Nova.RadiusCard.dp))
             .background(Nova.Surface)
     ) {
@@ -106,12 +101,18 @@ fun NovaCard(
     }
 }
 
-/** List row inside a card. */
+/**
+ * List row inside a card.
+ *
+ * With [icon] it takes the reference layout: a glyph on a pale blue disc, the title in near
+ * black and a grey explanatory line beneath it.
+ */
 @Composable
 fun NovaRow(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    icon: ImageVector? = null,
     onClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {}
 ) {
@@ -119,18 +120,35 @@ fun NovaRow(
         modifier = modifier
             .fillMaxWidth()
             .let { if (onClick != null) it.clickable { onClick() } else it }
-            .padding(horizontal = 16.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (icon != null) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(21.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
             if (subtitle != null) {
                 Spacer(Modifier.height(2.dp))
-                Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
+                Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted, lineHeight = 17.sp)
             }
         }
         trailing()
     }
+}
+
+/** Hairline between rows, matching the reference's very light dividers. */
+@Composable
+fun NovaDivider() {
+    Box(
+        Modifier.fillMaxWidth().padding(start = 16.dp).height(1.dp).background(Nova.Line)
+    )
 }
 
 @Composable

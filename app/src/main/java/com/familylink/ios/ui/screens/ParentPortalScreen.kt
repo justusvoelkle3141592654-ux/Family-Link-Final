@@ -3,9 +3,6 @@ package com.familylink.ios.ui.screens
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,7 +24,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +62,7 @@ import com.familylink.ios.ui.components.NovaButton
 import com.familylink.ios.ui.components.NovaButtonTonal
 import com.familylink.ios.ui.components.NovaPill
 import com.familylink.ios.ui.components.NovaCard
+import com.familylink.ios.ui.components.NovaDivider
 import com.familylink.ios.ui.components.NovaRow
 import com.familylink.ios.ui.components.NovaSwitch
 import com.familylink.ios.ui.components.SectionHeader
@@ -157,8 +163,9 @@ fun ParentPortalScreen(
     // device shows — the parent always arrives with one group picked from the menu sheet, so it
     // never faces the whole endless list at once.
     var settingsGroup by remember { mutableStateOf<String?>(null) }
-    var menuOpen by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
+    /** 0 = Bildschirmzeit, 1 = Einstellungen, 2 = Aufgaben. */
+    var tab by remember { mutableStateOf(0) }
 
     fun showGroup(group: String): Boolean = settingsGroup == null || settingsGroup == group
 
@@ -177,6 +184,53 @@ fun ParentPortalScreen(
     // Keep the watcher in step with the setting whenever the portal is opened.
     LaunchedEffect(Unit) { ParentWatchService.sync(context) }
 
+    // ---- the parent app's shell: three tabs along the bottom, as in the reference ----
+    if (prefs.isParentDevice && !showDetails && settingsGroup == null) {
+        Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
+            when (tab) {
+                1 -> SettingsList(onPick = { group -> settingsGroup = group; showSettings = true })
+                2 -> {
+                    // Chores live on their own page; the tab just hands over to it.
+                    LaunchedEffect(Unit) { tab = 0; onOpenChores() }
+                }
+                else -> ParentDashboard(
+                    prefs = prefs,
+                    remote = remote,
+                    used = used,
+                    limit = limit,
+                    refreshing = refreshing,
+                    pendingRequest = pendingRequest,
+                    onRefresh = { refreshNow() },
+                    onOpenMenu = { tab = 1 },
+                    onGrant = { minutes, asBonus -> sync.grantTime(minutes, asBonus); v++ },
+                    onDecideRequest = { req, approve ->
+                        thread(isDaemon = true) { sync.decideRequest(req, approve) }
+                        pendingRequest = null
+                        v++
+                    },
+                    onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
+                    onLockNow = { sync.lockDevice(); v++ },
+                    onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
+                    onLockScreen = { minutes -> sync.lockScreenForMinutes(minutes); v++ },
+                    onReleaseScreen = { sync.releaseScreenLock(); v++ },
+                    onApproveChore = { id ->
+                        thread(isDaemon = true) { sync.approveChore(id) }
+                        v++
+                    },
+                    onOpenChores = onOpenChores,
+                    onOpenDetails = { showDetails = true },
+                    onExit = onExit
+                )
+            }
+            BottomBar(
+                current = tab,
+                onSelect = { tab = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+        return
+    }
+
     if (prefs.isParentDevice && showDetails) {
         UsageDetailScreen(
             prefs = prefs,
@@ -188,56 +242,6 @@ fun ParentPortalScreen(
         return
     }
 
-    if (prefs.isParentDevice && !showSettings) {
-        Box(Modifier.fillMaxSize()) {
-        ParentDashboard(
-            prefs = prefs,
-            remote = remote,
-            used = used,
-            limit = limit,
-            refreshing = refreshing,
-            pendingRequest = pendingRequest,
-            onRefresh = { refreshNow() },
-            onOpenMenu = { menuOpen = true },
-            onGrant = { minutes, asBonus ->
-                sync.grantTime(minutes, asBonus)
-                v++
-            },
-            onDecideRequest = { req, approve ->
-                thread(isDaemon = true) { sync.decideRequest(req, approve) }
-                pendingRequest = null
-                v++
-            },
-            onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
-            onLockNow = { sync.lockDevice(); v++ },
-            onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
-            onLockScreen = { minutes -> sync.lockScreenForMinutes(minutes); v++ },
-            onReleaseScreen = { sync.releaseScreenLock(); v++ },
-            onApproveChore = { id ->
-                // Network call inside — never on the main thread.
-                thread(isDaemon = true) { sync.approveChore(id) }
-                v++
-            },
-            onOpenChores = onOpenChores,
-            onOpenDetails = { showDetails = true },
-            onExit = onExit
-        )
-        // The ☰ button opens this first: a half-height panel listing the groups. Picking one
-        // is what navigates into the settings, so the long list is never the first thing seen.
-        // Emitted after the dashboard so it draws on top of it.
-        if (menuOpen) {
-            MenuSheet(
-                onPick = { group ->
-                    settingsGroup = group
-                    menuOpen = false
-                    showSettings = true
-                },
-                onDismiss = { menuOpen = false }
-            )
-        }
-        }
-        return
-    }
 
     Column(
         Modifier
@@ -251,7 +255,7 @@ fun ParentPortalScreen(
                 Text(
                     "‹ Übersicht", color = Nova.Primary, fontSize = 17.sp,
                     modifier = Modifier
-                        .clickable { showSettings = false; settingsGroup = null }
+                        .clickable { showSettings = false; settingsGroup = null; tab = 1 }
                         .padding(end = 12.dp)
                 )
             }
@@ -1120,86 +1124,110 @@ private val GROUP_TITLES = mapOf(
     "geraet" to "Gerät & Design"
 )
 
-/** What the menu panel offers, in order. */
-private val MENU_ENTRIES = listOf(
-    Triple("zeit", "Zeit & Limits", "Tageslimit, Gesamtlimit, Ruhezeit, Zeitmessung"),
-    Triple("apps", "Apps", "Gesperrte Apps und Freigaben für heute"),
-    Triple("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus, Sofort-Pause"),
-    Triple("verwaltung", "Verwaltung", "Apps & Kategorien, Aufgaben, Bericht, Geräte"),
-    Triple("schutz", "Schutz", "Schutz-Stufe und Bypass-Sicherung"),
-    Triple("meldungen", "Benachrichtigungen", "Anfragen, Aufgaben und Limits melden lassen"),
-    Triple("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen")
-)
-
 /**
- * The menu behind the ☰ button: a drawer that slides in from the left over roughly two thirds
- * of the width, so the overview stays visible beside it. Picking an area is what opens the
- * settings — the parent never lands in one endless list.
+ * The bottom navigation from the reference: three destinations, the active one marked by a
+ * pale blue pill behind its glyph rather than by colour alone.
  */
 @Composable
-private fun MenuSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) {
-    // Slide in rather than appear: without the animation a drawer reads as a page swap.
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { shown = true }
-    val offset by animateFloatAsState(if (shown) 0f else -1f, label = "drawer")
-
-    Box(Modifier.fillMaxSize()) {
-        // Scrim — tapping beside the drawer closes it.
-        Box(
-            Modifier.fillMaxSize()
-                .background(Color(0x99000000))
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onDismiss() }
-        )
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val drawerWidth = maxWidth * 0.72f
+private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val items = listOf(
+        Triple(0, "Bildschirmzeit", Icons.Filled.BarChart),
+        Triple(1, "Einstellungen", Icons.Filled.Person),
+        Triple(2, "Aufgaben", Icons.Filled.CheckCircle)
+    )
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(Nova.Surface)
+            .padding(top = 8.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        items.forEach { (index, label, icon) ->
+            val selected = current == index
             Column(
                 Modifier
-                    .width(drawerWidth)
-                    .fillMaxHeight()
-                    .offset(x = drawerWidth * offset)
-                    .clip(RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp))
-                    .background(Nova.Canvas)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onSelect(index) }
+                    .padding(horizontal = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(36.dp))
-                Text("Einstellungen", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
-                Spacer(Modifier.height(4.dp))
-                Text("Wähle einen Bereich", fontSize = 12.sp, color = Nova.InkMuted)
-                Spacer(Modifier.height(14.dp))
-
-                MENU_ENTRIES.forEach { (key, title, subtitle) ->
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Nova.Surface)
-                            .clickable { onPick(key) }
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
-                            Text(subtitle, fontSize = 11.sp, color = Nova.InkMuted)
-                        }
-                        Chevron()
-                    }
+                Box(
+                    Modifier
+                        .width(64.dp).height(32.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (selected) Nova.Accent else Color.Transparent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        icon, label,
+                        tint = if (selected) Nova.Primary else Nova.InkMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
-
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    "Schließen", color = Nova.Primary, fontSize = 15.sp,
-                    modifier = Modifier.fillMaxWidth().clickable { onDismiss() }.padding(12.dp)
+                    label,
+                    fontSize = 12.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (selected) Nova.Primary else Nova.InkMuted
                 )
-                Spacer(Modifier.height(8.dp))
             }
         }
     }
 }
 
+/** One entry in the settings list: key, title, explanatory line, glyph. */
+private data class MenuEntry(
+    val key: String,
+    val title: String,
+    val subtitle: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
+
+/** What the settings tab offers, in order. */
+private val MENU_ENTRIES = listOf(
+    MenuEntry("zeit", "Zeitlimits", "Tageslimit, Wochenlimit, Gesamtlimit, Ruhezeit", Icons.Filled.HourglassBottom),
+    MenuEntry("apps", "Apps", "Gesperrte Apps und Freigaben für heute", Icons.Filled.Apps),
+    MenuEntry("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus", Icons.Filled.Lock),
+    MenuEntry("verwaltung", "Verwaltung", "Kategorien, Aufgaben, Bericht, Geräte", Icons.Filled.Tune),
+    MenuEntry("schutz", "Schutz", "Schutz-Stufe und Bypass-Sicherung", Icons.Filled.Shield),
+    MenuEntry("meldungen", "Benachrichtigungen", "Anfragen, Aufgaben und Limits melden lassen", Icons.Filled.Notifications),
+    MenuEntry("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen", Icons.Filled.PhoneAndroid)
+)
+
+/**
+ * The settings tab: one card, one row per area, each with its glyph, title and a line saying
+ * what is inside. Tapping a row opens that area on its own page — the reference never shows a
+ * single endless settings list, and neither do we.
+ */
+@Composable
+private fun SettingsList(onPick: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxSize()
+            .background(Nova.Canvas)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(20.dp))
+        Text("Einstellungen", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Spacer(Modifier.height(16.dp))
+        NovaCard {
+            MENU_ENTRIES.forEachIndexed { i, e ->
+                if (i > 0) NovaDivider()
+                NovaRow(
+                    title = e.title,
+                    subtitle = e.subtitle,
+                    icon = e.icon,
+                    onClick = { onPick(e.key) }
+                ) { Chevron() }
+            }
+        }
+        Spacer(Modifier.height(100.dp))
+    }
+}
 /**
  * The parent app's landing screen: everything that matters at a glance, nothing to scroll for.
  *
@@ -1253,28 +1281,45 @@ private fun ParentDashboard(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // ---- header: ☰ leads to every setting ----
+        // ---- header: the device pill on the left, actions on the right ----
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(42.dp).clip(RoundedCornerShape(13.dp))
-                    .background(Nova.Primary.copy(alpha = 0.12f))
-                    .clickable { onOpenMenu() },
-                contentAlignment = Alignment.Center
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(Nova.RadiusPill.dp))
+                    .background(Nova.Surface)
+                    .clickable { onOpenMenu() }
+                    .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.Menu, "Einstellungen", tint = Nova.Primary, modifier = Modifier.size(22.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Übersicht", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
-                Text(
-                    if (online) remote?.deviceName ?: "Kinder-Gerät" else "Keine aktuelle Verbindung",
-                    fontSize = 12.sp, color = if (online) Nova.Success else Nova.Warning
-                )
+                // Stands in for the avatar in the reference: the child device's initial.
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape).background(Nova.Accent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        (remote?.deviceName?.trim()?.firstOrNull() ?: 'K').uppercase(),
+                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Nova.Primary
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        remote?.deviceName ?: "Kinder-Gerät",
+                        fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
+                        maxLines = 1
+                    )
+                    Text(
+                        if (online) "Verbunden" else "Keine Verbindung",
+                        fontSize = 11.sp, color = if (online) Nova.Success else Nova.Warning
+                    )
+                }
             }
             if (prefs.syncConfigured) {
+                Spacer(Modifier.width(10.dp))
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape)
-                        .background(Nova.Primary.copy(alpha = 0.12f))
+                    Modifier.size(42.dp).clip(CircleShape)
+                        .background(Nova.Surface)
                         .clickable(enabled = !refreshing) { onRefresh() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -1286,6 +1331,8 @@ private fun ParentDashboard(
                 }
             }
         }
+        Spacer(Modifier.height(18.dp))
+        Text("Bildschirmzeit", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         if (refreshing) {
             Text("Aktualisiere…", fontSize = 12.sp, color = Nova.InkMuted, modifier = Modifier.padding(top = 6.dp))
         }
@@ -1678,13 +1725,12 @@ private fun ParentDashboard(
         }
 
         Spacer(Modifier.height(20.dp))
-        NovaButtonTonal(text = "Alle Einstellungen", onClick = onOpenMenu)
-        Spacer(Modifier.height(10.dp))
         Text(
             "Fertig", color = Nova.Primary, fontSize = 16.sp,
             modifier = Modifier.fillMaxWidth().clickable { onExit() }.padding(12.dp)
         )
-        Spacer(Modifier.height(24.dp))
+        // Clearance for the bottom navigation bar.
+        Spacer(Modifier.height(100.dp))
     }
 }
 

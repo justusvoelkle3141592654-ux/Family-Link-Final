@@ -30,11 +30,11 @@ object Nova {
         internal set
 
     // -- Semantic ---------------------------------------------------------
-    var Success = Color(0xFF19C37D); internal set
-    var Warning = Color(0xFFFFA726); internal set
-    var Danger = Color(0xFFFF4D5E); internal set
-    var Night = Color(0xFF9B6BFF); internal set     // bedtime
-    var Focus = Color(0xFF00B4FF); internal set     // focus sessions
+    var Success = Color(0xFF146C2E); internal set   // Google green
+    var Warning = Color(0xFFA8500A); internal set
+    var Danger = Color(0xFFB3261E); internal set    // Material error red
+    var Night = Color(0xFF6750A4); internal set     // bedtime
+    var Focus = Color(0xFF0B57D0); internal set     // focus sessions
 
     // -- Neutrals (mode dependent) ----------------------------------------
     var Ink = Color(0xFF0B1020); internal set        // primary text
@@ -63,40 +63,47 @@ object Nova {
     val CatBlocked get() = Danger
 
     // -- Shape tokens -----------------------------------------------------
-    const val RadiusCard = 22
-    const val RadiusControl = 16
+    const val RadiusCard = 26
+    const val RadiusControl = 20
     const val RadiusPill = 999
 
     internal fun applyLight() {
         isDark = false
-        Ink = Color(0xFF0B1020)
-        InkMuted = Color(0xFF5B6478)
-        InkFaint = Color(0xFF9AA3B5)
-        Line = Color(0x14000000)
-        Fill = Color(0x0F000000)
-        Canvas = Color(0xFFF5F7FB)
+        // Near-black text on a very light blue-grey page with white cards, and quiet greys for
+        // subtitles — the Material 3 neutrals Family Link is built on.
+        Ink = Color(0xFF1B1C1E)
+        InkMuted = Color(0xFF44474E)
+        InkFaint = Color(0xFF74777F)
+        Line = Color(0x1A000000)
+        Fill = Color(0xFFE8EBF3)
+        Canvas = Color(0xFFF1F3F9)
         Surface = Color(0xFFFFFFFF)
-        SurfaceAlt = Color(0xFFEFF3FA)
-        PageGradient = listOf(Color(0xFFFFFFFF), Color(0xFFF5F7FB))
-        Primary = Color(0xFF2E7BFF)
-        BrandGradient = listOf(Color(0xFF2E7BFF), Color(0xFF00B4FF))
-        HeroGradient = listOf(Color(0xFF1B4FD8), Color(0xFF2E7BFF), Color(0xFF00B4FF))
+        SurfaceAlt = Color(0xFFE8EEFB)      // pale blue behind leading icons
+        // Flat, not gradient: these screens are a single quiet tone end to end.
+        PageGradient = listOf(Color(0xFFF1F3F9), Color(0xFFF1F3F9))
+        Primary = Color(0xFF0B57D0)         // Google blue
+        PrimaryDeep = Color(0xFF062E6F)
+        Accent = Color(0xFFD3E3FD)          // light-blue selection pill
+        BrandGradient = listOf(Color(0xFF0B57D0), Color(0xFF4285F4))
+        HeroGradient = listOf(Color(0xFF0B57D0), Color(0xFF1A73E8), Color(0xFF4285F4))
     }
 
     internal fun applyDark() {
         isDark = true
-        Ink = Color(0xFFF2F5FA)
-        InkMuted = Color(0xFF9AA5BC)
-        InkFaint = Color(0xFF636E85)
+        Ink = Color(0xFFE3E2E6)
+        InkMuted = Color(0xFFC4C6D0)
+        InkFaint = Color(0xFF8E9099)
         Line = Color(0x1FFFFFFF)
-        Fill = Color(0x14FFFFFF)
-        Canvas = Color(0xFF080B14)          // near-black
-        Surface = Color(0xFF121826)         // elevated card
-        SurfaceAlt = Color(0xFF1A2233)
-        PageGradient = listOf(Color(0xFF111827), Color(0xFF080B14))
-        Primary = Color(0xFF4D93FF)         // slightly lifted for contrast on black
-        BrandGradient = listOf(Color(0xFF2E7BFF), Color(0xFF00C2FF))
-        HeroGradient = listOf(Color(0xFF0B2E6B), Color(0xFF1B4FD8), Color(0xFF00A2E8))
+        Fill = Color(0xFF2B2F36)
+        Canvas = Color(0xFF111318)
+        Surface = Color(0xFF1D2024)
+        SurfaceAlt = Color(0xFF283041)
+        PageGradient = listOf(Color(0xFF111318), Color(0xFF111318))
+        Primary = Color(0xFFA8C7FA)         // Material 3 dark primary
+        PrimaryDeep = Color(0xFFD3E3FD)
+        Accent = Color(0xFF0842A0)
+        BrandGradient = listOf(Color(0xFF0B57D0), Color(0xFF4285F4))
+        HeroGradient = listOf(Color(0xFF062E6F), Color(0xFF0B57D0), Color(0xFF1A73E8))
     }
 }
 
