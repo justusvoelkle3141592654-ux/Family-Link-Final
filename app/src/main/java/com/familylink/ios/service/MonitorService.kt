@@ -213,8 +213,14 @@ class MonitorService : Service() {
         if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
         lastBlockLaunchAt = now
 
+        // Sealed = nothing can be opened from the block screen at all. Deliberately NOT the
+        // day limit: that one still allows the Plus apps and an extension request.
+        val sealedLock = bedtime ||
+            decision is LockDecision.HardCapReached ||
+            decision is LockDecision.ManualLock
+
         val (title, detail) = messageFor(decision)
-        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock) }
+        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealedLock) }
     }
 
     /**

@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -142,8 +144,16 @@ fun ParentPortalScreen(
     // The parent app opens on a compact dashboard; everything else lives behind the ☰ menu.
     // The child device keeps the single long page it always had.
     var showSettings by remember { mutableStateOf(!prefs.isParentDevice) }
+    // Which group of settings is on screen. Null means "all of them", which is what the child
+    // device shows — the parent always arrives with one group picked from the menu sheet, so it
+    // never faces the whole endless list at once.
+    var settingsGroup by remember { mutableStateOf<String?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    fun showGroup(group: String): Boolean = settingsGroup == null || settingsGroup == group
 
     if (prefs.isParentDevice && !showSettings) {
+        Box(Modifier.fillMaxSize()) {
         ParentDashboard(
             prefs = prefs,
             remote = remote,
@@ -152,7 +162,7 @@ fun ParentPortalScreen(
             refreshing = refreshing,
             pendingRequest = pendingRequest,
             onRefresh = { refreshNow() },
-            onOpenMenu = { showSettings = true },
+            onOpenMenu = { menuOpen = true },
             onGrant = { minutes ->
                 prefs.addBonusMinutes(minutes)
                 v++
@@ -173,6 +183,20 @@ fun ParentPortalScreen(
             onOpenChores = onOpenChores,
             onExit = onExit
         )
+        // The ☰ button opens this first: a half-height panel listing the groups. Picking one
+        // is what navigates into the settings, so the long list is never the first thing seen.
+        // Emitted after the dashboard so it draws on top of it.
+        if (menuOpen) {
+            MenuSheet(
+                onPick = { group ->
+                    settingsGroup = group
+                    menuOpen = false
+                    showSettings = true
+                },
+                onDismiss = { menuOpen = false }
+            )
+        }
+        }
         return
     }
 
@@ -187,11 +211,14 @@ fun ParentPortalScreen(
             if (prefs.isParentDevice) {
                 Text(
                     "‹ Übersicht", color = Nova.Primary, fontSize = 17.sp,
-                    modifier = Modifier.clickable { showSettings = false }.padding(end = 12.dp)
+                    modifier = Modifier
+                        .clickable { showSettings = false; settingsGroup = null }
+                        .padding(end = 12.dp)
                 )
             }
             Text(
-                if (prefs.isParentDevice) "Einstellungen" else "Eltern-Portal",
+                if (prefs.isParentDevice) settingsGroup?.let { GROUP_TITLES[it] } ?: "Einstellungen"
+                else "Eltern-Portal",
                 fontSize = if (prefs.isParentDevice) 26.sp else 34.sp,
                 fontWeight = FontWeight.Bold, color = Nova.Ink
             )
@@ -377,6 +404,7 @@ fun ParentPortalScreen(
         }
 
         // ---- how time is measured ----
+        if (showGroup("zeit")) {
         SectionHeader("Zeitmessung")
         NovaCard {
             Column(Modifier.padding(16.dp)) {
@@ -418,6 +446,7 @@ fun ParentPortalScreen(
             }
         }
 
+
         // ---- global limit ----
         SectionHeader("Tägliches Limit (Standard-Apps)")
         NovaCard {
@@ -429,6 +458,7 @@ fun ParentPortalScreen(
                 )
             }
         }
+
 
         // ---- absolute ceiling over every app ----
         SectionHeader("Gesamtlimit (alle Apps)")
@@ -460,6 +490,7 @@ fun ParentPortalScreen(
             }
         }
 
+
         // ---- bedtime ----
         SectionHeader("Ruhezeit")
         NovaCard {
@@ -485,7 +516,10 @@ fun ParentPortalScreen(
             }
         }
 
+        }
+
         // ---- blocked apps today ----
+        if (showGroup("apps")) {
         SectionHeader("Heute gesperrte Apps")
         val blocked = prefs.getBlockedToday()
         val perApp = prefs.getPerAppSeconds()
@@ -506,6 +540,7 @@ fun ParentPortalScreen(
                 }
             }
         }
+
 
         // ---- Aus-Button ----
         SectionHeader("Für heute freischalten")
@@ -562,7 +597,10 @@ fun ParentPortalScreen(
             }
         }
 
-        // ---- focus mode (headline feature) ----
+        }
+
+        // ---- locking: manual, timed, and focus ----
+        if (showGroup("sperren")) {
         SectionHeader("Sperren")
         NovaCard {
             val focus = prefs.focusSession()
@@ -625,7 +663,10 @@ fun ParentPortalScreen(
             }
         }
 
+        }
+
         // ---- navigation ----
+        if (showGroup("verwaltung")) {
         SectionHeader("Verwaltung")
         NovaCard {
             NovaRow(title = "Apps & Kategorien", onClick = onOpenApps) { Chevron() }
@@ -636,6 +677,7 @@ fun ParentPortalScreen(
             NovaRow(title = "Geräte", subtitle = "Max. 3 pro Konto", onClick = onOpenDevices) { Chevron() }
             NovaRow(title = "Wochenbericht", subtitle = "Nutzung der letzten 7 Tage", onClick = onOpenStats) { Chevron() }
         }
+
 
         // ---- chores ----
         SectionHeader("Aufgaben & Belohnungen")
@@ -654,6 +696,8 @@ fun ParentPortalScreen(
 
         // ---- protection level (supervised device only) ----
         if (!prefs.isParentDevice) {
+        }
+        if (showGroup("schutz")) {
         SectionHeader("Schutz-Stufe")
         NovaCard {
             val owner = com.familylink.ios.admin.DeviceOwner.isDeviceOwner(context)
@@ -686,6 +730,7 @@ fun ParentPortalScreen(
 
         }
 
+
         // ---- instant pause ----
         SectionHeader("Sofort-Pause")
         NovaCard {
@@ -709,7 +754,10 @@ fun ParentPortalScreen(
             }
         }
 
+        }
+
         // ---- appearance ----
+        if (showGroup("geraet")) {
         SectionHeader("Darstellung")
         NovaCard {
             Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -736,6 +784,7 @@ fun ParentPortalScreen(
             }
         }
 
+
         // ---- security ----
         SectionHeader("Sicherheit")
         NovaCard {
@@ -746,6 +795,7 @@ fun ParentPortalScreen(
                 onClick = onSetSecurePin
             ) { Chevron() }
         }
+
 
         // ---- device: system settings are locked by default; released here temporarily ----
         SectionHeader("Gerät")
@@ -770,6 +820,7 @@ fun ParentPortalScreen(
                 }
             }
         }
+        }
 
         Spacer(Modifier.height(24.dp))
         Text(
@@ -777,6 +828,91 @@ fun ParentPortalScreen(
             fontSize = 12.sp, color = Nova.InkFaint
         )
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** Group key -> the title shown once that group is open. */
+private val GROUP_TITLES = mapOf(
+    "zeit" to "Zeit & Limits",
+    "apps" to "Apps",
+    "sperren" to "Sperren & Fokus",
+    "verwaltung" to "Verwaltung",
+    "schutz" to "Schutz",
+    "geraet" to "Gerät & Design"
+)
+
+/** What the menu panel offers, in order. */
+private val MENU_ENTRIES = listOf(
+    Triple("zeit", "Zeit & Limits", "Tageslimit, Gesamtlimit, Ruhezeit, Zeitmessung"),
+    Triple("apps", "Apps", "Gesperrte Apps und Freigaben für heute"),
+    Triple("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus, Sofort-Pause"),
+    Triple("verwaltung", "Verwaltung", "Apps & Kategorien, Aufgaben, Bericht, Geräte"),
+    Triple("schutz", "Schutz", "Schutz-Stufe und Bypass-Sicherung"),
+    Triple("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen")
+)
+
+/**
+ * The menu panel behind the ☰ button.
+ *
+ * Deliberately a half-height sheet rather than a jump straight into the settings: the parent
+ * sees the handful of areas first and picks one, instead of landing in a single endless list.
+ */
+@Composable
+private fun MenuSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        // Scrim — tapping beside the panel closes it.
+        Box(
+            Modifier.fillMaxSize()
+                .background(Color(0x99000000))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { onDismiss() }
+        )
+        Column(
+            Modifier.fillMaxWidth()
+                .fillMaxHeight(0.62f)
+                .align(Alignment.BottomCenter)
+                .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .background(Nova.Canvas)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            // Grab handle.
+            Box(
+                Modifier.width(40.dp).height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)).background(Nova.Fill)
+                    .align(Alignment.CenterHorizontally)
+            )
+            Spacer(Modifier.height(14.dp))
+            Text("Einstellungen", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+            Spacer(Modifier.height(12.dp))
+
+            MENU_ENTRIES.forEach { (key, title, subtitle) ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(vertical = 5.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Nova.Surface)
+                        .clickable { onPick(key) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
+                        Text(subtitle, fontSize = 12.sp, color = Nova.InkMuted)
+                    }
+                    Chevron()
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Schließen", color = Nova.Primary, fontSize = 15.sp,
+                modifier = Modifier.fillMaxWidth().clickable { onDismiss() }.padding(12.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 

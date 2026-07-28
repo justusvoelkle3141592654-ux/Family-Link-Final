@@ -18,10 +18,13 @@ import com.familylink.ios.ui.theme.FamilyLinkTheme
 /**
  * The block screen.
  *
- * Dismissibility follows the scope of the block:
- *  - a single app's own limit  -> dismissible (child can go home and use other apps),
- *  - day limit / bedtime       -> HARD lock: BACK is swallowed, no "Startbildschirm" link,
- *    and the monitor re-asserts it if the child escapes with HOME.
+ * Dismissibility follows the scope of the block, in three steps:
+ *  - a single app's own limit -> dismissible: the child can go home and use other apps,
+ *  - the day limit            -> hard lock: BACK is swallowed and there is no "Startbildschirm"
+ *    link, but the allowed Plus apps and an extension request are still reachable,
+ *  - bedtime, the absolute ceiling and a manual lock by the parent -> SEALED: nothing at all
+ *    can be opened from here. Only the phone, the emergency dialler and the PIN-protected
+ *    parent entry remain.
  */
 class BlockActivity : ComponentActivity() {
 
@@ -31,10 +34,11 @@ class BlockActivity : ComponentActivity() {
         val detail = intent.getStringExtra(EXTRA_DETAIL) ?: "Diese App ist gerade gesperrt."
         val bedtime = intent.getBooleanExtra(EXTRA_BEDTIME, false)
         val hardLock = intent.getBooleanExtra(EXTRA_HARD_LOCK, false)
+        val sealedLock = intent.getBooleanExtra(EXTRA_SEALED, false)
 
         // Device owner only: pin this screen so HOME and Recents stop working during a hard
         // lock. This is the piece that makes bedtime / day-limit genuinely unescapable.
-        if (hardLock) com.familylink.ios.admin.DeviceOwner.startKiosk(this)
+        if (hardLock || sealedLock) com.familylink.ios.admin.DeviceOwner.startKiosk(this)
 
         setContent {
             val prefs = com.familylink.ios.data.Prefs.get(this)
@@ -45,7 +49,7 @@ class BlockActivity : ComponentActivity() {
             }
             FamilyLinkTheme(dark = dark) {
                 // Hard locks cannot be dismissed with BACK.
-                if (hardLock) BackHandler(enabled = true) { /* swallow */ }
+                if (hardLock || sealedLock) BackHandler(enabled = true) { /* swallow */ }
 
                 var screen by remember { mutableStateOf("block") }
                 when (screen) {
@@ -55,6 +59,7 @@ class BlockActivity : ComponentActivity() {
                         reasonDetail = detail,
                         bedtime = bedtime,
                         hardLock = hardLock,
+                        sealed = sealedLock,
                         onLaunchApp = { pkg -> launchApp(pkg) },
                         onExtend = { screen = "extend" },
                         onOpenPortal = { openPortal() },
@@ -104,13 +109,22 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_DETAIL = "detail"
         const val EXTRA_BEDTIME = "bedtime"
         const val EXTRA_HARD_LOCK = "hard_lock"
+        const val EXTRA_SEALED = "sealed"
 
-        fun launch(context: Context, title: String, detail: String, bedtime: Boolean, hardLock: Boolean) {
+        fun launch(
+            context: Context,
+            title: String,
+            detail: String,
+            bedtime: Boolean,
+            hardLock: Boolean,
+            sealed: Boolean = false
+        ) {
             val i = Intent(context, BlockActivity::class.java).apply {
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_DETAIL, detail)
                 putExtra(EXTRA_BEDTIME, bedtime)
                 putExtra(EXTRA_HARD_LOCK, hardLock)
+                putExtra(EXTRA_SEALED, sealed)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or

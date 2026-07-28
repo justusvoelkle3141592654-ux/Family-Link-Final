@@ -61,6 +61,12 @@ fun BlockListScreen(
     reasonDetail: String,
     bedtime: Boolean,
     hardLock: Boolean,
+    /**
+     * Fully sealed: bedtime, the absolute daily ceiling or a manual lock by the parent.
+     * Nothing can be opened from here — not the allowed apps, not an extension, not the home
+     * screen. Only the phone and the PIN-protected parent entry stay reachable.
+     */
+    sealed: Boolean = bedtime,
     onLaunchApp: (String) -> Unit,
     onExtend: () -> Unit,
     onOpenPortal: () -> Unit,
@@ -73,7 +79,7 @@ fun BlockListScreen(
     val focus = remember { prefs.effectiveFocusSession() }
     val focusRunning = focus.isRunning()
 
-    if (showPlus && !bedtime) {
+    if (showPlus && !sealed) {
         val apps = remember { InstalledApps.load(context) }
         // While a focus session runs, an allowed-plus app that the session does not include is
         // hidden here as well — the child should not even be offered it.
@@ -122,8 +128,8 @@ fun BlockListScreen(
 
         Spacer(Modifier.weight(1f))
 
-        // During bedtime this is a hard lock: no allowed apps, no extension, no close/portal.
-        if (!bedtime) {
+        // Sealed: no allowed apps and no extension — there is nothing to open from here.
+        if (!sealed) {
             BigButton(
                 if (focusRunning) "Fokus-Apps" else "Zugelassen + Apps",
                 Nova.Success
@@ -149,7 +155,13 @@ fun BlockListScreen(
 
         Spacer(Modifier.height(16.dp))
         when {
-            bedtime -> Text("Gute Nacht", fontSize = 14.sp, color = Nova.InkFaint)
+            // Sealed: no way back to the home screen. The parent entry stays, but it asks for
+            // the PIN, so it is not a way around the lock.
+            sealed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (bedtime) Text("Gute Nacht", fontSize = 14.sp, color = Nova.InkFaint)
+                Text("Eltern-Portal", fontSize = 15.sp, color = Nova.Primary,
+                    modifier = Modifier.clickable { onOpenPortal() }.padding(8.dp))
+            }
             // Hard lock (day limit): no way to simply close the screen — only Plus apps,
             // an extension, the phone, or the parent portal.
             hardLock -> Text("Eltern-Portal", fontSize = 15.sp, color = Nova.Primary,
