@@ -19,7 +19,8 @@ sealed class LockDecision {
     data class FocusActive(val label: String, val remainingSeconds: Int) : LockDecision()
     /**
      * The absolute daily ceiling across ALL apps is reached. Outranks everything except
-     * bedtime and cannot be lifted by bonus time, an extension or the off-button.
+     * bedtime and a manual lock. Neither the off-button nor a Plus category lifts it; granted
+     * time moves it by that amount rather than bypassing it.
      */
     data class HardCapReached(
         val usedSeconds: Int,
@@ -135,20 +136,17 @@ class LimitEngine(private val prefs: Prefs) {
 
         if (prefs.isBedtime()) return LockDecision.Bedtime
 
-        // A running bonus countdown opens everything for its duration — that is the whole
-        // difference to an extension, which raises the limits instead. It expires on the clock,
-        // no matter which app was used.
-        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
-
-        // The absolute ceiling across ALL apps. Deliberately checked this early: no bonus
-        // minutes, no granted extension, no off-button and no Plus category may lift it.
-        // Only the phone and emergency surfaces survive it.
+        // The absolute ceiling across ALL apps. Deliberately checked this early: the
+        // off-button and the Plus category never lift it, and a bonus countdown is evaluated
+        // below it. Only the phone and emergency surfaces survive it.
         if (prefs.hardCapEnabled) {
             val totalToday = computeTotalDeviceSeconds(usage)
             val scope = prefs.hardCapScope
-            // A granted extension raises the ceiling as well — otherwise "15 minutes more"
-            // would be handed out and immediately swallowed by the ceiling instead.
-            val extension = prefs.extensionMinutesToday * 60
+            // Time granted today raises the ceiling with it — otherwise "15 minutes more"
+            // would be handed out and immediately swallowed by the ceiling instead. Counted
+            // for BOTH forms of grant, so neither of them simply bypasses the ceiling: they
+            // move it, by a bounded amount, and it still ends the day.
+            val extension = prefs.bonusSecondsToday
             val dayCap = prefs.hardCapMinutes * 60 + extension
             val dayHit = scope != LimitScope.WEEK && totalToday >= dayCap
             val weekSpent = prefs.weekTotalSeconds()
@@ -163,6 +161,12 @@ class LimitEngine(private val prefs: Prefs) {
                 else LockDecision.HardCapReached(totalToday, dayCap)
             }
         }
+
+        // A running bonus countdown opens everything for its duration — that is the whole
+        // difference to an extension, which raises the limits instead. It expires on the clock,
+        // no matter which app was used. Deliberately checked AFTER the ceiling: free time is
+        // free within the ceiling, never past it.
+        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
 
         // Focus mode: only the explicitly allowed apps stay usable. Either the parent pushed
         // the session, or the child started one on itself to put the phone away.
