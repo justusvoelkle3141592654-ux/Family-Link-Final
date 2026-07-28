@@ -115,6 +115,9 @@ class MonitorService : Service() {
 
         val globalUsed = engine.computeGlobalUsedSeconds(usage)
         prefs.cacheUsage(globalUsed, usage)
+        // Also cache the whole-device figure: the weekly ceiling is built from the finished
+        // days plus today, so today's number has to survive the rollover into the week total.
+        prefs.totalDeviceSecondsToday = engine.computeTotalDeviceSeconds(usage)
 
         // Report upward from here as well (every ~9s). The monitor is the component that
         // always runs on the child and holds the freshest numbers, so the parent no longer
@@ -288,7 +291,11 @@ class MonitorService : Service() {
         is LockDecision.Bedtime ->
             "Ruhezeit" to "Wieder entsperrt um ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr."
         is LockDecision.GlobalLimitReached ->
-            "Zeitlimit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
+            (if (decision.weekly) "Wochenlimit erreicht" else "Zeitlimit erreicht") to
+                (if (decision.weekly)
+                    "Diese Woche genutzt: ${TimeFmt.hm(decision.usedSeconds)} von " +
+                        "${TimeFmt.hm(decision.limitSeconds)}. Am Montag gibt es wieder Zeit."
+                else "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}.")
         is LockDecision.AppLimitReached ->
             "App-Limit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
         is LockDecision.AppBlocked ->
@@ -303,9 +310,13 @@ class MonitorService : Service() {
                 else "Deine Eltern haben das Handy gesperrt."
             )
         is LockDecision.HardCapReached ->
-            "Gesamtlimit erreicht" to
-                "Das Handy wurde heute ${TimeFmt.hm(decision.usedSeconds)} benutzt — das Maximum " +
-                "sind ${TimeFmt.hm(decision.capSeconds)}. Morgen geht es weiter."
+            (if (decision.weekly) "Wochen-Gesamtlimit erreicht" else "Gesamtlimit erreicht") to
+                (if (decision.weekly)
+                    "Das Handy wurde diese Woche ${TimeFmt.hm(decision.usedSeconds)} benutzt — " +
+                        "das Maximum sind ${TimeFmt.hm(decision.capSeconds)}. Nächste Woche geht es weiter."
+                else
+                    "Das Handy wurde heute ${TimeFmt.hm(decision.usedSeconds)} benutzt — das Maximum " +
+                        "sind ${TimeFmt.hm(decision.capSeconds)}. Morgen geht es weiter.")
         LockDecision.Allowed -> "" to ""
     }
 

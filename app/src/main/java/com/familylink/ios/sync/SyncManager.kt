@@ -47,6 +47,10 @@ class SyncManager(private val context: Context) {
             usageMode = prefs.usageMode.name,
             hardCapEnabled = prefs.hardCapEnabled,
             hardCapMinutes = prefs.hardCapMinutes,
+            limitScope = prefs.limitScope.name,
+            weeklyLimitMinutes = prefs.weeklyLimitMinutes,
+            hardCapScope = prefs.hardCapScope.name,
+            weeklyHardCapMinutes = prefs.weeklyHardCapMinutes,
             manualLock = prefs.manualLockEnabled,
             manualLockReason = prefs.manualLockReason
         )
@@ -262,6 +266,8 @@ class SyncManager(private val context: Context) {
             totalDeviceSeconds = totalDevice,
             limitSeconds = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday,
             bonusSeconds = prefs.bonusSecondsToday,
+            weekCountedSeconds = prefs.weekCountedSeconds(),
+            weekTotalSeconds = prefs.weekTotalSeconds(),
             perAppSeconds = usage,
             perAppLabels = labels,
             blockedToday = prefs.getBlockedToday().keys.toList(),
@@ -392,6 +398,12 @@ class SyncManager(private val context: Context) {
         }
         prefs.hardCapEnabled = cfg.hardCapEnabled
         prefs.hardCapMinutes = cfg.hardCapMinutes
+        runCatching {
+            prefs.limitScope = com.familylink.ios.data.LimitScope.valueOf(cfg.limitScope)
+            prefs.hardCapScope = com.familylink.ios.data.LimitScope.valueOf(cfg.hardCapScope)
+        }
+        prefs.weeklyLimitMinutes = cfg.weeklyLimitMinutes
+        prefs.weeklyHardCapMinutes = cfg.weeklyHardCapMinutes
         prefs.manualLockEnabled = cfg.manualLock
         prefs.manualLockReason = cfg.manualLockReason
         // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep

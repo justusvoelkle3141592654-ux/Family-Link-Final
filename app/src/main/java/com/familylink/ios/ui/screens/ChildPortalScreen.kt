@@ -185,10 +185,30 @@ fun ChildPortalScreen(
         }
         Text(
             "Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}" +
-                if (prefs.hardCapEnabled) " von max. ${TimeFmt.hm(prefs.hardCapMinutes * 60)}" else "",
+                if (prefs.hardCapEnabled && prefs.hardCapScope != com.familylink.ios.data.LimitScope.WEEK)
+                    " von max. ${TimeFmt.hm(prefs.hardCapMinutes * 60)}" else "",
             fontSize = 13.sp, color = Nova.InkFaint,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
         )
+
+        if (prefs.limitScope != com.familylink.ios.data.LimitScope.DAY) {
+            val weekUsed = prefs.weekCountedSeconds()
+            val weekPot = prefs.weeklyLimitMinutes * 60
+            Text(
+                "Diese Woche: ${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
+                fontSize = 13.sp,
+                color = if (weekUsed >= weekPot) Nova.Danger else Nova.InkFaint,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
+            )
+        }
+        if (prefs.hardCapEnabled && prefs.hardCapScope != com.familylink.ios.data.LimitScope.DAY) {
+            Text(
+                "Gesamt diese Woche: ${TimeFmt.hm(prefs.weekTotalSeconds())} von " +
+                    TimeFmt.hm(prefs.weeklyHardCapMinutes * 60),
+                fontSize = 13.sp, color = Nova.InkFaint,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
 

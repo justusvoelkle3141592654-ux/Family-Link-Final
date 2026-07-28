@@ -20,6 +20,15 @@ enum class AppCategory { PLUS, LIMIT, STANDARD, BLOCKED }
  */
 enum class UsageMode { SYSTEM_TOTAL, CATEGORIES }
 
+/**
+ * Over which stretch a limit is measured.
+ *
+ *  DAY  — a fresh budget every morning, nothing carries over.
+ *  WEEK — one pot for the whole week. The child may spend it all on Monday, or ration it.
+ *  BOTH — a weekly pot *and* a daily ceiling inside it, so a single day cannot eat the week.
+ */
+enum class LimitScope { DAY, WEEK, BOTH } 
+
 data class ManagedApp(
     val packageName: String,
     val label: String,

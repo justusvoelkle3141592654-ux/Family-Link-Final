@@ -106,6 +106,11 @@ data class FamilyConfig(
     /** Absolute daily ceiling across ALL apps (Plus included). */
     val hardCapEnabled: Boolean = true,
     val hardCapMinutes: Int = 180,
+    /** Whether limits run per day, per week or both. */
+    val limitScope: String = "DAY",
+    val weeklyLimitMinutes: Int = 420,
+    val hardCapScope: String = "DAY",
+    val weeklyHardCapMinutes: Int = 600,
     /** Parent locked the device by hand; stays until they lift it. */
     val manualLock: Boolean = false,
     val manualLockReason: String = "",
@@ -117,6 +122,10 @@ data class FamilyConfig(
         put("usageMode", usageMode)
         put("hardCapEnabled", hardCapEnabled)
         put("hardCapMinutes", hardCapMinutes)
+        put("limitScope", limitScope)
+        put("weeklyLimitMinutes", weeklyLimitMinutes)
+        put("hardCapScope", hardCapScope)
+        put("weeklyHardCapMinutes", weeklyHardCapMinutes)
         put("manualLock", manualLock)
         put("manualLockReason", manualLockReason)
         put("globalLimitMinutes", globalLimitMinutes)
@@ -165,6 +174,10 @@ data class FamilyConfig(
                 usageMode = o.optString("usageMode", "CATEGORIES"),
                 hardCapEnabled = o.optBoolean("hardCapEnabled", true),
                 hardCapMinutes = o.optInt("hardCapMinutes", 180),
+                limitScope = o.optString("limitScope", "DAY"),
+                weeklyLimitMinutes = o.optInt("weeklyLimitMinutes", 420),
+                hardCapScope = o.optString("hardCapScope", "DAY"),
+                weeklyHardCapMinutes = o.optInt("weeklyHardCapMinutes", 600),
                 manualLock = o.optBoolean("manualLock", false),
                 manualLockReason = o.optString("manualLockReason", ""),
                 updatedAt = o.optLong("updatedAt", 0)
@@ -182,6 +195,9 @@ data class ChildStatus(
     /** The limit in force on the child right now, so the parent sees the real ratio. */
     val limitSeconds: Int = 0,
     val bonusSeconds: Int = 0,
+    /** Counted and whole-device time so far this week, today included. */
+    val weekCountedSeconds: Int = 0,
+    val weekTotalSeconds: Int = 0,
     val perAppSeconds: Map<String, Int>,
     val perAppLabels: Map<String, String>,
     val blockedToday: List<String>,
@@ -200,6 +216,8 @@ data class ChildStatus(
         put("totalDeviceSeconds", totalDeviceSeconds)
         put("limitSeconds", limitSeconds)
         put("bonusSeconds", bonusSeconds)
+        put("weekCountedSeconds", weekCountedSeconds)
+        put("weekTotalSeconds", weekTotalSeconds)
         put("focusLabel", focusLabel)
         put("batteryPercent", batteryPercent)
         put("bedtimeActive", bedtimeActive)
@@ -252,6 +270,8 @@ data class ChildStatus(
                 totalDeviceSeconds = o.optInt("totalDeviceSeconds", 0),
                 limitSeconds = o.optInt("limitSeconds", 0),
                 bonusSeconds = o.optInt("bonusSeconds", 0),
+                weekCountedSeconds = o.optInt("weekCountedSeconds", 0),
+                weekTotalSeconds = o.optInt("weekTotalSeconds", 0),
                 perAppSeconds = usage,
                 perAppLabels = labels,
                 blockedToday = blocked,

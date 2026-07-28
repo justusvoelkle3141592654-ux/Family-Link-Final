@@ -4,7 +4,12 @@ package com.familylink.ios.data
 sealed class LockDecision {
     object Allowed : LockDecision()
     object Bedtime : LockDecision()
-    data class GlobalLimitReached(val usedSeconds: Int, val limitSeconds: Int) : LockDecision()
+    data class GlobalLimitReached(
+        val usedSeconds: Int,
+        val limitSeconds: Int,
+        /** True when it is the weekly pot that ran out rather than today's budget. */
+        val weekly: Boolean = false
+    ) : LockDecision()
     data class AppLimitReached(val pkg: String, val usedSeconds: Int, val limitSeconds: Int) : LockDecision()
     /** App is generally blocked (BLOCKED category), independent of time. */
     data class AppBlocked(val pkg: String) : LockDecision()
@@ -16,7 +21,11 @@ sealed class LockDecision {
      * The absolute daily ceiling across ALL apps is reached. Outranks everything except
      * bedtime and cannot be lifted by bonus time, an extension or the off-button.
      */
-    data class HardCapReached(val usedSeconds: Int, val capSeconds: Int) : LockDecision()
+    data class HardCapReached(
+        val usedSeconds: Int,
+        val capSeconds: Int,
+        val weekly: Boolean = false
+    ) : LockDecision()
     /** The parent locked the device by hand. Stays until they lift it again. */
     data class ManualLock(val reason: String) : LockDecision()
 }
@@ -91,6 +100,17 @@ class LimitEngine(private val prefs: Prefs) {
 
     private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
 
+    /**
+     * Has the weekly pot run out? Bonus minutes granted today count against it too, otherwise
+     * an extension would quietly reopen a week that is already spent.
+     */
+    private fun weeklyBudgetExhausted(): Pair<Boolean, Pair<Int, Int>> {
+        if (prefs.limitScope == LimitScope.DAY) return false to (0 to 0)
+        val spent = prefs.weekCountedSeconds()
+        val pot = prefs.weeklyLimitMinutes * 60 + prefs.bonusSecondsToday
+        return (spent >= pot) to (spent to pot)
+    }
+
     fun decide(pkg: String?, usage: Map<String, Int>): LockDecision {
         // Bedtime is a HARD lock: it blocks EVERYTHING (PLUS included). The service keeps only
         // phone/system usable and makes it non-dismissible. It outranks the off-button.
@@ -109,11 +129,18 @@ class LimitEngine(private val prefs: Prefs) {
         // Only the phone and emergency surfaces survive it.
         if (prefs.hardCapEnabled) {
             val totalToday = computeTotalDeviceSeconds(usage)
-            val cap = prefs.hardCapMinutes * 60
-            if (totalToday >= cap) {
+            val scope = prefs.hardCapScope
+            val dayHit = scope != LimitScope.WEEK && totalToday >= prefs.hardCapMinutes * 60
+            val weekSpent = prefs.weekTotalSeconds()
+            val weekCap = prefs.weeklyHardCapMinutes * 60
+            val weekHit = scope != LimitScope.DAY && weekSpent >= weekCap
+            if (dayHit || weekHit) {
                 if (pkg == null) return LockDecision.Allowed
                 if (isAlwaysExempt(pkg)) return LockDecision.Allowed
-                return LockDecision.HardCapReached(totalToday, cap)
+                // Report the week when that is what ran out, so the child is told the truth
+                // about when the phone works again.
+                return if (weekHit) LockDecision.HardCapReached(weekSpent, weekCap, weekly = true)
+                else LockDecision.HardCapReached(totalToday, prefs.hardCapMinutes * 60)
             }
         }
 
@@ -144,6 +171,15 @@ class LimitEngine(private val prefs: Prefs) {
 
         val globalUsed = computeGlobalUsedSeconds(usage)
         val globalLimit = globalLimitSeconds()
+        // The weekly pot is checked for every non-PLUS app, exactly like the daily budget.
+        val (weekOut, weekNumbers) = weeklyBudgetExhausted()
+        // With DAY the daily budget is the only gate; with WEEK the weekly pot is; with BOTH
+        // whichever runs out first wins.
+        val dayCounts = prefs.limitScope != LimitScope.WEEK
+
+        if (weekOut && category != AppCategory.BLOCKED) {
+            return LockDecision.GlobalLimitReached(weekNumbers.first, weekNumbers.second, weekly = true)
+        }
 
         return when (category) {
             AppCategory.PLUS -> LockDecision.Allowed
@@ -154,13 +190,15 @@ class LimitEngine(private val prefs: Prefs) {
                 val ownLimit = prefs.limitMinutesOf(pkg) * 60
                 when {
                     own >= ownLimit -> LockDecision.AppLimitReached(pkg, own, ownLimit)
-                    globalUsed >= globalLimit -> LockDecision.GlobalLimitReached(globalUsed, globalLimit)
+                    dayCounts && globalUsed >= globalLimit ->
+                        LockDecision.GlobalLimitReached(globalUsed, globalLimit)
                     else -> LockDecision.Allowed
                 }
             }
 
             AppCategory.STANDARD -> {
-                if (globalUsed >= globalLimit) LockDecision.GlobalLimitReached(globalUsed, globalLimit)
+                if (dayCounts && globalUsed >= globalLimit)
+                    LockDecision.GlobalLimitReached(globalUsed, globalLimit)
                 else LockDecision.Allowed
             }
         }

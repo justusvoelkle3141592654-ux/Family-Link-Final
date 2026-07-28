@@ -3,6 +3,9 @@ package com.familylink.ios.ui.screens
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.service.ParentNotifications
 import com.familylink.ios.service.ParentWatchService
+import com.familylink.ios.data.LimitScope
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.data.UsageMode
@@ -154,6 +158,7 @@ fun ParentPortalScreen(
     // never faces the whole endless list at once.
     var settingsGroup by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(false) }
 
     fun showGroup(group: String): Boolean = settingsGroup == null || settingsGroup == group
 
@@ -171,6 +176,17 @@ fun ParentPortalScreen(
 
     // Keep the watcher in step with the setting whenever the portal is opened.
     LaunchedEffect(Unit) { ParentWatchService.sync(context) }
+
+    if (prefs.isParentDevice && showDetails) {
+        UsageDetailScreen(
+            prefs = prefs,
+            remote = remote,
+            used = used,
+            limit = limit,
+            onBack = { showDetails = false }
+        )
+        return
+    }
 
     if (prefs.isParentDevice && !showSettings) {
         Box(Modifier.fillMaxSize()) {
@@ -201,6 +217,7 @@ fun ParentPortalScreen(
                 v++
             },
             onOpenChores = onOpenChores,
+            onOpenDetails = { showDetails = true },
             onExit = onExit
         )
         // The ☰ button opens this first: a half-height panel listing the groups. Picking one
@@ -468,14 +485,29 @@ fun ParentPortalScreen(
 
 
         // ---- global limit ----
-        SectionHeader("Tägliches Limit (Standard-Apps)")
+        SectionHeader("Limit für Standard-Apps")
         NovaCard {
-            NovaRow(title = "Limit", subtitle = "Standard 1 Std · max. 2 Std") {
-                Stepper(
-                    value = "${prefs.globalLimitMinutes} Min",
-                    onMinus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes - 15).coerceAtLeast(0); v++ },
-                    onPlus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes + 15).coerceAtMost(Prefs.MAX_GLOBAL_LIMIT_MIN); v++ }
-                )
+            ScopePicker(prefs.limitScope) { prefs.limitScope = it; v++ }
+            if (prefs.limitScope != LimitScope.WEEK) {
+                NovaRow(title = "Pro Tag", subtitle = "Standard 1 Std · max. 2 Std") {
+                    Stepper(
+                        value = TimeFmt.hm(prefs.globalLimitMinutes * 60),
+                        onMinus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes - 15).coerceAtLeast(0); v++ },
+                        onPlus = { prefs.globalLimitMinutes = (prefs.globalLimitMinutes + 15).coerceAtMost(Prefs.MAX_GLOBAL_LIMIT_MIN); v++ }
+                    )
+                }
+            }
+            if (prefs.limitScope != LimitScope.DAY) {
+                NovaRow(
+                    title = "Pro Woche",
+                    subtitle = "Ein Topf für die ganze Woche — frei einteilbar."
+                ) {
+                    Stepper(
+                        value = TimeFmt.hm(prefs.weeklyLimitMinutes * 60),
+                        onMinus = { prefs.weeklyLimitMinutes = prefs.weeklyLimitMinutes - 30; v++ },
+                        onPlus = { prefs.weeklyLimitMinutes = prefs.weeklyLimitMinutes + 30; v++ }
+                    )
+                }
             }
         }
 
@@ -491,12 +523,24 @@ fun ParentPortalScreen(
                 NovaSwitch(checked = prefs.hardCapEnabled) { prefs.hardCapEnabled = it; v++ }
             }
             if (prefs.hardCapEnabled) {
-                NovaRow(title = "Maximum", subtitle = "max. ${Prefs.MAX_HARDCAP_MIN / 60} Stunden") {
-                    Stepper(
-                        value = TimeFmt.hm(prefs.hardCapMinutes * 60),
-                        onMinus = { prefs.hardCapMinutes = prefs.hardCapMinutes - 15; v++ },
-                        onPlus = { prefs.hardCapMinutes = prefs.hardCapMinutes + 15; v++ }
-                    )
+                ScopePicker(prefs.hardCapScope) { prefs.hardCapScope = it; v++ }
+                if (prefs.hardCapScope != LimitScope.WEEK) {
+                    NovaRow(title = "Pro Tag", subtitle = "max. ${Prefs.MAX_HARDCAP_MIN / 60} Stunden") {
+                        Stepper(
+                            value = TimeFmt.hm(prefs.hardCapMinutes * 60),
+                            onMinus = { prefs.hardCapMinutes = prefs.hardCapMinutes - 15; v++ },
+                            onPlus = { prefs.hardCapMinutes = prefs.hardCapMinutes + 15; v++ }
+                        )
+                    }
+                }
+                if (prefs.hardCapScope != LimitScope.DAY) {
+                    NovaRow(title = "Pro Woche", subtitle = "Gilt für die ganze Woche") {
+                        Stepper(
+                            value = TimeFmt.hm(prefs.weeklyHardCapMinutes * 60),
+                            onMinus = { prefs.weeklyHardCapMinutes = prefs.weeklyHardCapMinutes - 30; v++ },
+                            onPlus = { prefs.weeklyHardCapMinutes = prefs.weeklyHardCapMinutes + 30; v++ }
+                        )
+                    }
                 }
                 NovaRow(
                     title = "Bei Missachtung",
@@ -901,6 +945,168 @@ fun ParentPortalScreen(
     }
 }
 
+/**
+ * The full picture behind the numbers on the overview: every app the child used today with its
+ * time, its category and whether it was blocked, plus the day and week totals.
+ *
+ * Reached by tapping the time on the dashboard. It used to live buried among the settings,
+ * which is the last place anyone looks for it.
+ */
+@Composable
+private fun UsageDetailScreen(
+    prefs: Prefs,
+    remote: com.familylink.ios.sync.ChildStatus?,
+    used: Int,
+    limit: Int,
+    onBack: () -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "‹ Zurück", color = Nova.Primary, fontSize = 17.sp,
+                modifier = Modifier.clickable { onBack() }.padding(end = 12.dp)
+            )
+            Text("Nutzung im Detail", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+        }
+
+        if (remote == null) {
+            Spacer(Modifier.height(20.dp))
+            Text("Noch keine Daten vom Kinder-Gerät.", fontSize = 14.sp, color = Nova.InkMuted)
+            return@Column
+        }
+
+        Spacer(Modifier.height(16.dp))
+        NovaCard {
+            Column(Modifier.padding(18.dp)) {
+                DetailRow("Angerechnet heute", "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}")
+                DetailRow("Handynutzung gesamt heute", TimeFmt.hm(remote.totalDeviceSeconds))
+                if (prefs.limitScope != LimitScope.DAY) {
+                    DetailRow(
+                        "Angerechnet diese Woche",
+                        "${TimeFmt.hm(remote.weekCountedSeconds)} von ${TimeFmt.hm(prefs.weeklyLimitMinutes * 60)}"
+                    )
+                }
+                if (prefs.hardCapEnabled) {
+                    if (prefs.hardCapScope != LimitScope.WEEK) {
+                        DetailRow(
+                            "Gesamtlimit heute",
+                            "${TimeFmt.hm(remote.totalDeviceSeconds)} von ${TimeFmt.hm(prefs.hardCapMinutes * 60)}"
+                        )
+                    }
+                    if (prefs.hardCapScope != LimitScope.DAY) {
+                        DetailRow(
+                            "Gesamtlimit diese Woche",
+                            "${TimeFmt.hm(remote.weekTotalSeconds)} von ${TimeFmt.hm(prefs.weeklyHardCapMinutes * 60)}"
+                        )
+                    }
+                }
+                if (remote.bonusSeconds > 0) {
+                    DetailRow("Bonus heute", "+${remote.bonusSeconds / 60} Min")
+                }
+                if (remote.batteryPercent in 0..100) {
+                    DetailRow("Akku", "${remote.batteryPercent}%")
+                }
+            }
+        }
+
+        val ranked = remote.perAppSeconds.entries.sortedByDescending { it.value }
+        SectionHeader("Jede App heute (${ranked.size})")
+        NovaCard {
+            if (ranked.isEmpty()) {
+                Text(
+                    "Heute wurde noch keine App benutzt.",
+                    fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                Column(Modifier.padding(vertical = 6.dp)) {
+                    val top = ranked.first().value.coerceAtLeast(1)
+                    ranked.forEach { (pkg, secs) ->
+                        val cat = prefs.categoryOf(pkg)
+                        val catColor = when (cat) {
+                            com.familylink.ios.data.AppCategory.PLUS -> Nova.CatPlus
+                            com.familylink.ios.data.AppCategory.LIMIT -> Nova.CatLimit
+                            com.familylink.ios.data.AppCategory.BLOCKED -> Nova.CatBlocked
+                            else -> Nova.CatStandard
+                        }
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 7.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(8.dp).clip(CircleShape).background(catColor))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    remote.perAppLabels[pkg] ?: pkg,
+                                    fontSize = 15.sp, color = Nova.Ink, modifier = Modifier.weight(1f)
+                                )
+                                if (pkg in remote.blockedToday) {
+                                    NovaPill("Gesperrt", Nova.Danger)
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    TimeFmt.hm(secs), fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold, color = Nova.InkMuted
+                                )
+                            }
+                            Spacer(Modifier.height(5.dp))
+                            Box(
+                                Modifier.fillMaxWidth().height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp)).background(Nova.Fill)
+                            ) {
+                                Box(
+                                    Modifier.fillMaxWidth((secs.toFloat() / top).coerceIn(0.02f, 1f))
+                                        .height(5.dp).clip(RoundedCornerShape(3.dp)).background(catColor)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        NovaButtonTonal(text = "Zurück", onClick = onBack)
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
+    }
+}
+
+/** Day / week / both, as three segments. */
+@Composable
+private fun ScopePicker(current: LimitScope, onPick: (LimitScope) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            LimitScope.DAY to "Pro Tag",
+            LimitScope.WEEK to "Pro Woche",
+            LimitScope.BOTH to "Beides"
+        ).forEach { (scope, label) ->
+            val sel = current == scope
+            Box(
+                Modifier.weight(1f)
+                    .clip(RoundedCornerShape(Nova.RadiusControl.dp))
+                    .background(if (sel) Nova.Primary else Nova.Fill)
+                    .clickable { onPick(scope) }
+                    .padding(vertical = 11.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (sel) Color.White else Nova.InkMuted
+                )
+            }
+        }
+    }
+}
+
 /** Group key -> the title shown once that group is open. */
 private val GROUP_TITLES = mapOf(
     "zeit" to "Zeit & Limits",
@@ -924,15 +1130,19 @@ private val MENU_ENTRIES = listOf(
 )
 
 /**
- * The menu panel behind the ☰ button.
- *
- * Deliberately a half-height sheet rather than a jump straight into the settings: the parent
- * sees the handful of areas first and picks one, instead of landing in a single endless list.
+ * The menu behind the ☰ button: a drawer that slides in from the left over roughly two thirds
+ * of the width, so the overview stays visible beside it. Picking an area is what opens the
+ * settings — the parent never lands in one endless list.
  */
 @Composable
 private fun MenuSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    // Slide in rather than appear: without the animation a drawer reads as a page swap.
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val offset by animateFloatAsState(if (shown) 0f else -1f, label = "drawer")
+
     Box(Modifier.fillMaxSize()) {
-        // Scrim — tapping beside the panel closes it.
+        // Scrim — tapping beside the drawer closes it.
         Box(
             Modifier.fillMaxSize()
                 .background(Color(0x99000000))
@@ -941,49 +1151,49 @@ private fun MenuSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) {
                     interactionSource = remember { MutableInteractionSource() }
                 ) { onDismiss() }
         )
-        Column(
-            Modifier.fillMaxWidth()
-                .fillMaxHeight(0.62f)
-                .align(Alignment.BottomCenter)
-                .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-                .background(Nova.Canvas)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            // Grab handle.
-            Box(
-                Modifier.width(40.dp).height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(Nova.Fill)
-                    .align(Alignment.CenterHorizontally)
-            )
-            Spacer(Modifier.height(14.dp))
-            Text("Einstellungen", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
-            Spacer(Modifier.height(12.dp))
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val drawerWidth = maxWidth * 0.72f
+            Column(
+                Modifier
+                    .width(drawerWidth)
+                    .fillMaxHeight()
+                    .offset(x = drawerWidth * offset)
+                    .clip(RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp))
+                    .background(Nova.Canvas)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+            ) {
+                Spacer(Modifier.height(36.dp))
+                Text("Einstellungen", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Nova.Ink)
+                Spacer(Modifier.height(4.dp))
+                Text("Wähle einen Bereich", fontSize = 12.sp, color = Nova.InkMuted)
+                Spacer(Modifier.height(14.dp))
 
-            MENU_ENTRIES.forEach { (key, title, subtitle) ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .padding(vertical = 5.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Nova.Surface)
-                        .clickable { onPick(key) }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
-                        Text(subtitle, fontSize = 12.sp, color = Nova.InkMuted)
+                MENU_ENTRIES.forEach { (key, title, subtitle) ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Nova.Surface)
+                            .clickable { onPick(key) }
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink)
+                            Text(subtitle, fontSize = 11.sp, color = Nova.InkMuted)
+                        }
+                        Chevron()
                     }
-                    Chevron()
                 }
-            }
 
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Schließen", color = Nova.Primary, fontSize = 15.sp,
-                modifier = Modifier.fillMaxWidth().clickable { onDismiss() }.padding(12.dp)
-            )
-            Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Schließen", color = Nova.Primary, fontSize = 15.sp,
+                    modifier = Modifier.fillMaxWidth().clickable { onDismiss() }.padding(12.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+            }
         }
     }
 }
@@ -1016,6 +1226,7 @@ private fun ParentDashboard(
     onUnlock: () -> Unit,
     onApproveChore: (String) -> Unit,
     onOpenChores: () -> Unit,
+    onOpenDetails: () -> Unit,
     onExit: () -> Unit
 ) {
     val online = prefs.syncConfigured && System.currentTimeMillis() - prefs.lastSyncAt < 120_000
@@ -1085,9 +1296,15 @@ private fun ParentDashboard(
             }
         } else {
             // ---- headline: what is left of the day's budget ----
-            NovaCard {
+            // The whole card opens the detailed breakdown — the numbers are what a parent
+            // taps on, so that is where the details belong rather than among the settings.
+            NovaCard(modifier = Modifier.clickable { onOpenDetails() }) {
                 Column(Modifier.padding(20.dp)) {
-                    Text("Noch übrig heute", fontSize = 13.sp, color = Nova.InkMuted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Noch übrig heute", fontSize = 13.sp, color = Nova.InkMuted,
+                            modifier = Modifier.weight(1f))
+                        Text("Details ›", fontSize = 13.sp, color = Nova.Primary)
+                    }
                     Text(
                         TimeFmt.hm(remaining),
                         fontSize = 46.sp, fontWeight = FontWeight.ExtraBold,
@@ -1101,20 +1318,47 @@ private fun ParentDashboard(
                     Spacer(Modifier.height(10.dp))
                     ProgressBar(if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
 
+                    // ---- the weekly pot, when one is in force ----
+                    if (prefs.limitScope != LimitScope.DAY) {
+                        Spacer(Modifier.height(14.dp))
+                        val weekPot = prefs.weeklyLimitMinutes * 60
+                        val weekUsed = remote.weekCountedSeconds
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Diese Woche", fontSize = 13.sp, color = Nova.InkMuted,
+                                modifier = Modifier.weight(1f))
+                            Text(
+                                "${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                color = if (weekUsed >= weekPot) Nova.Danger else Nova.Ink
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        ProgressBar((weekUsed.toFloat() / weekPot.coerceAtLeast(1)).coerceIn(0f, 1f))
+                    }
+
                     Spacer(Modifier.height(16.dp))
                     // ---- the absolute ceiling across every app ----
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Gesamtlimit (alle Apps)", fontSize = 13.sp, color = Nova.InkMuted,
                             modifier = Modifier.weight(1f))
+                        val weekly = prefs.hardCapScope == LimitScope.WEEK
+                        val shownUsed = if (weekly) remote.weekTotalSeconds else total
+                        val shownCap = if (weekly) prefs.weeklyHardCapMinutes * 60 else cap
                         Text(
-                            if (prefs.hardCapEnabled) "${TimeFmt.hm(total)} / ${TimeFmt.hm(cap)}" else "aus",
+                            if (prefs.hardCapEnabled)
+                                "${TimeFmt.hm(shownUsed)} / ${TimeFmt.hm(shownCap)}" +
+                                    if (weekly) " (Woche)" else ""
+                            else "aus",
                             fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                            color = if (prefs.hardCapEnabled && total >= cap) Nova.Danger else Nova.Ink
+                            color = if (prefs.hardCapEnabled && shownUsed >= shownCap) Nova.Danger else Nova.Ink
                         )
                     }
                     if (prefs.hardCapEnabled) {
+                        val weekly = prefs.hardCapScope == LimitScope.WEEK
+                        val shownUsed = if (weekly) remote.weekTotalSeconds else total
+                        val shownCap = if (weekly) prefs.weeklyHardCapMinutes * 60 else cap
                         Spacer(Modifier.height(8.dp))
-                        ProgressBar((total.toFloat() / cap.coerceAtLeast(1)).coerceIn(0f, 1f))
+                        ProgressBar((shownUsed.toFloat() / shownCap.coerceAtLeast(1)).coerceIn(0f, 1f))
                     }
 
                     Spacer(Modifier.height(14.dp))
@@ -1138,7 +1382,11 @@ private fun ParentDashboard(
 
             // ---- top 3 apps ----
             Spacer(Modifier.height(16.dp))
-            SectionHeader("Meistgenutzt heute")
+            Row(Modifier.fillMaxWidth().clickable { onOpenDetails() },
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { SectionHeader("Meistgenutzt heute") }
+                Text("Alle ›", fontSize = 13.sp, color = Nova.Primary)
+            }
             NovaCard {
                 val top3 = remote.perAppSeconds.entries.sortedByDescending { it.value }.take(3)
                 if (top3.isEmpty()) {

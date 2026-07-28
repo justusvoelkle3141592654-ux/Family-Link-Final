@@ -41,6 +41,10 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_HARDCAP_ON = "hardcap_on"
         private const val K_HARDCAP_MIN = "hardcap_minutes"
         private const val K_HARDCAP_HITS = "hardcap_hits"        // ignored-ceiling attempts today
+        private const val K_TOTAL_USED = "total_used_sec"        // whole-device seconds today
+        private const val K_WEEK_MARKER = "week_marker"
+        private const val K_WEEK_COUNTED = "week_counted_sec"    // finished days this week
+        private const val K_WEEK_TOTAL = "week_total_sec"
 
         const val DEFAULT_GLOBAL_LIMIT_MIN = 60
         const val MAX_GLOBAL_LIMIT_MIN = 120
@@ -50,6 +54,13 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val DEFAULT_HARDCAP_MIN = 180
         const val MAX_HARDCAP_MIN = 180
         const val MIN_HARDCAP_MIN = 30
+
+        /** Weekly pots. Generous ranges — a week is seven days, not one. */
+        const val DEFAULT_WEEK_LIMIT_MIN = 7 * 60          // 7 h of counted time per week
+        const val MAX_WEEK_LIMIT_MIN = 21 * 60
+        const val DEFAULT_WEEK_HARDCAP_MIN = 10 * 60       // 10 h of phone per week
+        const val MAX_WEEK_HARDCAP_MIN = 35 * 60
+        const val MIN_WEEK_MIN = 60
         /** From this many ignored attempts on, the screen is locked every single time. */
         const val HARDCAP_LOCK_ALWAYS_FROM = 3
         const val SECURE_PIN_MIN_LEN = 6
@@ -359,6 +370,76 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getString(K_MANUAL_LOCK_WHY, "") ?: ""
         set(v) = sp.edit().putString(K_MANUAL_LOCK_WHY, v).apply()
 
+    // ---- Weekly limits -----------------------------------------------------
+    //
+    // A weekly pot is one budget for the whole week: the child may spend it all on Monday, or
+    // ration it. With BOTH, the daily limit still applies inside the week, so a single day
+    // cannot swallow everything.
+
+    var limitScope: LimitScope
+        get() = runCatching { LimitScope.valueOf(sp.getString("limit_scope", null) ?: "DAY") }
+            .getOrDefault(LimitScope.DAY)
+        set(v) = sp.edit().putString("limit_scope", v.name).apply()
+
+    var weeklyLimitMinutes: Int
+        get() = sp.getInt("weekly_limit_min", DEFAULT_WEEK_LIMIT_MIN)
+        set(v) = sp.edit().putInt("weekly_limit_min", v.coerceIn(MIN_WEEK_MIN, MAX_WEEK_LIMIT_MIN)).apply()
+
+    var hardCapScope: LimitScope
+        get() = runCatching { LimitScope.valueOf(sp.getString("hardcap_scope", null) ?: "DAY") }
+            .getOrDefault(LimitScope.DAY)
+        set(v) = sp.edit().putString("hardcap_scope", v.name).apply()
+
+    var weeklyHardCapMinutes: Int
+        get() = sp.getInt("weekly_hardcap_min", DEFAULT_WEEK_HARDCAP_MIN)
+        set(v) = sp.edit().putInt("weekly_hardcap_min", v.coerceIn(MIN_WEEK_MIN, MAX_WEEK_HARDCAP_MIN)).apply()
+
+    /** Year * 100 + calendar week. Changes exactly when a new week starts. */
+    private fun weekMarker(): Int {
+        val c = Calendar.getInstance()
+        return c.get(Calendar.YEAR) * 100 + c.get(Calendar.WEEK_OF_YEAR)
+    }
+
+    /**
+     * Fold a finished day into this week's running totals, resetting them first if the week
+     * itself has turned over. Only ever called from the daily rollover.
+     */
+    private fun accumulateWeek(countedSeconds: Int, totalSeconds: Int) {
+        val week = weekMarker()
+        val known = sp.getInt(K_WEEK_MARKER, -1)
+        val baseCounted = if (known == week) sp.getInt(K_WEEK_COUNTED, 0) else 0
+        val baseTotal = if (known == week) sp.getInt(K_WEEK_TOTAL, 0) else 0
+        sp.edit()
+            .putInt(K_WEEK_MARKER, week)
+            .putInt(K_WEEK_COUNTED, baseCounted + countedSeconds.coerceAtLeast(0))
+            .putInt(K_WEEK_TOTAL, baseTotal + totalSeconds.coerceAtLeast(0))
+            .apply()
+    }
+
+    /** Seconds already spent on *finished* days of this week (today is added by the caller). */
+    private fun weekBase(key: String): Int {
+        val week = weekMarker()
+        if (sp.getInt(K_WEEK_MARKER, -1) != week) return 0
+        return sp.getInt(key, 0)
+    }
+
+    /** Counted time this week, today included. */
+    fun weekCountedSeconds(): Int {
+        ensureToday()
+        return weekBase(K_WEEK_COUNTED) + sp.getInt(K_GLOBAL_USED, 0)
+    }
+
+    /** Whole-device time this week, today included. */
+    fun weekTotalSeconds(): Int {
+        ensureToday()
+        return weekBase(K_WEEK_TOTAL) + sp.getInt(K_TOTAL_USED, 0)
+    }
+
+    /** Today's whole-device seconds, cached by the monitor alongside the counted figure. */
+    var totalDeviceSecondsToday: Int
+        get() { ensureToday(); return sp.getInt(K_TOTAL_USED, 0) }
+        set(v) { ensureToday(); sp.edit().putInt(K_TOTAL_USED, v.coerceAtLeast(0)).apply() }
+
     // ---- Absolute daily ceiling (Gesamtlimit) ------------------------------
     //
     // Unlike the daily budget above, EVERY app counts towards this one — Plus apps included.
@@ -489,6 +570,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         if (sp.getInt(K_USAGE_DAY, -1) != today) {
             // Archive the finished day before wiping the counters, so the weekly report has data.
             archiveDay(sp.getInt(K_USAGE_DAY, -1), sp.getInt(K_GLOBAL_USED, 0))
+            // Roll the finished day into the week's running totals (which reset on a new week).
+            accumulateWeek(sp.getInt(K_GLOBAL_USED, 0), sp.getInt(K_TOTAL_USED, 0))
             // Repeating chores become available again each day.
             runCatching {
                 val reset = getChores().map {
@@ -506,6 +589,7 @@ class Prefs private constructor(private val sp: SharedPreferences) {
                 .putString(K_BLOCKED_TODAY, "{}")
                 .putInt(K_BONUS_SEC, 0)
                 .putInt(K_HARDCAP_HITS, 0)
+                .putInt(K_TOTAL_USED, 0)
                 .apply()
         }
     }
