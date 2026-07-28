@@ -62,6 +62,7 @@ class MonitorService : Service() {
     // Absolute-ceiling escalation timers (see enforceHardCap).
     private var lastHardCapCountAt = 0L
     private var lastHardCapLockAt = 0L
+    private var lastScreenLockAt = 0L
 
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -106,6 +107,17 @@ class MonitorService : Service() {
         if (!prefs.setupDone) return
 
         if (ticksSincePkgRefresh++ >= 40) { ticksSincePkgRefresh = 0; refreshManagedPackages() }
+
+        // A running screen lock outranks everything: the display itself goes off and every
+        // unlock puts it straight back, until the timer expires on its own.
+        if (prefs.screenLockActive()) {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastScreenLockAt >= SCREEN_LOCK_REPEAT_MS) {
+                lastScreenLockAt = now
+                runCatching { com.familylink.ios.admin.DeviceAdmin.lockNow(this) }
+            }
+            return
+        }
 
         val usage = UsageStatsTracker.todayUsageSeconds(this)
         // UsageStats is authoritative for "what is resumed right now"; the accessibility hint is
@@ -164,6 +176,10 @@ class MonitorService : Service() {
         // every hidden app again on each tick.
         applyFocusHiding(prefs.effectiveFocusSession().isRunning())
 
+        // Release anything whose block no longer applies (new day, extension granted, focus
+        // over, ceiling reset). Without this a suspended app would stay dead for good.
+        releaseExpiredSuspensions(usage)
+
         // Bedtime ambient sound.
         if (isBedtimeNow && prefs.bedtimeSoundEnabled) {
             main.post { BedtimeSound.start(this) }
@@ -211,6 +227,12 @@ class MonitorService : Service() {
             else -> {}
         }
 
+        // Actually CLOSE the offending app. Raising the block screen only puts a window on
+        // top; the app behind keeps running, and YouTube in particular drops into
+        // picture-in-picture and carries on playing over everything — including over the block
+        // screen. Suspending the package terminates it and takes the PiP window with it.
+        suspendBlocked(pkg, decision)
+
         // Debounce so we never relaunch in a tight loop (no flicker).
         val now = SystemClock.uptimeMillis()
         if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
@@ -224,6 +246,32 @@ class MonitorService : Service() {
 
         val (title, detail) = messageFor(decision)
         main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealedLock) }
+    }
+
+    /**
+     * Suspend the package that just got blocked, so it stops running rather than merely being
+     * covered. Only real, launchable apps — never the launcher, the phone or our own screens.
+     */
+    private fun suspendBlocked(pkg: String, decision: LockDecision) {
+        if (decision is LockDecision.SettingsBlocked) return   // settings is hidden, not suspended
+        if (engine.isForegroundExempt(pkg)) return
+        if (pkg !in managedPackages) return
+        if (pkg in prefs.suspendedPackages) return
+
+        val done = runCatching {
+            com.familylink.ios.admin.DeviceOwner.setPackagesSuspended(this, listOf(pkg), true)
+        }.getOrDefault(emptySet())
+        if (done.isNotEmpty()) prefs.suspendedPackages = prefs.suspendedPackages + done
+    }
+
+    /** Un-suspend every package the engine would now allow again. */
+    private fun releaseExpiredSuspensions(usage: Map<String, Int>) {
+        val suspended = prefs.suspendedPackages
+        if (suspended.isEmpty()) return
+        val free = suspended.filter { engine.decide(it, usage) is LockDecision.Allowed }
+        if (free.isEmpty()) return
+        runCatching { com.familylink.ios.admin.DeviceOwner.setPackagesSuspended(this, free, false) }
+        prefs.suspendedPackages = suspended - free.toSet()
     }
 
     /**
@@ -361,6 +409,8 @@ class MonitorService : Service() {
         private const val HARDCAP_LOCK_GRACE_MS = 120_000L
         /** Once the threshold is passed, lock again almost immediately on every attempt. */
         private const val HARDCAP_LOCK_PERSISTENT_MS = 5_000L
+        /** How often the display is re-locked while a timed screen lock runs. */
+        private const val SCREEN_LOCK_REPEAT_MS = 3_000L
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "family_link_monitor"
         const val ACTION_RECHECK = "com.familylink.ios.RECHECK"

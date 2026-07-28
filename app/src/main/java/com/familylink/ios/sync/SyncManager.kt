@@ -51,6 +51,7 @@ class SyncManager(private val context: Context) {
             weeklyLimitMinutes = prefs.weeklyLimitMinutes,
             hardCapScope = prefs.hardCapScope.name,
             weeklyHardCapMinutes = prefs.weeklyHardCapMinutes,
+            screenLockUntil = prefs.screenLockUntil,
             manualLock = prefs.manualLockEnabled,
             manualLockReason = prefs.manualLockReason
         )
@@ -90,6 +91,14 @@ class SyncManager(private val context: Context) {
         prefs.manualLockReason = reason
         prefs.manualLockEnabled = true
     }
+
+    /**
+     * Parent: switch the child's display off for [minutes] (capped at 15). Not an overlay —
+     * the screen locks and re-locks on every unlock until the time is up.
+     */
+    fun lockScreenForMinutes(minutes: Int) = prefs.startScreenLock(minutes)
+
+    fun releaseScreenLock() = prefs.stopScreenLock()
 
     fun unlockDevice() {
         prefs.manualLockEnabled = false
@@ -404,6 +413,7 @@ class SyncManager(private val context: Context) {
         }
         prefs.weeklyLimitMinutes = cfg.weeklyLimitMinutes
         prefs.weeklyHardCapMinutes = cfg.weeklyHardCapMinutes
+        prefs.screenLockUntil = cfg.screenLockUntil
         prefs.manualLockEnabled = cfg.manualLock
         prefs.manualLockReason = cfg.manualLockReason
         // Chores are shared state; the child only ever flips OPEN -> DONE locally, so we keep

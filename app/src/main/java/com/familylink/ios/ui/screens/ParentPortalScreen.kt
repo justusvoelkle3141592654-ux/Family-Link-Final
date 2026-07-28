@@ -211,6 +211,8 @@ fun ParentPortalScreen(
             onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
             onLockNow = { sync.lockDevice(); v++ },
             onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
+            onLockScreen = { minutes -> sync.lockScreenForMinutes(minutes); v++ },
+            onReleaseScreen = { sync.releaseScreenLock(); v++ },
             onApproveChore = { id ->
                 // Network call inside — never on the main thread.
                 thread(isDaemon = true) { sync.approveChore(id) }
@@ -1224,6 +1226,8 @@ private fun ParentDashboard(
     onLockFor: (Int) -> Unit,
     onLockNow: () -> Unit,
     onUnlock: () -> Unit,
+    onLockScreen: (Int) -> Unit,
+    onReleaseScreen: () -> Unit,
     onApproveChore: (String) -> Unit,
     onOpenChores: () -> Unit,
     onOpenDetails: () -> Unit,
@@ -1236,6 +1240,11 @@ private fun ParentDashboard(
     val timedLock = prefs.focusSession()
     val lockedNow = prefs.manualLockEnabled
     val lockedTimed = timedLock.isRunning()
+    // Ticks every second so the screen-lock countdown actually counts down.
+    var secondTick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(1000); secondTick++ } }
+    @Suppress("UNUSED_EXPRESSION") secondTick
+    val screenLockLeft = prefs.screenLockRemainingSeconds()
 
     Column(
         Modifier.fillMaxSize()
@@ -1509,6 +1518,42 @@ private fun ParentDashboard(
                             fontSize = 12.sp, color = Nova.InkFaint
                         )
                     }
+                }
+            }
+        }
+
+        // ---- the hard one: the display itself, not an overlay ----
+        Spacer(Modifier.height(16.dp))
+        SectionHeader("Display sperren")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                if (screenLockLeft > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        NovaPill("Display aus", Nova.Danger)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Noch ${TimeFmt.hm(screenLockLeft)}", fontSize = 13.sp, color = Nova.InkMuted)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    NovaButton(text = "Sofort freigeben", color = Nova.Success) { onReleaseScreen() }
+                } else {
+                    Text(
+                        "Schaltet den Bildschirm wirklich aus — kein Overlay. Jedes Entsperren " +
+                            "sperrt sofort wieder, bis die Zeit um ist.",
+                        fontSize = 12.sp, color = Nova.InkMuted
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(5, 10, 15).forEach { m ->
+                            Box(Modifier.weight(1f)) {
+                                NovaButton(text = "$m Min", color = Nova.Danger) { onLockScreen(m) }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten — läuft immer von selbst ab.",
+                        fontSize = 12.sp, color = Nova.InkFaint
+                    )
                 }
             }
         }

@@ -128,6 +128,41 @@ object DeviceOwner {
     }
 
     /**
+     * Suspend or release [packages].
+     *
+     * Suspending is what actually *closes* a blocked app. Bringing our block screen to the front
+     * does not stop the app behind it — YouTube in particular drops into picture-in-picture and
+     * keeps playing over everything, including over the block screen. A suspended package is
+     * terminated by the system and cannot be started again until it is released, which ends the
+     * PiP window with it.
+     *
+     * Nothing is deleted: the app keeps its data and stays installed, Android just refuses to
+     * run it. Fully reversible, and only available as device owner.
+     *
+     * Returns the packages actually suspended, so exactly those can be released later.
+     */
+    fun setPackagesSuspended(
+        context: Context,
+        packages: Collection<String>,
+        suspended: Boolean
+    ): Set<String> {
+        if (!isDeviceOwner(context)) return emptySet()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return emptySet()
+        val dpm = dpm(context)
+        val admin = DeviceAdmin.componentName(context)
+        val done = HashSet<String>()
+        for (pkg in packages) {
+            if (pkg == context.packageName || pkg in NEVER_HIDE) continue
+            runCatching {
+                // Returns the packages it could NOT change; everything else went through.
+                val failed = dpm.setPackagesSuspended(admin, arrayOf(pkg), suspended)
+                if (failed.isNullOrEmpty()) done.add(pkg)
+            }
+        }
+        return done
+    }
+
+    /**
      * Pin the current activity so HOME and Recents are disabled (kiosk mode). Used for hard
      * locks: bedtime, day limit and focus sessions.
      */

@@ -61,6 +61,9 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val DEFAULT_WEEK_HARDCAP_MIN = 10 * 60       // 10 h of phone per week
         const val MAX_WEEK_HARDCAP_MIN = 35 * 60
         const val MIN_WEEK_MIN = 60
+
+        /** Hard ceiling on the manual screen lock, so it can never strand the child. */
+        const val MAX_SCREEN_LOCK_MIN = 15
         /** From this many ignored attempts on, the screen is locked every single time. */
         const val HARDCAP_LOCK_ALWAYS_FROM = 3
         const val SECURE_PIN_MIN_LEN = 6
@@ -369,6 +372,37 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     var manualLockReason: String
         get() = sp.getString(K_MANUAL_LOCK_WHY, "") ?: ""
         set(v) = sp.edit().putString(K_MANUAL_LOCK_WHY, v).apply()
+
+    /**
+     * Packages currently suspended because they are blocked. Persisted so a killed service can
+     * still release them — a suspended app that nobody un-suspends stays dead forever.
+     */
+    var suspendedPackages: Set<String>
+        get() = sp.getStringSet("suspended_pkgs", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("suspended_pkgs", HashSet(v)).apply()
+
+    // ---- Timed screen lock -------------------------------------------------
+    //
+    // Not an overlay: the display itself is locked, and every unlock re-locks immediately until
+    // the time is up. Capped at [MAX_SCREEN_LOCK_MIN] so a mistake cannot brick the phone for
+    // hours — and it always expires by itself.
+
+    var screenLockUntil: Long
+        get() = sp.getLong("screen_lock_until", 0)
+        set(v) = sp.edit().putLong("screen_lock_until", v).apply()
+
+    fun screenLockActive(now: Long = System.currentTimeMillis()): Boolean = now < screenLockUntil
+
+    fun screenLockRemainingSeconds(now: Long = System.currentTimeMillis()): Int =
+        ((screenLockUntil - now) / 1000L).toInt().coerceAtLeast(0)
+
+    /** Lock the display for [minutes], clamped to the maximum. */
+    fun startScreenLock(minutes: Int) {
+        val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
+        screenLockUntil = System.currentTimeMillis() + m * 60_000L
+    }
+
+    fun stopScreenLock() { screenLockUntil = 0 }
 
     // ---- Weekly limits -----------------------------------------------------
     //
