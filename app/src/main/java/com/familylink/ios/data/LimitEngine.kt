@@ -29,6 +29,12 @@ sealed class LockDecision {
     ) : LockDecision()
     /** The parent locked the device by hand. Stays until they lift it again. */
     data class ManualLock(val reason: String) : LockDecision()
+    /**
+     * The phone has been out of touch with the family for too long. Being unreachable used to
+     * switch off everything the parent does live, so it now seals the device — and lifts itself
+     * again as soon as a single report gets through.
+     */
+    data class OfflineLock(val offlineSeconds: Int) : LockDecision()
 }
 
 /**
@@ -106,6 +112,7 @@ class LimitEngine(private val prefs: Prefs) {
         decision is LockDecision.Bedtime ||
             decision is LockDecision.HardCapReached ||
             decision is LockDecision.ManualLock ||
+            decision is LockDecision.OfflineLock ||
             decision is LockDecision.FocusActive
 
     /**
@@ -123,6 +130,7 @@ class LimitEngine(private val prefs: Prefs) {
     fun sealedReason(usage: Map<String, Int>): LockDecision? {
         if (prefs.manualLockEnabled) return LockDecision.ManualLock(prefs.manualLockReason)
         if (prefs.isBedtime()) return LockDecision.Bedtime
+        if (prefs.offlineLockDue()) return LockDecision.OfflineLock(prefs.offlineSeconds())
 
         if (prefs.hardCapEnabled && !prefs.bonusCountdownActive()) {
             val totalToday = computeTotalDeviceSeconds(usage)
@@ -173,6 +181,14 @@ class LimitEngine(private val prefs: Prefs) {
         }
 
         if (prefs.isBedtime()) return LockDecision.Bedtime
+
+        // Out of touch with the family for too long. Ranked this high because being unreachable
+        // silently disables everything below it — no new limits, no lock command, no report.
+        if (prefs.offlineLockDue()) {
+            if (pkg == null) return LockDecision.Allowed
+            if (isAlwaysExempt(pkg)) return LockDecision.Allowed
+            return LockDecision.OfflineLock(prefs.offlineSeconds())
+        }
 
         // The absolute ceiling across ALL apps. Deliberately checked this early: the
         // off-button and the Plus category never lift it, and a bonus countdown is evaluated

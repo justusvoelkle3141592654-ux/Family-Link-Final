@@ -768,6 +768,38 @@ fun ParentPortalScreen(
         if (!prefs.isParentDevice) {
         }
         if (showGroup("schutz")) {
+        SectionHeader("Verbindung")
+        NovaCard {
+            NovaRow(
+                title = "Sperren ohne Verbindung",
+                subtitle = "Ein Handy, das sich zu lange nicht meldet, wird gesperrt — sonst " +
+                    "genügt Flugmodus, um jede Regel abzuschalten. Das Kind kann die " +
+                    "Verbindung direkt auf der Sperrseite wieder einschalten."
+            ) {
+                NovaSwitch(checked = prefs.offlineLockEnabled) { prefs.offlineLockEnabled = it; v++ }
+            }
+            if (prefs.offlineLockEnabled) {
+                NovaRow(
+                    title = "Erlaubte Zeit ohne Verbindung",
+                    subtitle = "Danach wird gesperrt. Nach einem Neustart gibt es " +
+                        "${Prefs.BOOT_GRACE_MS / 60000} Minuten Karenz."
+                ) {
+                    Stepper(
+                        value = TimeFmt.hm(prefs.offlineLockMinutes * 60),
+                        onMinus = { prefs.offlineLockMinutes = prefs.offlineLockMinutes - 15; v++ },
+                        onPlus = { prefs.offlineLockMinutes = prefs.offlineLockMinutes + 15; v++ }
+                    )
+                }
+                if (!prefs.isParentDevice) {
+                    val off = prefs.offlineSeconds()
+                    NovaRow(title = "Letzte Meldung") {
+                        if (off < 0) NovaPill("nie", Nova.Warning)
+                        else NovaPill("vor ${TimeFmt.hm(off)}", if (off > 900) Nova.Warning else Nova.Success)
+                    }
+                }
+            }
+        }
+
         SectionHeader("Schutz-Stufe")
         NovaCard {
             val owner = com.familylink.ios.admin.DeviceOwner.isDeviceOwner(context)

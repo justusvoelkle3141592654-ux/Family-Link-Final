@@ -37,6 +37,8 @@ class SyncManager(private val context: Context) {
             bedtimeEnabled = prefs.bedtimeEnabled,
             bedtimeStartMin = prefs.bedtimeStartMin,
             bedtimeEndMin = prefs.bedtimeEndMin,
+            offlineLockEnabled = prefs.offlineLockEnabled,
+            offlineLockMinutes = prefs.offlineLockMinutes,
             bonusMinutes = prefs.bonusSecondsToday / 60,
             offUntilEpoch = prefs.offUntilEpoch,
             settingsUnlockedUntil = prefs.settingsUnlockedUntil,
@@ -430,6 +432,8 @@ class SyncManager(private val context: Context) {
         prefs.bedtimeEnabled = cfg.bedtimeEnabled
         prefs.bedtimeStartMin = cfg.bedtimeStartMin
         prefs.bedtimeEndMin = cfg.bedtimeEndMin
+        prefs.offlineLockEnabled = cfg.offlineLockEnabled
+        prefs.offlineLockMinutes = cfg.offlineLockMinutes
         prefs.setBonusMinutesAbsolute(cfg.bonusMinutes)
         prefs.setOffUntilEpoch(cfg.offUntilEpoch)
         prefs.setSettingsUnlockedUntil(cfg.settingsUnlockedUntil)

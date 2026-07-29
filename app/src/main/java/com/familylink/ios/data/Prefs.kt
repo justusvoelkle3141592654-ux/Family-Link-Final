@@ -20,6 +20,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_PIN_SALT = "pin_salt"
         private const val K_SHARED_PIN_HASH = "shared_pin_hash"   // the family's PIN
         private const val K_SHARED_PIN_SALT = "shared_pin_salt"
+        private const val K_OFFLINE_LOCK = "offline_lock_enabled"
+        private const val K_OFFLINE_LOCK_MIN = "offline_lock_minutes"
         private const val K_SECURE_PIN_HASH = "secure_pin_hash"   // longer parent PIN
         private const val K_SECURE_PIN_SALT = "secure_pin_salt"
         private const val K_GLOBAL_LIMIT_MIN = "global_limit_min"
@@ -69,6 +71,16 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
         /** Hard ceiling on the manual screen lock, so it can never strand the child. */
         const val MAX_SCREEN_LOCK_MIN = 15
+
+        /** How long the phone may be out of touch with the family before it seals. */
+        const val DEFAULT_OFFLINE_LOCK_MIN = 60
+        const val MIN_OFFLINE_LOCK_MIN = 15
+        const val MAX_OFFLINE_LOCK_MIN = 480
+        /** Grace after a restart, so a booting phone is not locked before WLAN is even up. */
+        const val BOOT_GRACE_MS = 10 * 60 * 1000L
+
+        /** When this process came up — the anchor for the boot grace above. */
+        val processStartedAt: Long = System.currentTimeMillis()
         /** From this many ignored attempts on, the screen is locked every single time. */
         const val HARDCAP_LOCK_ALWAYS_FROM = 3
         const val SECURE_PIN_MIN_LEN = 6
@@ -410,6 +422,69 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getString(K_MANUAL_LOCK_WHY, "") ?: ""
         set(v) = sp.edit().putString(K_MANUAL_LOCK_WHY, v).apply()
 
+    // ---- Offline lock ------------------------------------------------------
+    //
+    // Taking the phone off the network was the simplest bypass there is: no new rules arrive,
+    // no usage is reported, and a parent cannot lock anything from a distance. The limits
+    // themselves always kept working — they are decided on the device — but everything the
+    // parent does live went dead, and nobody could tell.
+    //
+    // A phone that has not been in touch for longer than the parent allows is therefore sealed
+    // until it reports back. Not a punishment for a train tunnel: the lock screen carries a
+    // button that opens the connection settings, and the lock lifts by itself as soon as one
+    // report gets through.
+
+    /**
+     * Does this phone currently have working internet? Kept in memory and refreshed by the
+     * monitor service, because the decision below needs it and this class has no Context.
+     *
+     * Optimistic by default: nothing is locked before the first real answer arrives.
+     */
+    @Volatile
+    var networkAvailable: Boolean = true
+
+    var offlineLockEnabled: Boolean
+        get() = sp.getBoolean(K_OFFLINE_LOCK, true)
+        set(v) = sp.edit().putBoolean(K_OFFLINE_LOCK, v).apply()
+
+    /** How long the device may stay out of touch before it seals. */
+    var offlineLockMinutes: Int
+        get() = sp.getInt(K_OFFLINE_LOCK_MIN, DEFAULT_OFFLINE_LOCK_MIN)
+        set(v) = sp.edit()
+            .putInt(K_OFFLINE_LOCK_MIN, v.coerceIn(MIN_OFFLINE_LOCK_MIN, MAX_OFFLINE_LOCK_MIN))
+            .apply()
+
+    /**
+     * Seconds since the last successful contact with the family server, or -1 when the question
+     * does not apply — the device is not paired, or nothing ever synced. A device that never
+     * reached the server at all must not be locked for failing to reach it again.
+     */
+    fun offlineSeconds(): Int {
+        if (!syncConfigured) return -1
+        val last = lastSyncAt
+        if (last <= 0L) return -1
+        return ((System.currentTimeMillis() - last) / 1000L).toInt().coerceAtLeast(0)
+    }
+
+    /**
+     * Is the offline lock due?
+     *
+     * Two conditions, both needed. The phone has been out of touch for longer than the parent
+     * allows, AND this process has been up long enough for the network to have come back —
+     * otherwise every restart would lock the phone before Android even has WLAN again.
+     */
+    fun offlineLockDue(): Boolean {
+        if (!offlineLockEnabled) return false
+        val offline = offlineSeconds()
+        if (offline < 0) return false
+        if (System.currentTimeMillis() - processStartedAt < BOOT_GRACE_MS) return false
+        if (offline < offlineLockMinutes * 60) return false
+        // A phone that is on the internet but cannot reach the family server has run into a
+        // server problem, not found a way around the rules. Locking the child for our outage
+        // would be indefensible, so the lock needs the connection to be genuinely gone.
+        return !networkAvailable
+    }
+
     /**
      * Packages currently suspended because they are blocked. Persisted so a killed service can
      * still release them — a suspended app that nobody un-suspends stays dead forever.
@@ -438,6 +513,10 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         escapeUntil = 0
         escapeFor = emptySet()
     }
+
+    /** True while the open window covers any of [packages]. */
+    fun lockEscapeAllowsAny(packages: Collection<String>): Boolean =
+        packages.any { lockEscapeAllows(it) }
 
     /** True while [pkg] is one of the packages the open window covers. */
     fun lockEscapeAllows(pkg: String?): Boolean {

@@ -202,7 +202,8 @@ object DeviceOwner {
         runCatching { activity.stopLockTask() }
     }
 
-    private val SETTINGS_PACKAGES = listOf(
+    /** The settings apps we hide. Public so the lock can reveal them for the internet panel. */
+    val SETTINGS_PACKAGES = listOf(
         "com.android.settings",
         "com.samsung.android.settings"
     )

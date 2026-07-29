@@ -122,6 +122,21 @@ class MonitorService : Service() {
     }
 
     /**
+     * Is there real internet right now?
+     *
+     * "Validated" rather than merely "connected": a WLAN that leads nowhere, or one whose
+     * captive portal was never signed into, is not a connection the phone can report over.
+     * Any failure to ask is read as connected, so a surprise here never locks the phone.
+     */
+    private fun hasWorkingInternet(): Boolean = runCatching {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val net = cm.activeNetwork ?: return@runCatching false
+        val caps = cm.getNetworkCapabilities(net) ?: return@runCatching false
+        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }.getOrDefault(true)
+
+    /**
      * May this package be blocked?
      *
      * The cached list is refreshed periodically, so a freshly installed or cloned app is not in
@@ -155,7 +170,11 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
-        if (ticksSincePkgRefresh++ >= 10) { ticksSincePkgRefresh = 0; refreshManagedPackages() }
+        if (ticksSincePkgRefresh++ >= 10) {
+            ticksSincePkgRefresh = 0
+            refreshManagedPackages()
+            prefs.networkAvailable = hasWorkingInternet()
+        }
 
         // A running screen lock outranks everything: the display itself goes off and every
         // unlock puts it straight back, until the timer expires on its own.
@@ -215,16 +234,33 @@ class MonitorService : Service() {
                 }
                 val (t, d) = messageFor(sealedReason)
                 if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
-                    showSealedOverlay(t, d, bedtimeNow)
+                    showSealedOverlay(t, d, bedtimeNow, sealedReason is LockDecision.OfflineLock)
                 } else {
                     // No overlay permission: fall back to the pinned activity.
                     val now = SystemClock.uptimeMillis()
                     if (now - lastBlockLaunchAt >= RELAUNCH_COOLDOWN_MS) {
                         lastBlockLaunchAt = now
-                        main.post { BlockActivity.launch(this, t, d, bedtimeNow, true, true) }
+                        // Without the overlay the block screen is an Activity. Pinning it is
+                        // right for every lock except the offline one — pinning that would
+                        // leave no way to reach the connection settings at all.
+                        val pin = sealedReason !is LockDecision.OfflineLock
+                        main.post { BlockActivity.launch(this, t, d, bedtimeNow, true, pin) }
                     }
                 }
             }
+            // The connection button on the offline lock leads into the system's internet panel,
+            // and that panel lives in the settings app — which is hidden while the phone is
+            // locked. Reveal it for exactly as long as the window that button opened lasts, and
+            // hide it again the moment the window closes.
+            val revealForInternet = sealedReason is LockDecision.OfflineLock &&
+                prefs.lockEscapeAllowsAny(com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES)
+            if (lastSettingsHidden != !revealForInternet) {
+                lastSettingsHidden = !revealForInternet
+                runCatching {
+                    com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, !revealForInternet)
+                }
+            }
+
             // Everything below is about which single app to block; a sealed device has no such
             // question. Suspensions are still released so nothing stays dead past its lock.
             releaseExpiredSuspensions(usage)
@@ -312,6 +348,7 @@ class MonitorService : Service() {
             is LockDecision.AppLimitReached -> prefs.recordBlocked(decision.pkg)
             is LockDecision.AppBlocked -> prefs.recordBlocked(decision.pkg)
             is LockDecision.GlobalLimitReached -> prefs.recordBlocked(pkg)
+            is LockDecision.OfflineLock -> prefs.recordBlocked(pkg)
             is LockDecision.HardCapReached -> {
                 prefs.recordBlocked(pkg)
                 // Escalate ONLY when a real app was opened. The home screen is shown after
@@ -340,16 +377,22 @@ class MonitorService : Service() {
     }
 
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
-    private fun showSealedOverlay(title: String, detail: String, bedtime: Boolean) {
+    private fun showSealedOverlay(
+        title: String,
+        detail: String,
+        bedtime: Boolean,
+        offline: Boolean = false
+    ) {
         // The shade would otherwise slide down over the overlay and hand the child quick
         // settings. Only possible as device owner; without it the overlay still covers the
         // screen, the shade just remains reachable.
         setStatusBarBlocked(true)
-        com.familylink.ios.util.LockOverlay.show(this, key = "$title|$detail|$bedtime") {
+        com.familylink.ios.util.LockOverlay.show(this, key = "$title|$detail|$bedtime|$offline") {
             com.familylink.ios.ui.screens.LockOverlayContent(
                 title = title,
                 detail = detail,
                 bedtime = bedtime,
+                offline = offline,
                 onOpenPortal = { com.familylink.ios.ui.screens.openParentPortal(this) }
             )
         }
@@ -447,6 +490,12 @@ class MonitorService : Service() {
     private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {
         is LockDecision.Bedtime ->
             "Ruhezeit" to "Wieder entsperrt um ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr."
+        is LockDecision.OfflineLock ->
+            "Keine Verbindung" to (
+                "Dieses Handy hat sich seit ${TimeFmt.hm(decision.offlineSeconds)} nicht bei " +
+                    "deinen Eltern gemeldet. Schalte WLAN oder mobile Daten ein — dann geht es " +
+                    "von selbst weiter."
+                )
         is LockDecision.GlobalLimitReached ->
             (if (decision.weekly) "Wochenlimit erreicht" else "Zeitlimit erreicht") to
                 (if (decision.weekly)

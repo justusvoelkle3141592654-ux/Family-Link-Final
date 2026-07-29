@@ -22,6 +22,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,7 +61,9 @@ fun LockOverlayContent(
     title: String,
     detail: String,
     bedtime: Boolean,
-    onOpenPortal: () -> Unit
+    onOpenPortal: () -> Unit,
+    /** The offline lock adds a way out that the child can use themselves. */
+    offline: Boolean = false
 ) {
     val context = LocalContext.current
     val prefs = remember { com.familylink.ios.data.Prefs.get(context) }
@@ -120,6 +123,38 @@ fun LockOverlayContent(
 
             Spacer(Modifier.weight(1f))
 
+            // ---- offline: the way out the child can take themselves ----
+            //
+            // A lock for being unreachable has to be liftable by the one holding the phone,
+            // otherwise it is a trap: the phone is locked for having no connection, and no
+            // connection can be made because the phone is locked. The button opens Android's
+            // own internet panel — WLAN and mobile data, nothing else — and the lock lifts
+            // itself as soon as the next report gets through.
+            if (offline) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(accent)
+                        .clickable {
+                            prefs.openLockEscape(
+                                com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES.toSet(),
+                                seconds = 120
+                            )
+                            openInternetSettings(context)
+                        }
+                        .padding(horizontal = 26.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Wifi, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "Verbindung einschalten", fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium, color = Color.White
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             // ---- the phone, as a filled tonal button rather than a bare disc ----
             Row(
                 Modifier
@@ -178,6 +213,28 @@ private val PHONE_PACKAGES = setOf(
     "com.samsung.android.incallui",
     "com.android.incallui"
 )
+
+/**
+ * Open Android's own internet panel — the small sheet with WLAN and mobile data — rather than
+ * the settings app itself. Older versions have no such panel, so those fall back to the
+ * wireless settings page.
+ */
+private fun openInternetSettings(context: Context) {
+    val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        Intent(android.provider.Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+    } else {
+        Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)
+    }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val opened = runCatching { context.startActivity(intent); true }.getOrDefault(false)
+    if (!opened) {
+        runCatching {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+}
 
 /** Open the parent portal from the overlay. */
 fun openParentPortal(context: Context) {

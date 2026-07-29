@@ -1,5 +1,6 @@
 package com.familylink.ios.sync
 
+import com.familylink.ios.data.Prefs
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -91,6 +92,8 @@ data class FamilyConfig(
     val bedtimeEnabled: Boolean,
     val bedtimeStartMin: Int,
     val bedtimeEndMin: Int,
+    val offlineLockEnabled: Boolean,
+    val offlineLockMinutes: Int,
     val bonusMinutes: Int,
     val offUntilEpoch: Long,
     val settingsUnlockedUntil: Long,
@@ -140,6 +143,8 @@ data class FamilyConfig(
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
         put("bedtimeEndMin", bedtimeEndMin)
+        put("offlineLockEnabled", offlineLockEnabled)
+        put("offlineLockMinutes", offlineLockMinutes)
         put("bonusMinutes", bonusMinutes)
         put("offUntilEpoch", offUntilEpoch)
         put("settingsUnlockedUntil", settingsUnlockedUntil)
@@ -171,6 +176,8 @@ data class FamilyConfig(
                 bedtimeEnabled = o.optBoolean("bedtimeEnabled", true),
                 bedtimeStartMin = o.optInt("bedtimeStartMin", 20 * 60),
                 bedtimeEndMin = o.optInt("bedtimeEndMin", 6 * 60),
+                offlineLockEnabled = o.optBoolean("offlineLockEnabled", true),
+                offlineLockMinutes = o.optInt("offlineLockMinutes", Prefs.DEFAULT_OFFLINE_LOCK_MIN),
                 bonusMinutes = o.optInt("bonusMinutes", 0),
                 offUntilEpoch = o.optLong("offUntilEpoch", 0),
                 settingsUnlockedUntil = o.optLong("settingsUnlockedUntil", 0),
