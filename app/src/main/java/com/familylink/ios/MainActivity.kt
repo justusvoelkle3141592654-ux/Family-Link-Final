@@ -3,6 +3,8 @@ package com.familylink.ios
 import android.os.Build
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -114,6 +118,19 @@ private sealed class Route {
     object PortalStats : Route()
 }
 
+/**
+ * Everything that sits behind the PIN. Leaving the app closes these; the child's own screens
+ * are not in the list, because they are open to the child anyway.
+ */
+private val PARENT_AREA: Set<Route> = setOf(
+    Route.VerifyPin, Route.Portal, Route.PortalApps, Route.PortalPermissions,
+    Route.PortalChangePin, Route.PortalSecurePin, Route.PortalFocus, Route.PortalDevices,
+    Route.PortalChores, Route.PortalStats, Route.ExtendTime
+)
+
+/** How long a trip to the system settings may take before the permissions page is closed too. */
+private const val SETTINGS_TRIP_MS = 3 * 60 * 1000L
+
 @Composable
 private fun RootNav(onThemeChanged: () -> Unit = {}) {
     val context = LocalContext.current
@@ -150,6 +167,41 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
     }
     androidx.activity.compose.BackHandler(enabled = backTarget != null) {
         backTarget?.let { route = it }
+    }
+
+    // ---- leaving the app closes the parent area ----------------------------
+    //
+    // Anything behind the PIN is only open while the app is actually in front. The moment it
+    // goes to the background — Home, app switcher, swiped out of recents — the portal is shut
+    // and coming back lands on the lock screen again, never on the page that was open. On the
+    // parent phone that is the unlock screen, on the child's phone its own home screen.
+    //
+    // The one exception is the permissions page: its whole job is to send the user into the
+    // system settings and back, so it survives a short trip and is closed like everything else
+    // once that trip took too long to have been one.
+    val owner = LocalLifecycleOwner.current
+    var leftPermissionsAt by remember { mutableStateOf(0L) }
+    val lockedEntry: Route = if (prefs.isParentDevice) Route.ParentUnlock else Route.Home
+    DisposableEffect(owner) {
+        val obs = LifecycleEventObserver { _, event ->
+            // On the child's phone only the parent area is closed — its own screens (chores,
+            // "Handy weglegen", asking for more time) are not behind a PIN and have nothing to
+            // protect. On the parent phone every screen is the parent area.
+            val protectedNow = prefs.setupDone && (prefs.isParentDevice || route in PARENT_AREA)
+            if (event == Lifecycle.Event.ON_STOP && protectedNow) {
+                if (route == Route.PortalPermissions) leftPermissionsAt = System.currentTimeMillis()
+                else if (route != lockedEntry) route = lockedEntry
+            }
+            // Back from the settings trip? Keep the page only if it really was a short one.
+            if (event == Lifecycle.Event.ON_START && protectedNow &&
+                route == Route.PortalPermissions &&
+                System.currentTimeMillis() - leftPermissionsAt > SETTINGS_TRIP_MS
+            ) {
+                route = lockedEntry
+            }
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
     }
 
     when (route) {
