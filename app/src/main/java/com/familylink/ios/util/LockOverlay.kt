@@ -6,7 +6,10 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
+import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -33,7 +36,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
  */
 object LockOverlay {
 
-    private var view: ComposeView? = null
+    private var view: View? = null
     private var owner: OverlayOwner? = null
     private val main = Handler(Looper.getMainLooper())
 
@@ -71,17 +74,25 @@ object LockOverlay {
         val o = OverlayOwner().also { owner = it }
         o.start()
 
-        // A ComposeView that eats BACK. The window is focusable, so the key arrives here first;
-        // swallowing it means BACK does nothing at all rather than reaching whatever is behind.
-        val cv = object : ComposeView(context) {
-            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
-                if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) true
+        val cv = ComposeView(context).apply {
+            setViewTreeLifecycleOwner(o)
+            setViewTreeViewModelStoreOwner(o)
+            setViewTreeSavedStateRegistryOwner(o)
+            setContent(content)
+        }
+
+        // A host that eats BACK. The window is focusable, so the key arrives here first and
+        // swallowing it means BACK does nothing rather than reaching whatever is behind.
+        // ComposeView itself is final, hence the wrapper rather than a subclass.
+        val host = object : FrameLayout(context) {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+                if (event.keyCode == KeyEvent.KEYCODE_BACK) true
                 else super.dispatchKeyEvent(event)
         }.apply {
             setViewTreeLifecycleOwner(o)
             setViewTreeViewModelStoreOwner(o)
             setViewTreeSavedStateRegistryOwner(o)
-            setContent(content)
+            addView(cv)
         }
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -106,8 +117,8 @@ object LockOverlay {
             params.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        wm.addView(cv, params)
-        view = cv
+        wm.addView(host, params)
+        view = host
     }
 
     /**
