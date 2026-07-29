@@ -20,7 +20,6 @@ import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.LimitEngine
 import com.familylink.ios.data.LockDecision
 import com.familylink.ios.data.Prefs
-import com.familylink.ios.util.BedtimeSound
 import com.familylink.ios.util.ForegroundTracker
 import com.familylink.ios.util.LockState
 import com.familylink.ios.util.TimeFmt
@@ -230,8 +229,6 @@ class MonitorService : Service() {
             // question. Suspensions are still released so nothing stays dead past its lock.
             releaseExpiredSuspensions(usage)
             applyFocusHiding(prefs.effectiveFocusSession().isRunning())
-            if (bedtimeSoundWanted(sealedReason)) main.post { BedtimeSound.start(this) }
-            else main.post { BedtimeSound.stop() }
             return
         }
 
@@ -274,13 +271,6 @@ class MonitorService : Service() {
         // Release anything whose block no longer applies (new day, extension granted, focus
         // over, ceiling reset). Without this a suspended app would stay dead for good.
         releaseExpiredSuspensions(usage)
-
-        // Bedtime ambient sound.
-        if (isBedtimeNow && prefs.bedtimeSoundEnabled) {
-            main.post { BedtimeSound.start(this) }
-        } else {
-            main.post { BedtimeSound.stop() }
-        }
 
         // Whatever happens below, the overlay must disappear the moment nothing seals the
         // device any more — otherwise it would outlive the lock that raised it.
@@ -348,9 +338,6 @@ class MonitorService : Service() {
         val (title, detail) = messageFor(decision)
         main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false) }
     }
-
-    private fun bedtimeSoundWanted(reason: LockDecision): Boolean =
-        reason is LockDecision.Bedtime && prefs.bedtimeSoundEnabled
 
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
     private fun showSealedOverlay(title: String, detail: String, bedtime: Boolean) {
@@ -497,7 +484,6 @@ class MonitorService : Service() {
         setStatusBarBlocked(false)
         worker.removeCallbacks(tickRunnable)
         workerThread.quitSafely()
-        main.post { BedtimeSound.stop() }
         sendBroadcast(Intent(this, BootReceiver::class.java).setAction(BootReceiver.ACTION_RESTART))
         super.onDestroy()
     }

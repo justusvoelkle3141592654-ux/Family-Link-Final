@@ -30,7 +30,6 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_OFF_UNTIL = "off_until_epoch"         // Aus-Button target time
         private const val K_LAST_PORTAL = "last_portal_epoch"
         private const val K_SETUP_DONE = "setup_done"
-        private const val K_BEDTIME_SOUND = "bedtime_sound_enabled"
 
         // daily state keys (cache of the real UsageStats numbers, written by the service)
         private const val K_USAGE_DAY = "usage_day"              // yyyyDDD marker
@@ -605,10 +604,6 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         val shift = extensionMinutesToday.coerceIn(0, windowLength - 1)
         return (start + shift) % 1440
     }
-
-    var bedtimeSoundEnabled: Boolean
-        get() = sp.getBoolean(K_BEDTIME_SOUND, true)
-        set(v) = sp.edit().putBoolean(K_BEDTIME_SOUND, v).apply()
 
     // ---- Aus-Button (temporary disable until 23:00) ------------------------
 

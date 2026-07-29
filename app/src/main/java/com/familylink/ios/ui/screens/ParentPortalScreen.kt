@@ -584,9 +584,6 @@ fun ParentPortalScreen(
                     onPlus = { prefs.bedtimeEndMin = wrap(prefs.bedtimeEndMin + 30); v++ }
                 )
             }
-            NovaRow(title = "Beruhigender Ton") {
-                NovaSwitch(checked = prefs.bedtimeSoundEnabled) { prefs.bedtimeSoundEnabled = it; v++ }
-            }
         }
 
         }

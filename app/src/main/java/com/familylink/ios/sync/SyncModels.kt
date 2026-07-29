@@ -91,7 +91,6 @@ data class FamilyConfig(
     val bedtimeEnabled: Boolean,
     val bedtimeStartMin: Int,
     val bedtimeEndMin: Int,
-    val bedtimeSoundEnabled: Boolean,
     val bonusMinutes: Int,
     val offUntilEpoch: Long,
     val settingsUnlockedUntil: Long,
@@ -141,7 +140,6 @@ data class FamilyConfig(
         put("bedtimeEnabled", bedtimeEnabled)
         put("bedtimeStartMin", bedtimeStartMin)
         put("bedtimeEndMin", bedtimeEndMin)
-        put("bedtimeSoundEnabled", bedtimeSoundEnabled)
         put("bonusMinutes", bonusMinutes)
         put("offUntilEpoch", offUntilEpoch)
         put("settingsUnlockedUntil", settingsUnlockedUntil)
@@ -173,7 +171,6 @@ data class FamilyConfig(
                 bedtimeEnabled = o.optBoolean("bedtimeEnabled", true),
                 bedtimeStartMin = o.optInt("bedtimeStartMin", 20 * 60),
                 bedtimeEndMin = o.optInt("bedtimeEndMin", 6 * 60),
-                bedtimeSoundEnabled = o.optBoolean("bedtimeSoundEnabled", true),
                 bonusMinutes = o.optInt("bonusMinutes", 0),
                 offUntilEpoch = o.optLong("offUntilEpoch", 0),
                 settingsUnlockedUntil = o.optLong("settingsUnlockedUntil", 0),
