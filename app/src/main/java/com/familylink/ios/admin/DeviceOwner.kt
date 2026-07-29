@@ -54,6 +54,13 @@ object DeviceOwner {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching { dpm.addUserRestriction(admin, UserManager.DISALLOW_USER_SWITCH) }
         }
+        // App cloning (Samsung "Dual Messenger" and the like) builds a second copy of an app
+        // under its own profile. That copy is outside what this app can see or limit, so the
+        // profiles are refused outright rather than fought after the fact.
+        runCatching { dpm.addUserRestriction(admin, UserManager.DISALLOW_ADD_MANAGED_PROFILE) }
+        if (Build.VERSION.SDK_INT >= 34) {
+            runCatching { dpm.addUserRestriction(admin, "no_add_clone_profile") }
+        }
 
         // --- protect ourselves -------------------------------------------
         runCatching { dpm.setUninstallBlocked(admin, context.packageName, true) }
@@ -80,7 +87,9 @@ object DeviceOwner {
             UserManager.DISALLOW_UNINSTALL_APPS,
             UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
             UserManager.DISALLOW_CONFIG_CREDENTIALS,
-            UserManager.DISALLOW_DEBUGGING_FEATURES
+            UserManager.DISALLOW_DEBUGGING_FEATURES,
+            UserManager.DISALLOW_ADD_MANAGED_PROFILE,
+            "no_add_clone_profile"
         )
         for (r in restrictions) runCatching { dpm.clearUserRestriction(admin, r) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

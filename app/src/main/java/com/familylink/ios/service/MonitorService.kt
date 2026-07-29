@@ -52,6 +52,8 @@ class MonitorService : Service() {
     // Only real, user-launchable apps are ever blocked. Everything else (keyboards, ad SDKs,
     // Play services, system surfaces) is left alone so it can never appear over a PLUS app.
     @Volatile private var managedPackages: Set<String> = emptySet()
+    // The home screens of this device, asked for by intent — never blocked, never suspended.
+    @Volatile private var homePackages: Set<String> = emptySet()
     private var ticksSincePkgRefresh = 0
 
     // Focus mode hides the apps a session does not allow; remember exactly which ones we hid
@@ -99,7 +101,45 @@ class MonitorService : Service() {
     }
 
     private fun refreshManagedPackages() {
-        runCatching { managedPackages = InstalledApps.load(this).map { it.packageName }.toSet() }
+        runCatching { homePackages = resolveHomePackages() }
+        runCatching {
+            managedPackages = InstalledApps.load(this).map { it.packageName }.toSet() - homePackages
+        }
+    }
+
+    /**
+     * Every package that can serve as a home screen on THIS phone.
+     *
+     * The hard-coded launcher list only knows the common ones; a Xiaomi, Huawei or Motorola
+     * launcher is not in it. Since a blocked app is now actually suspended, guessing wrong here
+     * would leave the child staring at an empty home screen, so the launcher is asked for by
+     * intent rather than assumed by name.
+     */
+    private fun resolveHomePackages(): Set<String> {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        return packageManager.queryIntentActivities(home, 0)
+            .mapNotNull { it.activityInfo?.packageName }
+            .toSet()
+    }
+
+    /**
+     * May this package be blocked?
+     *
+     * The cached list is refreshed periodically, so a freshly installed or cloned app is not in
+     * it yet. Anything with a launcher entry counts as a real app regardless — that is the test
+     * that catches clones, which arrive under a package name we have never categorised.
+     * Keyboards, ad SDKs and background services have no launcher entry and stay untouched.
+     */
+    private fun isBlockableApp(pkg: String): Boolean {
+        if (pkg in homePackages) return false
+        if (pkg in managedPackages) return true
+        val launchable = runCatching { InstalledApps.launchIntent(this, pkg) != null }
+            .getOrDefault(false)
+        if (launchable) {
+            // Remember it so the next tick does not have to ask the package manager again.
+            managedPackages = managedPackages + pkg
+        }
+        return launchable
     }
 
     private fun tick() {
@@ -116,7 +156,7 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
-        if (ticksSincePkgRefresh++ >= 40) { ticksSincePkgRefresh = 0; refreshManagedPackages() }
+        if (ticksSincePkgRefresh++ >= 10) { ticksSincePkgRefresh = 0; refreshManagedPackages() }
 
         // A running screen lock outranks everything: the display itself goes off and every
         // unlock puts it straight back, until the timer expires on its own.
@@ -149,6 +189,50 @@ class MonitorService : Service() {
         if (prefs.syncConfigured && ticksSinceStatusPush++ >= 3) {
             ticksSinceStatusPush = 0
             runCatching { syncManager.pushStatus() }
+        }
+
+        // ---- the sealed lock, decided by the state and not by what is on top of it ----
+        //
+        // The overlay used to come and go with the decision for the current app. Opening the
+        // phone (always exempt) therefore took it off screen, and from there anything could be
+        // reached — a cloned app included. Now it stays up for as long as the state lasts, and
+        // only the short window opened by its own phone/portal buttons hides it.
+        val sealedReason = engine.sealedReason(usage)
+        if (sealedReason != null) {
+            if (prefs.lockEscapeAllows(pkg)) {
+                com.familylink.ios.util.LockOverlay.hide(this)
+            } else {
+                prefs.clearLockEscape()
+                val bedtimeNow = sealedReason is LockDecision.Bedtime
+                LockState.update(lockActive = true, hardLock = true, bedtime = bedtimeNow)
+                setStatusBarBlocked(true)
+                // The overlay only covers the screen — the app behind it keeps running, and
+                // YouTube drops into picture-in-picture and plays on over everything. Suspending
+                // it terminates it and takes the PiP window with it.
+                if (pkg != null && !engine.isForegroundExempt(pkg) && isBlockableApp(pkg)) {
+                    suspendBlocked(pkg, sealedReason)
+                    prefs.recordBlocked(pkg)
+                    if (sealedReason is LockDecision.HardCapReached) enforceHardCap()
+                }
+                val (t, d) = messageFor(sealedReason)
+                if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
+                    showSealedOverlay(t, d, bedtimeNow)
+                } else {
+                    // No overlay permission: fall back to the pinned activity.
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastBlockLaunchAt >= RELAUNCH_COOLDOWN_MS) {
+                        lastBlockLaunchAt = now
+                        main.post { BlockActivity.launch(this, t, d, bedtimeNow, true, true) }
+                    }
+                }
+            }
+            // Everything below is about which single app to block; a sealed device has no such
+            // question. Suspensions are still released so nothing stays dead past its lock.
+            releaseExpiredSuspensions(usage)
+            applyFocusHiding(prefs.effectiveFocusSession().isRunning())
+            if (bedtimeSoundWanted(sealedReason)) main.post { BedtimeSound.start(this) }
+            else main.post { BedtimeSound.stop() }
+            return
         }
 
         val decision = engine.decide(pkg, usage)
@@ -222,9 +306,12 @@ class MonitorService : Service() {
                 // Settings is blocked directly (it is not a "managed" launchable app).
                 is LockDecision.SettingsBlocked -> { /* fall through to block */ }
                 else -> {
-                    // Daytime limit blocks: launcher stays free and only real launchable apps count.
+                    // Daytime limit blocks: launcher stays free and only real launchable apps
+                    // count. "Launchable" is checked live as well as from the cached list —
+                    // a cloned app appears under a package we have never seen, and skipping
+                    // everything unknown let exactly those through.
                     if (engine.isForegroundExempt(pkg)) return
-                    if (pkg !in managedPackages) return
+                    if (!isBlockableApp(pkg)) return
                 }
             }
         }
@@ -256,26 +343,14 @@ class MonitorService : Service() {
         if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
         lastBlockLaunchAt = now
 
-        // Sealed = nothing can be opened from the block screen at all. Deliberately NOT the
-        // day limit: that one still allows the Plus apps and an extension request.
-        val sealedLock = bedtime ||
-            decision is LockDecision.HardCapReached ||
-            decision is LockDecision.ManualLock ||
-            decision is LockDecision.FocusActive
-
+        // Anything reaching here is a per-app block, never a sealed state: the day limit, a
+        // single app's limit, a blocked app or the settings. Those stay dismissible screens.
         val (title, detail) = messageFor(decision)
-
-        // A sealed lock goes up as a system overlay, not an Activity. An Activity can always be
-        // left with HOME — that is exactly why the lock "could be closed the whole time". The
-        // overlay sits above everything including the home screen, and the device itself is
-        // never switched off for it.
-        if (sealedLock && com.familylink.ios.util.Permissions.hasOverlay(this)) {
-            showSealedOverlay(title, detail, bedtime)
-            return
-        }
-
-        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealedLock) }
+        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false) }
     }
+
+    private fun bedtimeSoundWanted(reason: LockDecision): Boolean =
+        reason is LockDecision.Bedtime && prefs.bedtimeSoundEnabled
 
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
     private fun showSealedOverlay(title: String, detail: String, bedtime: Boolean) {
@@ -300,7 +375,9 @@ class MonitorService : Service() {
     private fun suspendBlocked(pkg: String, decision: LockDecision) {
         if (decision is LockDecision.SettingsBlocked) return   // settings is hidden, not suspended
         if (engine.isForegroundExempt(pkg)) return
-        if (pkg !in managedPackages) return
+        // Live check, not just the cached list: a cloned app carries a package name we have
+        // never categorised, and testing against the cache alone let exactly those keep running.
+        if (!isBlockableApp(pkg)) return
         if (pkg in prefs.suspendedPackages) return
 
         val done = runCatching {

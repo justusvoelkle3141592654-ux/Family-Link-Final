@@ -201,6 +201,32 @@ class SyncManager(private val context: Context) {
         return ok
     }
 
+    // ---------------- the family PIN ----------------
+
+    /**
+     * Publish this device's PIN for the whole family. Only the salt and the hash travel; the
+     * PIN itself never leaves the device and cannot be recovered from what is stored.
+     */
+    fun pushPortalPin(): Boolean {
+        val c = client() ?: return false
+        val (salt, hash) = prefs.sharablePin() ?: return false
+        return c.put(
+            "${SyncClient.familyPath(prefs.familyId)}/pin",
+            JSONObject().put("salt", salt).put("hash", hash).put("updatedAt", System.currentTimeMillis())
+        )
+    }
+
+    /** Adopt the family PIN, so the same code opens the portal on every device. */
+    fun fetchPortalPin(): Boolean {
+        val c = client() ?: return false
+        val node = c.get("${SyncClient.familyPath(prefs.familyId)}/pin") ?: return false
+        val salt = node.optString("salt", "")
+        val hash = node.optString("hash", "")
+        if (salt.isBlank() || hash.isBlank()) return false
+        prefs.setSharedPin(salt, hash)
+        return true
+    }
+
     /** Parent: read the child's latest status once. */
     fun fetchChildStatus(): ChildStatus? {
         val c = client() ?: return null
@@ -225,6 +251,7 @@ class SyncManager(private val context: Context) {
             val pushed = pushConfig()
             fetchChildStatus()
             runCatching { fetchChildApps() }
+            runCatching { fetchPortalPin() }
             fetchChoreClaims().takeIf { it.isNotEmpty() }?.let { claims ->
                 // Merge chore claims coming from the child so the portal shows them at once.
                 val local = prefs.getChores().associateBy { it.id }
@@ -239,6 +266,7 @@ class SyncManager(private val context: Context) {
             fetchConfigOnce()
             val ok = pushStatus()
             runCatching { pushAppList(force = true) }
+            runCatching { fetchPortalPin() }
             ok
         }
     }
@@ -456,6 +484,9 @@ class SyncManager(private val context: Context) {
         val c = client() ?: return false
         val json = c.get(SyncClient.configPath(prefs.familyId)) ?: return false
         applyConfig(FamilyConfig.fromJson(json))
+        // The family PIN lives beside the config; pick it up on the same pass so a device that
+        // was set up before the PIN existed still ends up on the same code.
+        runCatching { fetchPortalPin() }
         return true
     }
 

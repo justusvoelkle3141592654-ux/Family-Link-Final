@@ -18,6 +18,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         // config keys
         private const val K_PIN_HASH = "pin_hash"
         private const val K_PIN_SALT = "pin_salt"
+        private const val K_SHARED_PIN_HASH = "shared_pin_hash"   // the family's PIN
+        private const val K_SHARED_PIN_SALT = "shared_pin_salt"
         private const val K_SECURE_PIN_HASH = "secure_pin_hash"   // longer parent PIN
         private const val K_SECURE_PIN_SALT = "secure_pin_salt"
         private const val K_GLOBAL_LIMIT_MIN = "global_limit_min"
@@ -83,8 +85,13 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     }
 
     // ---- PIN ---------------------------------------------------------------
+    //
+    // One PIN for the whole family. It is set once, salted and hashed, and the hash goes to the
+    // family node so every device checks against the same thing. The copy kept here is what
+    // makes the PIN work with no network at all — the plain PIN itself is never stored, and
+    // never leaves the device.
 
-    val isPinSet: Boolean get() = sp.contains(K_PIN_HASH)
+    val isPinSet: Boolean get() = sp.contains(K_PIN_HASH) || sp.contains(K_SHARED_PIN_HASH)
 
     fun setPin(pin: String) {
         val salt = System.nanoTime().toString()
@@ -94,7 +101,34 @@ class Prefs private constructor(private val sp: SharedPreferences) {
             .apply()
     }
 
+    /** The salt+hash to publish so the other devices can check the same PIN. */
+    fun sharablePin(): Pair<String, String>? {
+        val salt = sp.getString(K_PIN_SALT, null) ?: return null
+        val stored = sp.getString(K_PIN_HASH, null) ?: return null
+        return salt to stored
+    }
+
+    /** Adopt the family's PIN as received from the server. */
+    fun setSharedPin(salt: String, hash: String) {
+        if (salt.isBlank() || hash.isBlank()) return
+        sp.edit()
+            .putString(K_SHARED_PIN_SALT, salt)
+            .putString(K_SHARED_PIN_HASH, hash)
+            .apply()
+    }
+
+    val hasSharedPin: Boolean get() = sp.contains(K_SHARED_PIN_HASH)
+
+    /**
+     * Accepts the family PIN and, if one was set on this device before the shared one arrived,
+     * that device's own PIN as well. Locking a parent out of their own portal because a sync
+     * had not happened yet would be worse than accepting two codes during the changeover.
+     */
     fun checkPin(pin: String): Boolean {
+        val sharedSalt = sp.getString(K_SHARED_PIN_SALT, null)
+        val sharedHash = sp.getString(K_SHARED_PIN_HASH, null)
+        if (sharedSalt != null && sharedHash != null && sharedHash == hash(pin, sharedSalt)) return true
+
         val salt = sp.getString(K_PIN_SALT, null) ?: return false
         val stored = sp.getString(K_PIN_HASH, null) ?: return false
         return stored == hash(pin, salt)
@@ -384,6 +418,33 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     var suspendedPackages: Set<String>
         get() = sp.getStringSet("suspended_pkgs", emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet("suspended_pkgs", HashSet(v)).apply()
+
+    // ---- Escape window from a sealed lock ----------------------------------
+    //
+    // The lock covers everything, but the phone and the parent entry have to stay usable. Rather
+    // than lifting the lock whenever an exempt app happens to be in front — which let the child
+    // open the phone, swipe away and be free — tapping those buttons opens a short, explicit
+    // window for THOSE packages only. Anything else in the foreground cancels it at once.
+
+    private var escapeUntil: Long = 0
+    private var escapeFor: Set<String> = emptySet()
+
+    /** Open the window for [packages] for [seconds]. Held in memory: it must not survive a restart. */
+    fun openLockEscape(packages: Set<String>, seconds: Int = 120) {
+        escapeUntil = System.currentTimeMillis() + seconds * 1000L
+        escapeFor = packages
+    }
+
+    fun clearLockEscape() {
+        escapeUntil = 0
+        escapeFor = emptySet()
+    }
+
+    /** True while [pkg] is one of the packages the open window covers. */
+    fun lockEscapeAllows(pkg: String?): Boolean {
+        if (System.currentTimeMillis() >= escapeUntil) return false
+        return pkg != null && pkg in escapeFor
+    }
 
     // ---- Timed screen lock -------------------------------------------------
     //

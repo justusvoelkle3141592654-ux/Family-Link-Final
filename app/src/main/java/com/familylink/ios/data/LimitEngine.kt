@@ -108,6 +108,44 @@ class LimitEngine(private val prefs: Prefs) {
             decision is LockDecision.ManualLock ||
             decision is LockDecision.FocusActive
 
+    /**
+     * Is the device sealed *right now*, regardless of which app happens to be in front?
+     *
+     * Deliberately independent of the foreground package. The overlay used to be driven by the
+     * decision for the current app, so opening the phone (which is always exempt) took the lock
+     * off screen — and from there the child could reach anything, a cloned app included. The
+     * lock is a property of the state, not of whatever is on top of it.
+     *
+     * Returns the reason, or null when nothing seals the device. A focus session only counts
+     * when it allows nothing at all (a timed lock); one with allowed apps has to leave the home
+     * screen reachable so those apps can be opened.
+     */
+    fun sealedReason(usage: Map<String, Int>): LockDecision? {
+        if (prefs.manualLockEnabled) return LockDecision.ManualLock(prefs.manualLockReason)
+        if (prefs.isBedtime()) return LockDecision.Bedtime
+
+        if (prefs.hardCapEnabled && !prefs.bonusCountdownActive()) {
+            val totalToday = computeTotalDeviceSeconds(usage)
+            val scope = prefs.hardCapScope
+            val extension = prefs.bonusSecondsToday
+            val dayCap = prefs.hardCapMinutes * 60 + extension
+            val weekCap = prefs.weeklyHardCapMinutes * 60 + extension
+            val weekSpent = prefs.weekTotalSeconds()
+            if (scope != LimitScope.WEEK && totalToday >= dayCap) {
+                return LockDecision.HardCapReached(totalToday, dayCap)
+            }
+            if (scope != LimitScope.DAY && weekSpent >= weekCap) {
+                return LockDecision.HardCapReached(weekSpent, weekCap, weekly = true)
+            }
+        }
+
+        val focus = prefs.effectiveFocusSession()
+        if (focus.isRunning() && focus.allowed.isEmpty()) {
+            return LockDecision.FocusActive(focus.label, focus.remainingSeconds())
+        }
+        return null
+    }
+
     private fun isLauncher(pkg: String): Boolean = pkg in LAUNCHER_EXEMPT
 
     private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday

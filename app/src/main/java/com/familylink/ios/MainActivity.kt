@@ -182,6 +182,9 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         Route.SetupPin -> PinScreen(
             mode = PinMode.SET,
             onSuccess = {
+                // One PIN for the whole family: publish it so the other device checks the same
+                // code. Only the salt and hash travel, never the PIN itself.
+                publishPin(context)
                 // Only the supervised device needs system permissions.
                 route = if (role == DeviceRole.CHILD) Route.SetupPermissions else {
                     prefs.setupDone = true
@@ -253,10 +256,11 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
             showContinue = true
         )
 
-        // Change PIN: already authenticated in the portal, so just set a new one.
+        // Change PIN: already authenticated in the portal, so just set a new one — and share
+        // it, otherwise the two devices would drift apart on different codes.
         Route.PortalChangePin -> PinScreen(
             mode = PinMode.SET,
-            onSuccess = { route = Route.Portal },
+            onSuccess = { publishPin(context); route = Route.Portal },
             onCancel = { route = Route.Portal }
         )
 
@@ -297,6 +301,20 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
 
         // Weekly statistics.
         Route.PortalStats -> StatsScreen(onBack = { route = Route.Portal })
+    }
+}
+
+/**
+ * Push the PIN just set to the family node, on a worker thread.
+ *
+ * Adopting it locally as the shared one too means this device keeps working even if the write
+ * never reaches the server — it would otherwise be the only device not on the family PIN.
+ */
+private fun publishPin(context: android.content.Context) {
+    val prefs = Prefs.get(context)
+    prefs.sharablePin()?.let { (salt, hash) -> prefs.setSharedPin(salt, hash) }
+    kotlin.concurrent.thread(isDaemon = true) {
+        runCatching { com.familylink.ios.sync.SyncManager(context).pushPortalPin() }
     }
 }
 

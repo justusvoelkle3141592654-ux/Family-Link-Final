@@ -126,6 +126,10 @@ fun LockOverlayContent(
                     .clip(RoundedCornerShape(50))
                     .background(Nova.SurfaceAlt)
                     .clickable {
+                        // Open a short window for the dialler ONLY. Anything else coming to the
+                        // foreground cancels it and the lock is back immediately — that is what
+                        // stops "open the phone, swipe away, use whatever you like".
+                        prefs.openLockEscape(PHONE_PACKAGES, seconds = 120)
                         val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         runCatching { context.startActivity(dial) }
@@ -147,13 +151,33 @@ fun LockOverlayContent(
                 "Eltern-Portal", fontSize = 14.sp, color = Nova.InkMuted,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .clickable { onOpenPortal() }
+                    .clickable {
+                        // Same idea for the parent entry: our own app only, and it asks for the
+                        // PIN anyway.
+                        prefs.openLockEscape(setOf(context.packageName), seconds = 180)
+                        onOpenPortal()
+                    }
                     .padding(horizontal = 18.dp, vertical = 10.dp)
             )
             Spacer(Modifier.height(28.dp))
         }
     }
 }
+
+/**
+ * The dialler surfaces the phone button may lead to. Kept wide on purpose: OEMs ship different
+ * dialler packages, and locking a child out of the phone would be indefensible.
+ */
+private val PHONE_PACKAGES = setOf(
+    "com.android.dialer",
+    "com.google.android.dialer",
+    "com.android.phone",
+    "com.android.server.telecom",
+    "com.android.emergency",
+    "com.samsung.android.dialer",
+    "com.samsung.android.incallui",
+    "com.android.incallui"
+)
 
 /** Open the parent portal from the overlay. */
 fun openParentPortal(context: Context) {
