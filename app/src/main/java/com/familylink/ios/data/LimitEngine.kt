@@ -190,9 +190,18 @@ class LimitEngine(private val prefs: Prefs) {
             return LockDecision.OfflineLock(prefs.offlineSeconds())
         }
 
-        // The absolute ceiling across ALL apps. Deliberately checked this early: the
-        // off-button and the Plus category never lift it, and a bonus countdown is evaluated
-        // below it. Only the phone and emergency surfaces survive it.
+        // Granted bonus time is free time, and it outranks the ceiling.
+        //
+        // It is not a hole in the ceiling: the same grant raises the ceiling by exactly the
+        // minutes handed out (see bonusSecondsToday below), so the time spent during the
+        // countdown is paid for in advance rather than taken off the child afterwards. Five
+        // minutes of bonus means five more minutes of Gesamtlimit — and when they are up, the
+        // ceiling closes again on its own.
+        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
+
+        // The absolute ceiling across ALL apps. Deliberately checked this early: neither the
+        // off-button nor the Plus category ever lifts it. Only the phone and emergency
+        // surfaces survive it.
         if (prefs.hardCapEnabled) {
             val totalToday = computeTotalDeviceSeconds(usage)
             val scope = prefs.hardCapScope
@@ -215,12 +224,6 @@ class LimitEngine(private val prefs: Prefs) {
                 else LockDecision.HardCapReached(totalToday, dayCap)
             }
         }
-
-        // A running bonus countdown opens everything for its duration — that is the whole
-        // difference to an extension, which raises the limits instead. It expires on the clock,
-        // no matter which app was used. Deliberately checked AFTER the ceiling: free time is
-        // free within the ceiling, never past it.
-        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
 
         // Focus mode: only the explicitly allowed apps stay usable. Either the parent pushed
         // the session, or the child started one on itself to put the phone away.

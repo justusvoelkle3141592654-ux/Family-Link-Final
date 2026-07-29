@@ -561,6 +561,20 @@ fun ParentPortalScreen(
                         )
                     }
                 }
+                // What was handed out today, spelled out where the ceiling is set — otherwise
+                // the number in the stepper and the ceiling actually in force drift apart
+                // without anyone being told.
+                if (prefs.bonusSecondsToday > 0) {
+                    val extra = prefs.bonusSecondsToday
+                    NovaRow(
+                        title = "Heute geschenkt",
+                        subtitle = "Das Gesamtlimit liegt heute bei " +
+                            "${TimeFmt.hm(prefs.hardCapMinutes * 60 + extra)}, das Tageslimit bei " +
+                            "${TimeFmt.hm(prefs.globalLimitMinutes * 60 + extra)}."
+                    ) {
+                        NovaPill("+${TimeFmt.hm(extra)}", Nova.Success)
+                    }
+                }
                 NovaRow(
                     title = "Bei Missachtung",
                     subtitle = "Erst die Sperrseite. Wer trotzdem weitermacht, bekommt den " +
