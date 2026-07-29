@@ -321,6 +321,14 @@ fun ParentPortalScreen(
             }
         }
 
+        // The settings page is settings only. On the parent phone the usage figures live on
+        // the Bildschirmzeit tab and, in full, one tap away on the time itself — repeating the
+        // whole app breakdown above every setting made this page unreadable.
+        //
+        // The child's phone keeps them: its parent portal is one single page with no tabs, so
+        // this is the only place the numbers can be seen at all.
+        if (!prefs.isParentDevice) {
+
         // ---- usage summary ----
         SectionHeader(if (prefs.isParentDevice) "Nutzung des Kindes heute" else "Heute genutzt")
         NovaCard {
@@ -447,6 +455,8 @@ fun ParentPortalScreen(
                     }
                 }
             }
+        }
+
         }
 
         // ---- how time is measured ----
