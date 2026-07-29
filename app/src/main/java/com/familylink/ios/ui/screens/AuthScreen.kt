@@ -69,7 +69,7 @@ fun AuthScreen(role: DeviceRole, onDone: () -> Unit, onSkip: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -236,7 +236,7 @@ fun DevicesScreen(onBack: () -> Unit) {
     remember { reload(); 0 }
 
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
+        Modifier.fillMaxSize().background(Nova.Canvas)
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
         Text("Geräte", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)

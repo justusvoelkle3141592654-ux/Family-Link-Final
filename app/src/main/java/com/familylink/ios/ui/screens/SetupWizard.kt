@@ -33,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -55,7 +54,7 @@ import kotlin.concurrent.thread
 fun RoleChoiceScreen(onChosen: (DeviceRole) -> Unit) {
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -148,7 +147,7 @@ fun PairingScreen(role: DeviceRole, onPaired: () -> Unit, onSkip: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally

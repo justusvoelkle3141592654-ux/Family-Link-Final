@@ -169,6 +169,20 @@ fun ParentPortalScreen(
 
     fun showGroup(group: String): Boolean = settingsGroup == null || settingsGroup == group
 
+    /**
+     * The back gesture walks up the portal's own hierarchy before it leaves the portal at all:
+     * a settings area returns to the settings list, the detail page to the overview, and any
+     * tab to the first one. Only from the overview does back close the portal.
+     */
+    androidx.activity.compose.BackHandler(enabled = prefs.isParentDevice) {
+        when {
+            settingsGroup != null -> { settingsGroup = null; showSettings = false; tab = 1 }
+            showDetails -> showDetails = false
+            tab != 0 -> tab = 0
+            else -> onExit()
+        }
+    }
+
     // Android 13+ needs an explicit grant before any notification is shown.
     var notificationsAllowed by remember { mutableStateOf(ParentNotifications.permitted(context)) }
     val notificationPermission = rememberLauncherForActivityResult(
@@ -189,10 +203,9 @@ fun ParentPortalScreen(
         Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
             when (tab) {
                 1 -> SettingsList(onPick = { group -> settingsGroup = group; showSettings = true })
-                2 -> {
-                    // Chores live on their own page; the tab just hands over to it.
-                    LaunchedEffect(Unit) { tab = 0; onOpenChores() }
-                }
+                // Chores stay inside the shell: opening a separate page would take the bottom
+                // bar away, and then sliding across to another tab is no longer possible.
+                2 -> ChoresParentScreen(onBack = { tab = 0 }, embedded = true)
                 else -> ParentDashboard(
                     prefs = prefs,
                     remote = remote,
@@ -236,8 +249,7 @@ fun ParentPortalScreen(
             prefs = prefs,
             remote = remote,
             used = used,
-            limit = limit,
-            onBack = { showDetails = false }
+            limit = limit
         )
         return
     }
@@ -246,19 +258,11 @@ fun ParentPortalScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (prefs.isParentDevice) {
-                Text(
-                    "‹ Übersicht", color = Nova.Primary, fontSize = 17.sp,
-                    modifier = Modifier
-                        .clickable { showSettings = false; settingsGroup = null; tab = 1 }
-                        .padding(end = 12.dp)
-                )
-            }
             Text(
                 if (prefs.isParentDevice) settingsGroup?.let { GROUP_TITLES[it] } ?: "Einstellungen"
                 else "Eltern-Portal",
@@ -282,7 +286,6 @@ fun ParentPortalScreen(
                 }
                 Spacer(Modifier.width(12.dp))
             }
-            Text("Fertig", color = Nova.Primary, fontSize = 17.sp, modifier = Modifier.clickable { onExit() })
         }
         if (refreshing) {
             Text("Aktualisiere…", fontSize = 12.sp, color = Nova.InkMuted,
@@ -963,22 +966,16 @@ private fun UsageDetailScreen(
     prefs: Prefs,
     remote: com.familylink.ios.sync.ChildStatus?,
     used: Int,
-    limit: Int,
-    onBack: () -> Unit
+    limit: Int
 ) {
     Column(
         Modifier.fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "‹ Zurück", color = Nova.Primary, fontSize = 17.sp,
-                modifier = Modifier.clickable { onBack() }.padding(end = 12.dp)
-            )
-            Text("Nutzung im Detail", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
-        }
+        Spacer(Modifier.height(8.dp))
+        Text("Nutzung im Detail", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
 
         if (remote == null) {
             Spacer(Modifier.height(20.dp))
@@ -1072,9 +1069,7 @@ private fun UsageDetailScreen(
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-        NovaButtonTonal(text = "Zurück", onClick = onBack)
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
     }
 }
 
@@ -1182,6 +1177,38 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier 
     }
 }
 
+/**
+ * A lock option: what it does on the left, the durations to pick from on the right. Keeps the
+ * three ways to lock in one calm list rather than three shouting red blocks.
+ */
+@Composable
+private fun LockChoiceRow(
+    title: String,
+    subtitle: String,
+    options: List<Pair<Int, String>>,
+    onPick: (Int) -> Unit
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+        Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted, lineHeight = 17.sp)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (value, label) ->
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(50))
+                        .background(Nova.Fill)
+                        .clickable { onPick(value) }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                }
+            }
+        }
+    }
+}
+
 /** One entry in the settings list: key, title, explanatory line, glyph. */
 private data class MenuEntry(
     val key: String,
@@ -1280,7 +1307,7 @@ private fun ParentDashboard(
 
     Column(
         Modifier.fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
@@ -1523,88 +1550,69 @@ private fun ParentDashboard(
 
         // ---- lock the device, on a timer or outright ----
         Spacer(Modifier.height(16.dp))
-        SectionHeader("Gerät sperren")
+        SectionHeader("Sperren")
         NovaCard {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(vertical = 4.dp)) {
                 when {
-                    lockedNow -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NovaPill("Gesperrt", Nova.Danger)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Ohne Zeitende — bis du es aufhebst.", fontSize = 13.sp, color = Nova.InkMuted)
+                    // ---- something is locked: one clear state, one way out ----
+                    lockedNow || lockedTimed || screenLockLeft > 0 -> {
+                        val (what, detail) = when {
+                            screenLockLeft > 0 ->
+                                "Display aus" to "Noch ${TimeFmt.hm(screenLockLeft)}"
+                            lockedNow ->
+                                "Gerät gesperrt" to "Ohne Zeitende — bis du es aufhebst"
+                            else ->
+                                "Auf Zeit gesperrt" to "Noch ${TimeFmt.hm(timedLock.remainingSeconds())}"
                         }
-                        Spacer(Modifier.height(12.dp))
-                        NovaButton(text = "Sperre aufheben", color = Nova.Success) { onUnlock() }
-                    }
-                    lockedTimed -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NovaPill("Gesperrt auf Zeit", Nova.Danger)
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "Noch ${TimeFmt.hm(timedLock.remainingSeconds())}",
-                                fontSize = 13.sp, color = Nova.InkMuted
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        NovaButton(text = "Jetzt freigeben", color = Nova.Success) { onUnlock() }
-                    }
-                    else -> {
-                        Text("Auf Zeit sperren", fontSize = 13.sp, color = Nova.InkMuted)
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(30, 60, 120).forEach { m ->
-                                Box(Modifier.weight(1f)) {
-                                    NovaButtonTonal(
-                                        text = if (m >= 60) "${m / 60} Std" else "$m Min",
-                                        color = Nova.Danger
-                                    ) { onLockFor(m) }
-                                }
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                Modifier.size(40.dp).clip(CircleShape)
+                                    .background(Nova.Danger.copy(alpha = 0.13f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Lock, null, tint = Nova.Danger,
+                                    modifier = Modifier.size(21.dp))
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(what, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                                Text(detail, fontSize = 13.sp, color = Nova.InkMuted)
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
-                        NovaButton(text = "Komplett sperren", color = Nova.Danger) { onLockNow() }
+                        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            NovaButtonTonal(text = "Freigeben", color = Nova.Success) {
+                                if (screenLockLeft > 0) onReleaseScreen() else onUnlock()
+                            }
+                        }
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Telefon und Notruf bleiben immer erreichbar.",
-                            fontSize = 12.sp, color = Nova.InkFaint
-                        )
                     }
-                }
-            }
-        }
 
-        // ---- the hard one: the display itself, not an overlay ----
-        Spacer(Modifier.height(16.dp))
-        SectionHeader("Display sperren")
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                if (screenLockLeft > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        NovaPill("Display aus", Nova.Danger)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Noch ${TimeFmt.hm(screenLockLeft)}", fontSize = 13.sp, color = Nova.InkMuted)
+                    // ---- nothing locked: the three ways to lock, calmly ----
+                    else -> {
+                        LockChoiceRow(
+                            title = "Auf Zeit sperren",
+                            subtitle = "Nichts geht ausser Telefon — endet von selbst",
+                            options = listOf(30 to "30 Min", 60 to "1 Std", 120 to "2 Std"),
+                            onPick = onLockFor
+                        )
+                        NovaDivider()
+                        LockChoiceRow(
+                            title = "Display ausschalten",
+                            subtitle = "Kein Overlay — der Bildschirm geht aus und bleibt aus",
+                            options = listOf(5 to "5 Min", 10 to "10 Min", 15 to "15 Min"),
+                            onPick = onLockScreen
+                        )
+                        NovaDivider()
+                        NovaRow(
+                            title = "Gerät komplett sperren",
+                            subtitle = "Ohne Zeitende, bis du es wieder aufhebst",
+                            icon = Icons.Filled.Lock,
+                            onClick = onLockNow
+                        ) { Chevron() }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    NovaButton(text = "Sofort freigeben", color = Nova.Success) { onReleaseScreen() }
-                } else {
-                    Text(
-                        "Schaltet den Bildschirm wirklich aus — kein Overlay. Jedes Entsperren " +
-                            "sperrt sofort wieder, bis die Zeit um ist.",
-                        fontSize = 12.sp, color = Nova.InkMuted
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(5, 10, 15).forEach { m ->
-                            Box(Modifier.weight(1f)) {
-                                NovaButton(text = "$m Min", color = Nova.Danger) { onLockScreen(m) }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten — läuft immer von selbst ab.",
-                        fontSize = 12.sp, color = Nova.InkFaint
-                    )
                 }
             }
         }
@@ -1723,11 +1731,6 @@ private fun ParentDashboard(
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Fertig", color = Nova.Primary, fontSize = 16.sp,
-            modifier = Modifier.fillMaxWidth().clickable { onExit() }.padding(12.dp)
-        )
         // Clearance for the bottom navigation bar.
         Spacer(Modifier.height(100.dp))
     }

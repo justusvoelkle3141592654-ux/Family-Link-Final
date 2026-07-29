@@ -32,7 +32,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -101,7 +100,7 @@ fun FocusScreen(onBack: () -> Unit) {
     @Suppress("UNUSED_EXPRESSION") tick
 
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
+        Modifier.fillMaxSize().background(Nova.Canvas)
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -267,7 +266,7 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
     val fromParent = prefs.focusSession().isRunning()
 
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
+        Modifier.fillMaxSize().background(Nova.Canvas)
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -467,7 +466,7 @@ fun RequestTimeScreen(onClose: () -> Unit) {
     }
 
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
+        Modifier.fillMaxSize().background(Nova.Canvas)
             .verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

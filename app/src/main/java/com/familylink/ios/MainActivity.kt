@@ -133,6 +133,25 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
     // Role drives both the wizard path and which home screen is shown.
     var role by remember { mutableStateOf(prefs.deviceRole) }
 
+    /**
+     * Where the back gesture leads from each screen.
+     *
+     * Navigation is by gesture, not by buttons: swiping back (or the system back key) walks up
+     * the same path an in-app "Zurück" control used to. Setup steps are deliberately absent —
+     * backing out of the wizard mid-way would leave the device half-configured.
+     */
+    val backTarget: Route? = when (route) {
+        Route.PortalApps, Route.PortalPermissions, Route.PortalChangePin, Route.PortalSecurePin,
+        Route.PortalFocus, Route.PortalDevices, Route.PortalChores, Route.PortalStats -> Route.Portal
+        Route.VerifyPin, Route.ExtendTime, Route.RequestTime,
+        Route.ChildChores, Route.ChildFocus -> Route.Home
+        Route.ChildFocusEnd -> Route.ChildFocus
+        else -> null
+    }
+    androidx.activity.compose.BackHandler(enabled = backTarget != null) {
+        backTarget?.let { route = it }
+    }
+
     when (route) {
         // ---------------- setup wizard ----------------
         Route.SetupRole -> RoleChoiceScreen { chosen ->
@@ -226,7 +245,7 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
 
         Route.PortalApps -> {
             AppsScreen()
-            SetupFooter(text = "Zurück") { route = Route.Portal }
+
         }
 
         Route.PortalPermissions -> PermissionsScreen(

@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,7 +50,7 @@ fun StatsScreen(onBack: () -> Unit) {
     val maxVal = (history.maxOfOrNull { it.second } ?: 1).coerceAtLeast(limit).coerceAtLeast(1)
 
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient))
+        Modifier.fillMaxSize().background(Nova.Canvas)
             .verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
         Text("Wochenbericht", fontSize = 26.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)

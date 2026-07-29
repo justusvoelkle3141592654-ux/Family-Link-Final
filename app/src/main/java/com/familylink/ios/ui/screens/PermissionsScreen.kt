@@ -56,7 +56,7 @@ fun PermissionsScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {

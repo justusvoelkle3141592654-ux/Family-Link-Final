@@ -122,7 +122,7 @@ fun ParentUnlockScreen(onUnlocked: () -> Unit) {
 
     // Waiting for the system biometric sheet.
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(Nova.PageGradient)).padding(24.dp),
+        Modifier.fillMaxSize().background(Nova.Canvas).padding(24.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

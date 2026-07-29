@@ -28,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -95,11 +94,11 @@ fun AppsScreen() {
 
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(Nova.PageGradient))
+            .background(Nova.Canvas)
     ) {
         Text(
             "Apps verwalten",
-            fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Nova.Ink,
+            fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp)
         )
         Text(
