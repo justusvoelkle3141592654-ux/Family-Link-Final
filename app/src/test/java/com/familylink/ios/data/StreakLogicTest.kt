@@ -128,7 +128,10 @@ class StreakLogicTest {
         assertEquals(3, StreakLogic.daysToNextMilestone(0))
         assertEquals(5, StreakLogic.nextMilestone(3))
         assertEquals(2, StreakLogic.daysToNextMilestone(3))
-        assertEquals(10, StreakLogic.nextMilestoneBonus(5))
+        // At a streak of five the next milestone is day ten, which is worth fifteen minutes —
+        // the reward of the milestone ahead, not of the one just passed.
+        assertEquals(15, StreakLogic.nextMilestoneBonus(5))
+        assertEquals(5, StreakLogic.nextMilestoneBonus(0))
         assertNull(StreakLogic.nextMilestone(50))
         assertNull(StreakLogic.daysToNextMilestone(99))
         assertEquals(0, StreakLogic.nextMilestoneBonus(99))
