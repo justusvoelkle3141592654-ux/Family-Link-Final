@@ -11,8 +11,8 @@ android {
         applicationId = "com.familylink.ios"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "3.0"
+        versionCode = 22
+        versionName = "3.1"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -88,6 +88,8 @@ dependencies {
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.13.1")
+    // Plain JVM tests for the pure logic (StreakLogic) — no Android framework involved.
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.5")
     implementation("androidx.lifecycle:lifecycle-service:2.8.5")

@@ -1,6 +1,7 @@
 package com.familylink.ios.sync
 
 import com.familylink.ios.data.Prefs
+import com.familylink.ios.data.StreakLogic
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -94,6 +95,9 @@ data class FamilyConfig(
     val bedtimeEndMin: Int,
     val offlineLockEnabled: Boolean,
     val offlineLockMinutes: Int,
+    /** Streak rules the parent owns; the child keeps the count itself. */
+    val streakEnabled: Boolean,
+    val streakPenaltyMinutes: Int,
     val bonusMinutes: Int,
     val offUntilEpoch: Long,
     val settingsUnlockedUntil: Long,
@@ -145,6 +149,8 @@ data class FamilyConfig(
         put("bedtimeEndMin", bedtimeEndMin)
         put("offlineLockEnabled", offlineLockEnabled)
         put("offlineLockMinutes", offlineLockMinutes)
+        put("streakEnabled", streakEnabled)
+        put("streakPenaltyMinutes", streakPenaltyMinutes)
         put("bonusMinutes", bonusMinutes)
         put("offUntilEpoch", offUntilEpoch)
         put("settingsUnlockedUntil", settingsUnlockedUntil)
@@ -178,6 +184,9 @@ data class FamilyConfig(
                 bedtimeEndMin = o.optInt("bedtimeEndMin", 6 * 60),
                 offlineLockEnabled = o.optBoolean("offlineLockEnabled", true),
                 offlineLockMinutes = o.optInt("offlineLockMinutes", Prefs.DEFAULT_OFFLINE_LOCK_MIN),
+                streakEnabled = o.optBoolean("streakEnabled", true),
+                streakPenaltyMinutes =
+                    o.optInt("streakPenaltyMinutes", StreakLogic.DEFAULT_PENALTY_MIN),
                 bonusMinutes = o.optInt("bonusMinutes", 0),
                 offUntilEpoch = o.optLong("offUntilEpoch", 0),
                 settingsUnlockedUntil = o.optLong("settingsUnlockedUntil", 0),
@@ -218,6 +227,12 @@ data class ChildStatus(
     val perAppLabels: Map<String, String>,
     val blockedToday: List<String>,
     val bedtimeActive: Boolean,
+    /** Days in a row inside the daily budget, and the best run ever reached. */
+    val streakCurrent: Int = 0,
+    val streakLongest: Int = 0,
+    /** Milestone reward unlocked today, and what a broken streak costs today. */
+    val streakBonusMinutes: Int = 0,
+    val streakPenaltyMinutes: Int = 0,
     val focusLabel: String = "",
     val deviceName: String,
     val batteryPercent: Int = -1,
@@ -237,6 +252,10 @@ data class ChildStatus(
         put("focusLabel", focusLabel)
         put("batteryPercent", batteryPercent)
         put("bedtimeActive", bedtimeActive)
+        put("streakCurrent", streakCurrent)
+        put("streakLongest", streakLongest)
+        put("streakBonusMinutes", streakBonusMinutes)
+        put("streakPenaltyMinutes", streakPenaltyMinutes)
         put("deviceName", deviceName)
         put("updatedAt", updatedAt)
         put("blockedToday", JSONArray(blockedToday))
@@ -292,6 +311,10 @@ data class ChildStatus(
                 perAppLabels = labels,
                 blockedToday = blocked,
                 bedtimeActive = o.optBoolean("bedtimeActive", false),
+                streakCurrent = o.optInt("streakCurrent", 0),
+                streakLongest = o.optInt("streakLongest", 0),
+                streakBonusMinutes = o.optInt("streakBonusMinutes", 0),
+                streakPenaltyMinutes = o.optInt("streakPenaltyMinutes", 0),
                 focusLabel = o.optString("focusLabel", ""),
                 deviceName = o.optString("deviceName", "Kindergerät"),
                 batteryPercent = o.optInt("batteryPercent", -1),

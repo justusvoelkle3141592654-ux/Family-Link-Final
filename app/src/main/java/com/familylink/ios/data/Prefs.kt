@@ -48,6 +48,15 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_WEEK_MARKER = "week_marker"
         private const val K_WEEK_COUNTED = "week_counted_sec"    // finished days this week
         private const val K_WEEK_TOTAL = "week_total_sec"
+        // streak: days in a row inside the daily budget
+        private const val K_STREAK_ON = "streak_enabled"
+        private const val K_STREAK_PENALTY = "streak_penalty_min"
+        private const val K_STREAK_CUR = "streak_current"
+        private const val K_STREAK_BEST = "streak_longest"
+        private const val K_STREAK_DAY = "streak_evaluated_day"
+        private const val K_STREAK_BONUS = "streak_bonus_min"
+        private const val K_STREAK_MALUS = "streak_penalty_today_min"
+        private const val K_STREAK_MILE = "streak_milestone"
 
         const val DEFAULT_GLOBAL_LIMIT_MIN = 60
         const val MAX_GLOBAL_LIMIT_MIN = 120
@@ -617,6 +626,109 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() { ensureToday(); return sp.getInt(K_TOTAL_USED, 0) }
         set(v) { ensureToday(); sp.edit().putInt(K_TOTAL_USED, v.coerceAtLeast(0)).apply() }
 
+    // ---- Streak: days in a row inside the daily budget ---------------------
+    //
+    // Storage only. Every rule lives in [StreakLogic], which knows nothing about Android and is
+    // therefore the one part of the limit machinery with real unit tests. The evaluation runs
+    // exactly once per day, from the rollover in ensureToday(), and writes its result here.
+
+    var streakEnabled: Boolean
+        get() = sp.getBoolean(K_STREAK_ON, true)
+        set(v) = sp.edit().putBoolean(K_STREAK_ON, v).apply()
+
+    /** What breaking the streak costs the following day. */
+    var streakPenaltyMinutes: Int
+        get() = sp.getInt(K_STREAK_PENALTY, StreakLogic.DEFAULT_PENALTY_MIN)
+        set(v) = sp.edit()
+            .putInt(K_STREAK_PENALTY, v.coerceIn(0, StreakLogic.MAX_PENALTY_MIN))
+            .apply()
+
+    /**
+     * The state as stored. Reading it rolls the day over first, so a phone that was switched off
+     * over midnight evaluates the moment anything asks.
+     */
+    fun streakState(): StreakState {
+        ensureToday()
+        return readStreak()
+    }
+
+    /** Raw read without the rollover — used from inside the rollover itself. */
+    private fun readStreak(): StreakState = StreakState(
+        current = sp.getInt(K_STREAK_CUR, 0),
+        longest = sp.getInt(K_STREAK_BEST, 0),
+        bonusMinutesToday = sp.getInt(K_STREAK_BONUS, 0),
+        penaltyMinutesToday = sp.getInt(K_STREAK_MALUS, 0),
+        evaluatedDay = sp.getInt(K_STREAK_DAY, -1),
+        milestoneReached = sp.getInt(K_STREAK_MILE, 0)
+    )
+
+    private fun writeStreak(s: StreakState) {
+        sp.edit()
+            .putInt(K_STREAK_CUR, s.current)
+            .putInt(K_STREAK_BEST, s.longest)
+            .putInt(K_STREAK_BONUS, s.bonusMinutesToday)
+            .putInt(K_STREAK_MALUS, s.penaltyMinutesToday)
+            .putInt(K_STREAK_DAY, s.evaluatedDay)
+            .putInt(K_STREAK_MILE, s.milestoneReached)
+            .apply()
+    }
+
+    /** Extra seconds unlocked today by reaching a milestone. Zero while the feature is off. */
+    val streakBonusSecondsToday: Int
+        get() {
+            if (!streakEnabled) return 0
+            ensureToday()
+            return sp.getInt(K_STREAK_BONUS, 0) * 60
+        }
+
+    /** Seconds taken off today because the streak broke yesterday. */
+    val streakPenaltySecondsToday: Int
+        get() {
+            if (!streakEnabled) return 0
+            ensureToday()
+            return sp.getInt(K_STREAK_MALUS, 0) * 60
+        }
+
+    /**
+     * Fold the finished day into the streak. Called from the rollover only, with the numbers of
+     * the day that just ended.
+     *
+     * @param finishedDay   day marker of the day that ended (-1 on a fresh install)
+     * @param newDay        day marker of the day now starting
+     * @param usedSeconds   counted seconds on the finished day
+     * @param limitSeconds  the limit that was actually in force on the finished day
+     * @param limitsWereOff true when the Aus-Knopf was active that day, making it no fair test
+     */
+    private fun rollStreak(
+        finishedDay: Int,
+        newDay: Int,
+        usedSeconds: Int,
+        limitSeconds: Int,
+        limitsWereOff: Boolean
+    ) {
+        // A first launch has no finished day to judge. Only mark the day as evaluated, so the
+        // day of installation is never counted as one that was kept.
+        if (finishedDay <= 0) {
+            writeStreak(
+                readStreak().copy(
+                    evaluatedDay = newDay,
+                    bonusMinutesToday = 0,
+                    penaltyMinutesToday = 0,
+                    milestoneReached = 0
+                )
+            )
+            return
+        }
+        writeStreak(
+            StreakLogic.evaluate(
+                previous = readStreak(),
+                outcome = StreakLogic.outcomeFor(usedSeconds, limitSeconds, limitsWereOff),
+                penaltyMinutes = streakPenaltyMinutes,
+                newDay = newDay
+            )
+        )
+    }
+
     // ---- Absolute daily ceiling (Gesamtlimit) ------------------------------
     //
     // Unlike the daily budget above, EVERY app counts towards this one — Plus apps included.
@@ -758,6 +870,30 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     private fun ensureToday() {
         val today = dayMarker()
         if (sp.getInt(K_USAGE_DAY, -1) != today) {
+            // ---- streak: judge the day that just ended, before its counters are wiped ----
+            //
+            // The limit as it really was yesterday: the base budget, plus what the parent
+            // granted, plus yesterday's own milestone bonus, minus yesterday's own penalty.
+            // Judging the day against today's numbers instead would break streaks for time the
+            // child was actually allowed to spend.
+            val finishedDay = sp.getInt(K_USAGE_DAY, -1)
+            val limitYesterday = (
+                sp.getInt(K_GLOBAL_LIMIT_MIN, DEFAULT_GLOBAL_LIMIT_MIN) * 60 +
+                    sp.getInt(K_BONUS_SEC, 0) +
+                    sp.getInt(K_STREAK_BONUS, 0) * 60 -
+                    sp.getInt(K_STREAK_MALUS, 0) * 60
+                ).coerceAtLeast(60)
+            // The Aus-Knopf makes a day no fair test, so it must not break the streak. Its
+            // target time is 23:00 of the day it was pressed, which is how that day is known.
+            val offEpoch = sp.getLong(K_OFF_UNTIL, 0)
+            rollStreak(
+                finishedDay = finishedDay,
+                newDay = today,
+                usedSeconds = sp.getInt(K_GLOBAL_USED, 0),
+                limitSeconds = limitYesterday,
+                limitsWereOff = offEpoch > 0 && dayMarkerOf(offEpoch) == finishedDay
+            )
+
             // Archive the finished day before wiping the counters, so the weekly report has data.
             archiveDay(sp.getInt(K_USAGE_DAY, -1), sp.getInt(K_GLOBAL_USED, 0))
             // Roll the finished day into the week's running totals (which reset on a new week).
@@ -979,6 +1115,12 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     private fun dayMarker(): Int {
         val c = Calendar.getInstance()
+        return c.get(Calendar.YEAR) * 1000 + c.get(Calendar.DAY_OF_YEAR)
+    }
+
+    /** The same marker for an arbitrary point in time. */
+    private fun dayMarkerOf(epochMillis: Long): Int {
+        val c = Calendar.getInstance().apply { timeInMillis = epochMillis }
         return c.get(Calendar.YEAR) * 1000 + c.get(Calendar.DAY_OF_YEAR)
     }
 }

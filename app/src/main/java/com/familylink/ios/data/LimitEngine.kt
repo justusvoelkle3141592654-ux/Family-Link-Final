@@ -156,7 +156,17 @@ class LimitEngine(private val prefs: Prefs) {
 
     private fun isLauncher(pkg: String): Boolean = pkg in LAUNCHER_EXEMPT
 
-    private fun globalLimitSeconds() = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
+    /**
+     * Today's daily budget: the configured minutes, plus anything the parent granted, plus a
+     * milestone reward the streak unlocked today, minus the reduction a broken streak costs.
+     *
+     * Floored at one minute, so a penalty can never turn the budget negative and lock the phone
+     * for a whole day over five minutes.
+     */
+    private fun globalLimitSeconds() = (
+        prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday +
+            prefs.streakBonusSecondsToday - prefs.streakPenaltySecondsToday
+        ).coerceAtLeast(60)
 
     /**
      * Has the weekly pot run out? Bonus minutes granted today count against it too, otherwise
@@ -165,7 +175,12 @@ class LimitEngine(private val prefs: Prefs) {
     private fun weeklyBudgetExhausted(): Pair<Boolean, Pair<Int, Int>> {
         if (prefs.limitScope == LimitScope.DAY) return false to (0 to 0)
         val spent = prefs.weekCountedSeconds()
-        val pot = prefs.weeklyLimitMinutes * 60 + prefs.bonusSecondsToday
+        // The streak moves the weekly pot along with the daily one — a reward the week then
+        // swallowed would be no reward at all.
+        val pot = (
+            prefs.weeklyLimitMinutes * 60 + prefs.bonusSecondsToday +
+                prefs.streakBonusSecondsToday - prefs.streakPenaltySecondsToday
+            ).coerceAtLeast(60)
         return (spent >= pot) to (spent to pot)
     }
 

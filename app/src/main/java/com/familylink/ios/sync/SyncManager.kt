@@ -38,6 +38,8 @@ class SyncManager(private val context: Context) {
             bedtimeStartMin = prefs.bedtimeStartMin,
             bedtimeEndMin = prefs.bedtimeEndMin,
             offlineLockEnabled = prefs.offlineLockEnabled,
+            streakEnabled = prefs.streakEnabled,
+            streakPenaltyMinutes = prefs.streakPenaltyMinutes,
             offlineLockMinutes = prefs.offlineLockMinutes,
             bonusMinutes = prefs.bonusSecondsToday / 60,
             offUntilEpoch = prefs.offUntilEpoch,
@@ -308,11 +310,21 @@ class SyncManager(private val context: Context) {
             .getOrDefault(prefs.globalUsedSeconds)
 
         val focus = prefs.effectiveFocusSession()
+        // Rolls the day over if needed, so a report sent just after midnight already carries
+        // yesterday's verdict rather than a stale count.
+        val streak = prefs.streakState()
         val status = ChildStatus(
             globalUsedSeconds = counted,
             totalDeviceSeconds = totalDevice,
-            limitSeconds = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday,
+            // The limit as the engine really applies it, streak included, so the parent never
+            // sees a different number than the child is measured against.
+            limitSeconds = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday +
+                prefs.streakBonusSecondsToday - prefs.streakPenaltySecondsToday,
             bonusSeconds = prefs.bonusSecondsToday,
+            streakCurrent = streak.current,
+            streakLongest = streak.longest,
+            streakBonusMinutes = streak.bonusMinutesToday,
+            streakPenaltyMinutes = streak.penaltyMinutesToday,
             weekCountedSeconds = prefs.weekCountedSeconds(),
             weekTotalSeconds = prefs.weekTotalSeconds(),
             perAppSeconds = usage,
@@ -433,6 +445,8 @@ class SyncManager(private val context: Context) {
         prefs.bedtimeStartMin = cfg.bedtimeStartMin
         prefs.bedtimeEndMin = cfg.bedtimeEndMin
         prefs.offlineLockEnabled = cfg.offlineLockEnabled
+        prefs.streakEnabled = cfg.streakEnabled
+        prefs.streakPenaltyMinutes = cfg.streakPenaltyMinutes
         prefs.offlineLockMinutes = cfg.offlineLockMinutes
         prefs.setBonusMinutesAbsolute(cfg.bonusMinutes)
         prefs.setOffUntilEpoch(cfg.offUntilEpoch)

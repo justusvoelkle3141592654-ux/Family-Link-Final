@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
@@ -228,6 +229,12 @@ fun ChildPortalScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        // ---- streak ----
+        if (prefs.streakEnabled) {
+            StreakCard(prefs.streakState())
+            Spacer(Modifier.height(16.dp))
+        }
+
         // ---- usage list ----
         SectionTitle("Heute genutzt")
         if (perApp.isEmpty()) {
@@ -332,6 +339,88 @@ fun ChildPortalScreen(
             )
         }
         Spacer(Modifier.height(28.dp))
+    }
+}
+
+/**
+ * Days in a row inside the daily budget, what the next milestone is worth, and — when there is
+ * one today — the reward or the reduction in force right now.
+ *
+ * Written for the child: it says what they get and what they can reach next, not what they lost.
+ */
+@Composable
+private fun StreakCard(state: com.familylink.ios.data.StreakState) {
+    val streak = state.current
+    val bonus = state.bonusMinutesToday
+    val malus = state.penaltyMinutesToday
+    val accent = when {
+        bonus > 0 -> Nova.Success
+        malus > 0 -> Nova.Warning
+        streak > 0 -> Nova.Primary
+        else -> Nova.InkMuted
+    }
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                .background(Nova.Surface)
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).background(accent.copy(alpha = 0.13f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.LocalFireDepartment, null, tint = accent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        when (streak) {
+                            0 -> "Noch keine Serie"
+                            1 -> "1 Tag im Limit"
+                            else -> "$streak Tage im Limit"
+                        },
+                        fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
+                    )
+                    val toGo = com.familylink.ios.data.StreakLogic.daysToNextMilestone(streak)
+                    val reward = com.familylink.ios.data.StreakLogic.nextMilestoneBonus(streak)
+                    Text(
+                        when {
+                            toGo == null -> "Alle Stufen erreicht — stark!"
+                            toGo == 1 -> "Noch 1 Tag bis +$reward Min."
+                            else -> "Noch $toGo Tage bis +$reward Min."
+                        },
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
+                }
+                if (state.longest > 0) {
+                    Text("Best: ${state.longest}", fontSize = 12.sp, color = Nova.InkFaint)
+                }
+            }
+
+            if (bonus > 0 || malus > 0) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(accent.copy(alpha = 0.12f))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (bonus > 0)
+                            "Heute +$bonus Min. für ${state.milestoneReached} Tage Serie!"
+                        else
+                            "Heute −$malus Min., weil das Limit gestern überschritten war.",
+                        fontSize = 13.sp, fontWeight = FontWeight.Medium, color = accent
+                    )
+                }
+            }
+        }
     }
 }
 

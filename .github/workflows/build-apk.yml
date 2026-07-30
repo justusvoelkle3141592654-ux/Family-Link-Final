@@ -34,6 +34,11 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      # The streak rules are pure Kotlin and unit-tested. Running them before the APK means a
+      # broken rule fails the build instead of shipping.
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 

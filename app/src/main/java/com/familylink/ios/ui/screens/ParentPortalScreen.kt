@@ -588,6 +588,42 @@ fun ParentPortalScreen(
         }
 
 
+        // ---- streak ----
+        SectionHeader("Serie im Limit")
+        NovaCard {
+            NovaRow(
+                title = "Serie zählen",
+                subtitle = "Jeder Tag im Tageslimit zählt weiter. Bei den Stufen " +
+                    com.familylink.ios.data.StreakLogic.MILESTONES.joinToString(", ") {
+                        "${it.first} Tage +${it.second} Min"
+                    } + " gibt es die Zeit einmalig für diesen Tag dazu."
+            ) {
+                NovaSwitch(checked = prefs.streakEnabled) { prefs.streakEnabled = it; v++ }
+            }
+            if (prefs.streakEnabled) {
+                NovaRow(
+                    title = "Abzug nach einem Fehltag",
+                    subtitle = "Wird nur am Tag nach dem überschrittenen Limit abgezogen. " +
+                        "Ein Tag mit Aus-Knopf zählt nicht als Fehltag."
+                ) {
+                    Stepper(
+                        value = "${prefs.streakPenaltyMinutes} Min",
+                        onMinus = { prefs.streakPenaltyMinutes = prefs.streakPenaltyMinutes - 5; v++ },
+                        onPlus = { prefs.streakPenaltyMinutes = prefs.streakPenaltyMinutes + 5; v++ }
+                    )
+                }
+                if (!prefs.isParentDevice) {
+                    val st = prefs.streakState()
+                    NovaRow(title = "Aktuell", subtitle = "Bestwert ${st.longest} Tage") {
+                        NovaPill(
+                            "${st.current} Tage",
+                            if (st.current > 0) Nova.Success else Nova.InkMuted
+                        )
+                    }
+                }
+            }
+        }
+
         // ---- bedtime ----
         SectionHeader("Ruhezeit")
         NovaCard {
@@ -1666,6 +1702,52 @@ private fun ParentDashboard(
                             onClick = onLockNow
                         ) { Chevron() }
                     }
+                }
+            }
+        }
+
+        // ---- streak ----
+        //
+        // Read straight from the child's status: the parent phone measures nothing itself, so
+        // its own counters would always be zero.
+        if (prefs.streakEnabled && remote != null) {
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Serie im Limit")
+            NovaCard {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            when (remote.streakCurrent) {
+                                0 -> "Keine Serie"
+                                1 -> "1 Tag"
+                                else -> "${remote.streakCurrent} Tage"
+                            },
+                            fontSize = 26.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        if (remote.streakBonusMinutes > 0) {
+                            NovaPill("heute +${remote.streakBonusMinutes} Min", Nova.Success)
+                        } else if (remote.streakPenaltyMinutes > 0) {
+                            NovaPill("heute −${remote.streakPenaltyMinutes} Min", Nova.Warning)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (remote.streakLongest > 0) {
+                            Text(
+                                "Bestwert ${remote.streakLongest}",
+                                fontSize = 12.sp, color = Nova.InkFaint
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    val toGo = com.familylink.ios.data.StreakLogic
+                        .daysToNextMilestone(remote.streakCurrent)
+                    val reward = com.familylink.ios.data.StreakLogic
+                        .nextMilestoneBonus(remote.streakCurrent)
+                    Text(
+                        if (toGo == null) "Alle Stufen erreicht."
+                        else "Noch $toGo Tag(e) bis zur nächsten Stufe (+$reward Min.).",
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
                 }
             }
         }
