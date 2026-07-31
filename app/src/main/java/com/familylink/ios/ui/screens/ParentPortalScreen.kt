@@ -1424,11 +1424,6 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier 
     }
 }
 
-/**
- * A lock option: what it does on the left, the durations to pick from on the right. Keeps the
- * three ways to lock in one calm list rather than three shouting red blocks.
- */
-@Composable
 /** One entry in the settings list: key, title, explanatory line, glyph. */
 private data class MenuEntry(
     val key: String,
