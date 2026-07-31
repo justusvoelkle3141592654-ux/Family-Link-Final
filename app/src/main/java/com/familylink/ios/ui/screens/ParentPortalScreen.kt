@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.School
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -211,6 +212,21 @@ fun ParentPortalScreen(
 
     // Keep the watcher in step with the setting whenever the portal is opened.
     LaunchedEffect(Unit) { ParentWatchService.sync(context) }
+
+    // ---- a changed rule reaches the child straight away ----
+    //
+    // Every control here bumps [v] when it writes. Rather than waiting for the next heartbeat —
+    // up to twenty seconds, which felt like the app had not understood — the new config goes out
+    // as soon as the hand stops moving. The short delay is what keeps a stepper held down from
+    // sending a write per tap.
+    LaunchedEffect(v) {
+        if (v > 0 && prefs.isParentDevice && prefs.syncConfigured) {
+            kotlinx.coroutines.delay(350)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { sync.pushConfig() }
+            }
+        }
+    }
 
     // ---- the parent app's shell: three tabs along the bottom, as in the reference ----
     if (prefs.isParentDevice && !showDetails && settingsGroup == null) {
@@ -652,6 +668,67 @@ fun ParentPortalScreen(
 
         // ---- schedules: the reference keeps them apart from the limits ----
         if (showGroup("plaene")) {
+        // ---- school time, the reference's second schedule ----
+        Spacer(Modifier.height(8.dp))
+        NovaFeatureCard(
+            icon = Icons.Filled.School,
+            title = "Schulzeit",
+            description = "Weniger Ablenkung während des Unterrichts: nur die zugelassenen " +
+                "Apps bleiben nutzbar.",
+            tint = Nova.Focus,
+            expanded = prefs.schoolTimeEnabled,
+            control = {
+                NovaSwitch(checked = prefs.schoolTimeEnabled) { prefs.schoolTimeEnabled = it; v++ }
+            }
+        ) {
+            NovaDivider()
+            NovaValueRow(
+                "Heute",
+                if (prefs.isSchoolTime()) "Läuft bis ${TimeFmt.clock(prefs.schoolEndMin)}"
+                else "${TimeFmt.clock(prefs.schoolStartMin)}–${TimeFmt.clock(prefs.schoolEndMin)}",
+                valueColor = if (prefs.isSchoolTime()) Nova.Focus else Nova.Ink
+            )
+            NovaDivider()
+            NovaRow(title = "Beginn") {
+                Stepper(
+                    value = TimeFmt.clock(prefs.schoolStartMin),
+                    onMinus = { prefs.schoolStartMin = prefs.schoolStartMin - 15; v++ },
+                    onPlus = { prefs.schoolStartMin = prefs.schoolStartMin + 15; v++ }
+                )
+            }
+            NovaDivider()
+            NovaRow(title = "Ende") {
+                Stepper(
+                    value = TimeFmt.clock(prefs.schoolEndMin),
+                    onMinus = { prefs.schoolEndMin = prefs.schoolEndMin - 15; v++ },
+                    onPlus = { prefs.schoolEndMin = prefs.schoolEndMin + 15; v++ }
+                )
+            }
+            NovaDivider()
+            Column(Modifier.padding(16.dp)) {
+                Text("Tage", fontSize = 15.sp, color = Nova.Ink)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So").forEachIndexed { i, label ->
+                        val on = prefs.schoolDayEnabled(i)
+                        Box(
+                            Modifier.weight(1f).height(40.dp).clip(CircleShape)
+                                .background(if (on) Nova.Focus else Nova.Fill)
+                                .clickable { prefs.toggleSchoolDay(i); v++ },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                label, fontSize = 12.sp,
+                                fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                                color = if (on) Color.White else Nova.InkMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
         // ---- bedtime ----
         Spacer(Modifier.height(8.dp))
         NovaFeatureCard(
@@ -1406,7 +1483,7 @@ private data class MenuEntry(
  */
 private val MENU_ENTRIES = listOf(
     MenuEntry("zeit", "Zeitlimits", "Tageslimit, Wochenlimit und Gesamtlimit", Icons.Filled.HourglassBottom),
-    MenuEntry("plaene", "Zeitpläne", "Ruhezeit für die Nacht", Icons.Filled.CalendarMonth),
+    MenuEntry("plaene", "Zeitpläne", "Ruhezeit und Schulzeit", Icons.Filled.CalendarMonth),
     MenuEntry("streak", "Serie im Limit", "Tage in Folge, Stufen und Abzug", Icons.Filled.LocalFireDepartment),
     MenuEntry("apps", "Apps", "Gesperrte Apps und Freigaben für heute", Icons.Filled.Apps),
     MenuEntry("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus", Icons.Filled.Lock),
@@ -1700,8 +1777,10 @@ private fun ParentDashboard(
             )
             NovaDivider()
             NovaRow(
-                title = "Ruhezeit",
+                title = "Zeitpläne",
                 subtitle = when {
+                    prefs.isSchoolTime() ->
+                        "Schulzeit · bis ${TimeFmt.clock(prefs.schoolEndMin)} Uhr"
                     bedtimeNow -> "Läuft · bis ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
                     prefs.bedtimeEnabled ->
                         "${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"

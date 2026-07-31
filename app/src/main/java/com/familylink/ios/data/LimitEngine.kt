@@ -30,6 +30,11 @@ sealed class LockDecision {
     /** The parent locked the device by hand. Stays until they lift it again. */
     data class ManualLock(val reason: String) : LockDecision()
     /**
+     * Class is in session. Unlike bedtime this does not shut the phone: the allowed apps stay
+     * usable and everything else waits until school is over.
+     */
+    data class SchoolTime(val endMinute: Int) : LockDecision()
+    /**
      * The phone has been out of touch with the family for too long. Being unreachable used to
      * switch off everything the parent does live, so it now seals the device — and lifts itself
      * again as soon as a single report gets through.
@@ -203,6 +208,15 @@ class LimitEngine(private val prefs: Prefs) {
         if (prefs.bonusCountdownActive()) return LockDecision.Allowed
 
         if (prefs.isBedtime()) return LockDecision.Bedtime
+
+        // Class: everything but the allowed apps waits. Ranked above the budget because school
+        // hours were never the child's time to spend in the first place.
+        if (prefs.isSchoolTime()) {
+            if (pkg == null) return LockDecision.Allowed
+            if (isForegroundExempt(pkg)) return LockDecision.Allowed
+            if (prefs.categoryOf(pkg) == AppCategory.PLUS) return LockDecision.Allowed
+            return LockDecision.SchoolTime(prefs.schoolEndMin)
+        }
 
         // Out of touch with the family for too long. Ranked this high because being unreachable
         // silently disables everything below it — no new limits, no lock command, no report.

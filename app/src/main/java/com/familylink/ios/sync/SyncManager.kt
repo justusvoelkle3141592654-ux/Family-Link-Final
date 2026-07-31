@@ -39,6 +39,10 @@ class SyncManager(private val context: Context) {
             bedtimeEndMin = prefs.bedtimeEndMin,
             offlineLockEnabled = prefs.offlineLockEnabled,
             streakEnabled = prefs.streakEnabled,
+            schoolTimeEnabled = prefs.schoolTimeEnabled,
+            schoolStartMin = prefs.schoolStartMin,
+            schoolEndMin = prefs.schoolEndMin,
+            schoolDays = prefs.schoolDays,
             childName = prefs.childName,
             accentChoice = prefs.accentChoice,
             streakPenaltyMinutes = prefs.streakPenaltyMinutes,
@@ -465,6 +469,10 @@ class SyncManager(private val context: Context) {
         prefs.bedtimeEndMin = cfg.bedtimeEndMin
         prefs.offlineLockEnabled = cfg.offlineLockEnabled
         prefs.streakEnabled = cfg.streakEnabled
+        prefs.schoolTimeEnabled = cfg.schoolTimeEnabled
+        prefs.schoolStartMin = cfg.schoolStartMin
+        prefs.schoolEndMin = cfg.schoolEndMin
+        prefs.schoolDays = cfg.schoolDays
         if (cfg.childName.isNotBlank()) prefs.childName = cfg.childName
         prefs.accentChoice = cfg.accentChoice
         prefs.streakPenaltyMinutes = cfg.streakPenaltyMinutes

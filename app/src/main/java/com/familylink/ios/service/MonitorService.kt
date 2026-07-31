@@ -490,6 +490,9 @@ class MonitorService : Service() {
     private fun messageFor(decision: LockDecision): Pair<String, String> = when (decision) {
         is LockDecision.Bedtime ->
             "Ruhezeit" to "Wieder entsperrt um ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr."
+        is LockDecision.SchoolTime ->
+            "Schulzeit" to
+                "Bis ${TimeFmt.clock(decision.endMinute)} Uhr sind nur die zugelassenen Apps erlaubt."
         is LockDecision.OfflineLock ->
             "Keine Verbindung" to (
                 "Dieses Handy hat sich seit ${TimeFmt.hm(decision.offlineSeconds)} nicht bei " +

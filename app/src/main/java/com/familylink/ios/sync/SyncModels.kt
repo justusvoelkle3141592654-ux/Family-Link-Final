@@ -98,6 +98,11 @@ data class FamilyConfig(
     /** Streak rules the parent owns; the child keeps the count itself. */
     val streakEnabled: Boolean,
     val streakPenaltyMinutes: Int,
+    /** The second schedule: class hours, when only the allowed apps stay usable. */
+    val schoolTimeEnabled: Boolean = false,
+    val schoolStartMin: Int = 8 * 60,
+    val schoolEndMin: Int = 13 * 60,
+    val schoolDays: Int = 0b0011111,
     /** What the child is called, so both phones greet them the same way. */
     val childName: String = "",
     val accentChoice: String = "BLUE",
@@ -154,6 +159,10 @@ data class FamilyConfig(
         put("offlineLockMinutes", offlineLockMinutes)
         put("streakEnabled", streakEnabled)
         put("streakPenaltyMinutes", streakPenaltyMinutes)
+        put("schoolTimeEnabled", schoolTimeEnabled)
+        put("schoolStartMin", schoolStartMin)
+        put("schoolEndMin", schoolEndMin)
+        put("schoolDays", schoolDays)
         put("childName", childName)
         put("accentChoice", accentChoice)
         put("bonusMinutes", bonusMinutes)
@@ -192,6 +201,10 @@ data class FamilyConfig(
                 streakEnabled = o.optBoolean("streakEnabled", true),
                 streakPenaltyMinutes =
                     o.optInt("streakPenaltyMinutes", StreakLogic.DEFAULT_PENALTY_MIN),
+                schoolTimeEnabled = o.optBoolean("schoolTimeEnabled", false),
+                schoolStartMin = o.optInt("schoolStartMin", 8 * 60),
+                schoolEndMin = o.optInt("schoolEndMin", 13 * 60),
+                schoolDays = o.optInt("schoolDays", 0b0011111),
                 childName = o.optString("childName", ""),
                 accentChoice = o.optString("accentChoice", "BLUE"),
                 bonusMinutes = o.optInt("bonusMinutes", 0),

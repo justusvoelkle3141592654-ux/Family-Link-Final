@@ -699,6 +699,49 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     fun markEventsRead() = sp.edit().putInt("events_unread", 0).apply()
 
+    // ---- School time --------------------------------------------------------
+    //
+    // The second schedule from the reference. Unlike Ruhezeit it does not shut the phone down:
+    // during class the allowed apps stay usable and everything else waits, on the weekdays and
+    // between the hours the parent picked.
+
+    var schoolTimeEnabled: Boolean
+        get() = sp.getBoolean("school_on", false)
+        set(v) = sp.edit().putBoolean("school_on", v).apply()
+
+    var schoolStartMin: Int
+        get() = sp.getInt("school_start", 8 * 60)
+        set(v) = sp.edit().putInt("school_start", ((v % 1440) + 1440) % 1440).apply()
+
+    var schoolEndMin: Int
+        get() = sp.getInt("school_end", 13 * 60)
+        set(v) = sp.edit().putInt("school_end", ((v % 1440) + 1440) % 1440).apply()
+
+    /**
+     * The weekdays it applies to, one bit per day with Monday as bit 0. Monday to Friday by
+     * default, which is what a school week is.
+     */
+    var schoolDays: Int
+        get() = sp.getInt("school_days", 0b0011111)
+        set(v) = sp.edit().putInt("school_days", v and 0b1111111).apply()
+
+    fun schoolDayEnabled(mondayBased: Int): Boolean = (schoolDays shr mondayBased) and 1 == 1
+
+    fun toggleSchoolDay(mondayBased: Int) {
+        schoolDays = schoolDays xor (1 shl mondayBased)
+    }
+
+    /** Is class in session right now? */
+    fun isSchoolTime(nowMin: Int = minutesSinceMidnight()): Boolean {
+        if (!schoolTimeEnabled) return false
+        // Calendar counts Sunday as 1; the mask counts Monday as 0.
+        val mondayBased = (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7
+        if (!schoolDayEnabled(mondayBased)) return false
+        val start = schoolStartMin
+        val end = schoolEndMin
+        return if (start <= end) nowMin in start until end else nowMin >= start || nowMin < end
+    }
+
     // ---- Streak: days in a row inside the daily budget ---------------------
     //
     // Storage only. Every rule lives in [StreakLogic], which knows nothing about Android and is
