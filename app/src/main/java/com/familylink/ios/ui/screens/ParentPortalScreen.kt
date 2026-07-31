@@ -2028,31 +2028,33 @@ private fun LockSheet(
                         Spacer(Modifier.width(16.dp))
                         Text("Display sperren", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
                     }
-                    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
                         // 5/10/15 minutes: a short breather, free to use as often as needed.
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             listOf(5, 10, 15).forEach { m ->
-                                ScreenLockChip(label = "${m}m", enabled = true) { onLockScreen(m) }
+                                ScreenLockChip(label = "${m}m", enabled = true, modifier = Modifier.weight(1f)) { onLockScreen(m) }
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(10.dp))
                         // 1h and 6h: a real absence rather than a pause, so each is rationed per
                         // week. The chips disappear entirely once their weekly ration is exhausted.
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             if (screenLockHourUsesLeft > 0) {
                                 ScreenLockChip(
                                     label = "1h · ${screenLockHourUsesLeft}×",
-                                    enabled = true
+                                    enabled = true,
+                                    modifier = Modifier.weight(1f)
                                 ) { onLockScreen(Prefs.SCREEN_LOCK_HOUR_MIN) }
                             }
                             if (screenLockSixHourUsesLeft > 0) {
                                 ScreenLockChip(
                                     label = "6h · ${screenLockSixHourUsesLeft}×",
-                                    enabled = true
+                                    enabled = true,
+                                    modifier = Modifier.weight(1f)
                                 ) { onLockScreen(Prefs.SCREEN_LOCK_SIXHOUR_MIN) }
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             "1 Std bis zu ${Prefs.SCREEN_LOCK_HOUR_WEEKLY_USES}×/Woche, 6 Std " +
                                 "1×/Woche. Setzt sich montags zurück.",
@@ -2165,15 +2167,22 @@ private fun Chevron() {
 
 /** One duration chip in the display-lock picker; greys out and stops reacting when spent. */
 @Composable
-private fun ScreenLockChip(label: String, enabled: Boolean, onClick: () -> Unit) {
+private fun ScreenLockChip(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Box(
-        Modifier.clip(RoundedCornerShape(9.dp))
+        modifier
+            .clip(RoundedCornerShape(12.dp))
             .background(Nova.Danger.copy(alpha = if (enabled) 0.13f else 0.05f))
             .clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
-            label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
             color = if (enabled) Nova.Danger else Nova.InkFaint
         )
     }

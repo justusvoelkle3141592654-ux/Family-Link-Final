@@ -115,6 +115,7 @@ private sealed class Route {
     object ChildChores : Route()
     object ChildFocus : Route()
     object ChildFocusEnd : Route()
+    object ChildDisplayLockPin : Route()
     object PortalStats : Route()
 }
 
@@ -149,6 +150,8 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
     }
     // Role drives both the wizard path and which home screen is shown.
     var role by remember { mutableStateOf(prefs.deviceRole) }
+    // Minutes chosen on the child's display-lock chip, held while the PIN check runs.
+    var pendingDisplayLockMinutes by remember { mutableStateOf(0) }
 
     /**
      * Where the back gesture leads from each screen.
@@ -162,7 +165,7 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         Route.PortalFocus, Route.PortalDevices, Route.PortalChores, Route.PortalStats -> Route.Portal
         Route.VerifyPin, Route.ExtendTime, Route.RequestTime,
         Route.ChildChores, Route.ChildFocus -> Route.Home
-        Route.ChildFocusEnd -> Route.ChildFocus
+        Route.ChildFocusEnd, Route.ChildDisplayLockPin -> Route.ChildFocus
         else -> null
     }
     androidx.activity.compose.BackHandler(enabled = backTarget != null) {
@@ -339,7 +342,11 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         // session the child committed to cannot be undone with a single tap.
         Route.ChildFocus -> ChildFocusScreen(
             onBack = { route = Route.Home },
-            onRequestEnd = { route = Route.ChildFocusEnd }
+            onRequestEnd = { route = Route.ChildFocusEnd },
+            onRequestDisplayLock = { minutes ->
+                pendingDisplayLockMinutes = minutes
+                route = Route.ChildDisplayLockPin
+            }
         )
         Route.ChildFocusEnd -> PinScreen(
             mode = PinMode.VERIFY,
@@ -347,6 +354,19 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
                 prefs.setSelfFocusSession(com.familylink.ios.sync.FocusSession.OFF)
                 MonitorService.recheck(context)
                 route = Route.Home
+            },
+            onCancel = { route = Route.ChildFocus }
+        )
+
+        // Display lock triggered from the child's own Fokus screen: the same family PIN set
+        // during setup, so a sibling cannot lock the display (or burn the weekly ration) alone.
+        Route.ChildDisplayLockPin -> PinScreen(
+            mode = PinMode.VERIFY,
+            onSuccess = {
+                prefs.startScreenLock(pendingDisplayLockMinutes)
+                MonitorService.recheck(context)
+                SyncService.pushNow(context)
+                route = Route.ChildFocus
             },
             onCancel = { route = Route.ChildFocus }
         )

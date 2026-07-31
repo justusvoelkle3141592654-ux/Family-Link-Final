@@ -247,9 +247,17 @@ fun FocusScreen(onBack: () -> Unit) {
  *
  * Ending early needs the parent PIN on purpose. A session the child could cancel with one tap
  * would not help anyone put their phone away; the countdown running out ends it by itself.
+ *
+ * The display-lock section below is a separate, independent action — it switches the screen off
+ * right away instead of starting a timed session. It needs the parent PIN too: without it, any
+ * kid holding the phone could trigger it (or burn through the weekly 1h/6h ration) on a whim.
  */
 @Composable
-fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
+fun ChildFocusScreen(
+    onBack: () -> Unit,
+    onRequestEnd: () -> Unit,
+    onRequestDisplayLock: (Int) -> Unit
+) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
     val apps = remember { InstalledApps.load(context) }
@@ -281,6 +289,44 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text("Handy weglegen", fontSize = 24.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
                 Text("Fokus-Zeit, die du selbst startest", fontSize = 13.sp, color = Nova.InkMuted)
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // Independent of the timed session below: switches the display off right away.
+        // Protected by the parent PIN, set once during initial setup.
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                Text("Display sofort sperren", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "Schaltet den Bildschirm aus. Braucht die Eltern-PIN.",
+                    fontSize = 12.sp, color = Nova.InkMuted
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(5, 10, 15).forEach { m ->
+                        DisplayLockChip("${m}m", Modifier.weight(1f)) { onRequestDisplayLock(m) }
+                    }
+                }
+                val hourLeft = prefs.screenLockHourUsesLeft
+                val sixHourLeft = prefs.screenLockSixHourUsesLeft
+                if (hourLeft > 0 || sixHourLeft > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (hourLeft > 0) {
+                            DisplayLockChip("1h · ${hourLeft}×", Modifier.weight(1f)) {
+                                onRequestDisplayLock(Prefs.SCREEN_LOCK_HOUR_MIN)
+                            }
+                        }
+                        if (sixHourLeft > 0) {
+                            DisplayLockChip("6h · ${sixHourLeft}×", Modifier.weight(1f)) {
+                                onRequestDisplayLock(Prefs.SCREEN_LOCK_SIXHOUR_MIN)
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -430,6 +476,21 @@ private fun PresetChip(name: String, mins: Int, selected: Boolean, modifier: Mod
                 color = if (selected) Nova.Focus else Nova.Ink)
             Text("$mins Min", fontSize = 11.sp, color = Nova.InkMuted)
         }
+    }
+}
+
+/** One duration chip for the child-side display lock; matches the parent portal's styling. */
+@Composable
+private fun DisplayLockChip(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Nova.Danger.copy(alpha = 0.13f))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger)
     }
 }
 
