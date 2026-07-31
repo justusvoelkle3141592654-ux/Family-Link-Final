@@ -293,6 +293,19 @@ fun ParentPortalScreen(
         return
     }
 
+    // The "Zeitlimits" group gets its own screen — a deliberate pixel copy of Google Family
+    // Link's "Time limits" reference, requested exactly as pictured rather than through the
+    // generic settings-group list every other group uses.
+    if (prefs.isParentDevice && settingsGroup == "zeit") {
+        TimeLimitsScreen(
+            prefs = prefs,
+            onBack = { settingsGroup = null; showSettings = false; tab = groupCameFrom },
+            onOpenApps = onOpenApps,
+            onChanged = { v++ }
+        )
+        return
+    }
+
 
     Column(
         Modifier
