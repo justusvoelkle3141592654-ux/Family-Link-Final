@@ -172,6 +172,9 @@ fun ParentPortalScreen(
     var settingsGroup by remember { mutableStateOf<String?>(null) }
     var showDetails by remember { mutableStateOf(false) }
     var showEvents by remember { mutableStateOf(false) }
+    // Which tab an settings area was opened from, so back returns where it came from
+    // instead of always dropping into the settings list.
+    var groupCameFrom by remember { mutableStateOf(1) }
     /** 0 = Bildschirmzeit, 1 = Einstellungen, 2 = Aufgaben. */
     var tab by remember { mutableStateOf(0) }
 
@@ -185,7 +188,7 @@ fun ParentPortalScreen(
     androidx.activity.compose.BackHandler(enabled = prefs.isParentDevice) {
         when {
             showEvents -> showEvents = false
-            settingsGroup != null -> { settingsGroup = null; showSettings = false; tab = 1 }
+            settingsGroup != null -> { settingsGroup = null; showSettings = false; tab = groupCameFrom }
             showDetails -> showDetails = false
             tab != 0 -> tab = 0
             else -> onExit()
@@ -211,10 +214,10 @@ fun ParentPortalScreen(
     if (prefs.isParentDevice && !showDetails && settingsGroup == null) {
         Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
             when (tab) {
-                1 -> SettingsList(onPick = { group -> settingsGroup = group; showSettings = true })
-                // The third destination is the report: today in full and the week behind it.
-                // Chores moved into the settings, where the rest of the setup lives.
-                2 -> UsageDetailScreen(prefs = prefs, remote = remote, used = used, limit = limit)
+                1 -> SettingsList(onPick = { group -> groupCameFrom = 1; settingsGroup = group; showSettings = true })
+                // The third destination manages the child's apps — the thing a parent reaches
+                // for most often. The report is one tap away on the screen-time card instead.
+                2 -> AppsScreen()
                 else -> ParentDashboard(
                     prefs = prefs,
                     remote = remote,
@@ -224,7 +227,7 @@ fun ParentPortalScreen(
                     pendingRequest = pendingRequest,
                     onRefresh = { refreshNow() },
                     onOpenMenu = { tab = 1 },
-                    onOpenGroup = { group -> settingsGroup = group; showSettings = true; tab = 1 },
+                    onOpenGroup = { group -> groupCameFrom = 0; settingsGroup = group; showSettings = true },
                     onOpenEvents = { showEvents = true },
                     onGrant = { minutes, asBonus -> sync.grantTime(minutes, asBonus); v++ },
                     onDecideRequest = { req, approve ->
@@ -242,7 +245,7 @@ fun ParentPortalScreen(
                         v++
                     },
                     onOpenChores = onOpenChores,
-                    onOpenDetails = { tab = 2 },
+                    onOpenDetails = { showDetails = true },
                     onExit = onExit
                 )
             }
@@ -604,136 +607,6 @@ fun ParentPortalScreen(
         }
 
 
-        }
-
-        // ---- everything personal ----
-        if (showGroup("persoenlich")) {
-        SectionHeader("Persönlich")
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                Text("Name des Kindes", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    "Steht auf der Übersicht und auf dem Kinder-Handy.",
-                    fontSize = 14.sp, color = Nova.InkMuted
-                )
-                Spacer(Modifier.height(10.dp))
-                var name by remember { mutableStateOf(prefs.childName) }
-                androidx.compose.material.OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it; prefs.childName = it; v++ },
-                    singleLine = true,
-                    placeholder = { Text("z. B. Mia") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                Text("Foto", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    "Erscheint als rundes Bild auf der Übersicht. Bleibt auf diesem Handy.",
-                    fontSize = 14.sp, color = Nova.InkMuted
-                )
-                Spacer(Modifier.height(12.dp))
-                val picker = rememberLauncherForActivityResult(
-                    ActivityResultContracts.OpenDocument()
-                ) { uri ->
-                    if (uri != null) {
-                        // Without the persistable grant the picture would be unreadable after
-                        // the next restart.
-                        runCatching {
-                            context.contentResolver.takePersistableUriPermission(
-                                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        }
-                        prefs.childPhotoUri = uri.toString()
-                        v++
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ChildAvatar(prefs, 56)
-                    Spacer(Modifier.width(14.dp))
-                    Text(
-                        "Bild wählen", fontSize = 15.sp, color = Nova.Primary,
-                        modifier = Modifier.clickable { picker.launch(arrayOf("image/*")) }
-                    )
-                    if (prefs.childPhotoUri.isNotBlank()) {
-                        Spacer(Modifier.width(18.dp))
-                        Text(
-                            "Entfernen", fontSize = 15.sp, color = Nova.Danger,
-                            modifier = Modifier.clickable { prefs.childPhotoUri = ""; v++ }
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                Text("Farbe", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                Spacer(Modifier.height(3.dp))
-                Text("Färbt die App auf beiden Handys.", fontSize = 14.sp, color = Nova.InkMuted)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf(
-                        "BLUE" to Color(0xFF0B57D0),
-                        "GREEN" to Color(0xFF146C2E),
-                        "PURPLE" to Color(0xFF6750A4),
-                        "ORANGE" to Color(0xFFA8500A)
-                    ).forEach { (key, colour) ->
-                        val picked = prefs.accentChoice == key
-                        Box(
-                            Modifier.size(44.dp).clip(CircleShape).background(colour)
-                                .clickable { prefs.accentChoice = key; onThemeChanged(); v++ },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (picked) {
-                                Icon(
-                                    Icons.Filled.CheckCircle, null, tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                Text("Bonuszeit-Beträge", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    "Die drei Knöpfe auf der Übersicht.",
-                    fontSize = 14.sp, color = Nova.InkMuted
-                )
-            }
-            val presets = prefs.bonusPresets
-            presets.forEachIndexed { index, minutes ->
-                NovaDivider()
-                NovaRow(title = "Knopf ${index + 1}") {
-                    Stepper(
-                        value = "$minutes Min",
-                        onMinus = {
-                            prefs.bonusPresets = presets.toMutableList()
-                                .also { it[index] = (minutes - 5).coerceAtLeast(5) }
-                            v++
-                        },
-                        onPlus = {
-                            prefs.bonusPresets = presets.toMutableList()
-                                .also { it[index] = (minutes + 5).coerceAtMost(240) }
-                            v++
-                        }
-                    )
-                }
-            }
-        }
         }
 
         // ---- streak: its own area, reached from its own row in the menu ----
@@ -1404,7 +1277,6 @@ private val GROUP_TITLES = mapOf(
     "zeit" to "Zeitlimits",
     "plaene" to "Zeitpläne",
     "streak" to "Serie im Limit",
-    "persoenlich" to "Persönlich",
     "apps" to "Apps",
     "sperren" to "Sperren & Fokus",
     "verwaltung" to "Verwaltung",
@@ -1422,7 +1294,7 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier 
     val items = listOf(
         Triple(0, "Bildschirmzeit", Icons.Filled.BarChart),
         Triple(1, "Einstellungen", Icons.Filled.Person),
-        Triple(2, "Bericht", Icons.Filled.Insights)
+        Triple(2, "Apps", Icons.Filled.Apps)
     )
     Column(modifier.fillMaxWidth().background(Nova.Surface)) {
         // Hairline above the bar so it reads as a separate surface on a white card below it.
@@ -1526,7 +1398,6 @@ private val MENU_ENTRIES = listOf(
     MenuEntry("verwaltung", "Verwaltung", "Kategorien, Aufgaben, Bericht, Geräte", Icons.Filled.Tune),
     MenuEntry("schutz", "Schutz & Verbindung", "Schutz-Stufe, Bypass-Sicherung, Offline-Sperre", Icons.Filled.Shield),
     MenuEntry("meldungen", "Benachrichtigungen", "Anfragen, Aufgaben und Limits melden lassen", Icons.Filled.Notifications),
-    MenuEntry("persoenlich", "Persönlich", "Name, Foto, Farbe und Bonuszeit-Beträge", Icons.Filled.Person),
     MenuEntry("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen", Icons.Filled.PhoneAndroid)
 )
 
@@ -1605,6 +1476,7 @@ private fun ParentDashboard(
     @Suppress("UNUSED_EXPRESSION") secondTick
     val screenLockLeft = prefs.screenLockRemainingSeconds()
     var lockSheet by remember { mutableStateOf(false) }
+    var bonusSheet by remember { mutableStateOf(false) }
 
     val remaining = (limit - used).coerceAtLeast(0)
     val bonusRunning = prefs.bonusCountdownActive()
@@ -1656,11 +1528,10 @@ private fun ParentDashboard(
         Spacer(Modifier.height(14.dp))
 
         // ---- the device, with the one number that matters ----
-        NovaCard(modifier = Modifier.clickable { onOpenDetails() }) {
-            Column(Modifier.padding(18.dp)) {
+        NovaCard {
+            // ---- block one: which device, and is it reachable ----
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    ChildAvatar(prefs, 42)
-                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             remote?.deviceName ?: "Kinder-Gerät",
@@ -1683,34 +1554,40 @@ private fun ParentDashboard(
                         )
                     }
                 }
+            }
 
-                Spacer(Modifier.height(16.dp))
+            NovaDivider()
 
-                // ---- the screen time, with the three apps that made it ----
-                //
-                // The whole phone's time today, the way the reference leads with it, and beside
-                // it the three apps that took the most of it. The card as a whole opens the
-                // report, so no list is needed on the overview itself.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            TimeFmt.hm(remote?.totalDeviceSeconds ?: 0),
-                            fontSize = 34.sp, fontWeight = FontWeight.Normal, color = Nova.Ink
-                        )
-                        Text("Bildschirmzeit heute", fontSize = 13.sp, color = Nova.InkMuted)
-                    }
-                    val topThree = remote?.perAppSeconds.orEmpty()
-                        .entries.sortedByDescending { it.value }.take(3)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        topThree.forEach { (pkg, _) ->
-                            AppGlyph(pkg, remote?.perAppLabels?.get(pkg) ?: pkg)
-                        }
+            // ---- block two: today's screen time, and what made it ----
+            //
+            // The whole phone's time today, the way the reference leads with it, and beside it
+            // the three apps that took the most of it. Tapping this block opens the report.
+            Row(
+                Modifier.fillMaxWidth()
+                    .clickable { onOpenDetails() }
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        TimeFmt.hm(remote?.totalDeviceSeconds ?: 0),
+                        fontSize = 34.sp, fontWeight = FontWeight.Normal, color = Nova.Ink
+                    )
+                    Text("Bildschirmzeit heute", fontSize = 13.sp, color = Nova.InkMuted)
+                }
+                val topThree = remote?.perAppSeconds.orEmpty()
+                    .entries.sortedByDescending { it.value }.take(3)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    topThree.forEach { (pkg, _) ->
+                        AppGlyph(pkg, remote?.perAppLabels?.get(pkg) ?: pkg)
                     }
                 }
+            }
 
-                Spacer(Modifier.height(18.dp))
+            NovaDivider()
 
-                // The headline number: a running bonus countdown replaces it while it lasts.
+            // ---- block three: what is left of the budget, and the two actions ----
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
                 val bedtimeNow = remote?.bedtimeActive == true
                 Text(
                     when {
@@ -1754,26 +1631,36 @@ private fun ParentDashboard(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                // One button, one sheet: locking now, locking for a while, locking the display.
-                Box(
-                    Modifier.fillMaxWidth().height(46.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(if (lockedNow || lockedTimed) Nova.Danger else Nova.Accent)
-                        .clickable { lockSheet = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                // Two actions side by side: the padlock is a glyph, because it needs no words,
+                // and bonus time takes the space it saves.
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.size(46.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (lockedNow || lockedTimed) Nova.Danger else Nova.Accent)
+                            .clickable { lockSheet = true },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
                             if (lockedNow || lockedTimed) Icons.Filled.LockOpen else Icons.Filled.Lock,
-                            null,
+                            if (lockedNow || lockedTimed) "Entsperren" else "Sperren",
                             tint = if (lockedNow || lockedTimed) Color.White else Nova.Primary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(8.dp))
+                    }
+                    Box(
+                        Modifier.weight(1f).height(46.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (bonusRunning) Nova.Success else Nova.Accent)
+                            .clickable { bonusSheet = true },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            if (lockedNow || lockedTimed) "Gerät entsperren" else "Gerät sperren",
+                            if (bonusRunning)
+                                "Bonuszeit · ${TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())}"
+                            else "Bonuszeit",
                             fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                            color = if (lockedNow || lockedTimed) Color.White else Nova.Primary
+                            color = if (bonusRunning) Color.White else Nova.Primary
                         )
                     }
                 }
@@ -1810,46 +1697,6 @@ private fun ParentDashboard(
                 icon = Icons.Filled.CalendarMonth,
                 onClick = { onOpenGroup("plaene") }
             )
-        }
-
-        // ---- bonus time, in the amounts the parent chose ----
-        Spacer(Modifier.height(14.dp))
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                Text("Bonuszeit geben", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    if (bonusRunning)
-                        "Läuft noch ${TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())} — alles ist offen."
-                    else "Ein Countdown, in dem alles offen ist. Auch während der Ruhezeit.",
-                    fontSize = 14.sp, color = Nova.InkMuted, lineHeight = 19.sp
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    prefs.bonusPresets.forEach { minutes ->
-                        Box(
-                            Modifier.weight(1f).height(42.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(Nova.Accent)
-                                .clickable { onGrant(minutes, true) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "+$minutes Min", fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium, color = Nova.Primary
-                            )
-                        }
-                    }
-                }
-                if (bonusRunning) {
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "Bonuszeit beenden",
-                        fontSize = 14.sp, color = Nova.Danger,
-                        modifier = Modifier.clickable { onGrant(0, false) }
-                    )
-                }
-            }
         }
 
         // ---- only what needs an answer ----
@@ -1912,6 +1759,17 @@ private fun ParentDashboard(
         Spacer(Modifier.height(100.dp))
     }
 
+    if (bonusSheet) {
+        BonusSheet(
+            presets = prefs.bonusPresets,
+            running = bonusRunning,
+            remaining = prefs.bonusCountdownRemainingSeconds(),
+            onDismiss = { bonusSheet = false },
+            onGive = { minutes -> onGrant(minutes, true); bonusSheet = false },
+            onStop = { onGrant(0, false); bonusSheet = false }
+        )
+    }
+
     if (lockSheet) {
         LockSheet(
             lockedNow = lockedNow,
@@ -1947,39 +1805,6 @@ private fun AppGlyph(pkg: String, label: String) {
         } else {
             Text(label.take(1).uppercase(), fontSize = 14.sp,
                 fontWeight = FontWeight.Medium, color = Nova.InkMuted)
-        }
-    }
-}
-
-/** The child's picture, or their initial when there is none. */
-@Composable
-private fun ChildAvatar(prefs: Prefs, size: Int) {
-    val context = LocalContext.current
-    val uri = prefs.childPhotoUri
-    val bitmap = remember(uri) {
-        if (uri.isBlank()) null
-        else runCatching {
-            context.contentResolver.openInputStream(android.net.Uri.parse(uri)).use {
-                android.graphics.BitmapFactory.decodeStream(it)
-            }
-        }.getOrNull()
-    }
-    Box(
-        Modifier.size(size.dp).clip(CircleShape).background(Nova.Accent),
-        contentAlignment = Alignment.Center
-    ) {
-        if (bitmap != null) {
-            androidx.compose.foundation.Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = null,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier.size(size.dp).clip(CircleShape)
-            )
-        } else {
-            Text(
-                prefs.childName.trim().take(1).uppercase().ifBlank { "K" },
-                fontSize = (size / 2.4).sp, fontWeight = FontWeight.Medium, color = Nova.Primary
-            )
         }
     }
 }
