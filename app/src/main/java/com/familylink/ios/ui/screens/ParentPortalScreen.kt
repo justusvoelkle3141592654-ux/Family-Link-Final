@@ -2037,17 +2037,20 @@ private fun LockSheet(
                         }
                         Spacer(Modifier.height(6.dp))
                         // 1h and 6h: a real absence rather than a pause, so each is rationed per
-                        // week. The chip stays visible and just greys out once spent — it comes
-                        // back Monday, it does not vanish.
+                        // week. The chips disappear entirely once their weekly ration is exhausted.
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            ScreenLockChip(
-                                label = if (screenLockHourUsesLeft > 0) "1h · ${screenLockHourUsesLeft}×" else "1h",
-                                enabled = screenLockHourUsesLeft > 0
-                            ) { onLockScreen(Prefs.SCREEN_LOCK_HOUR_MIN) }
-                            ScreenLockChip(
-                                label = if (screenLockSixHourUsesLeft > 0) "6h · ${screenLockSixHourUsesLeft}×" else "6h",
-                                enabled = screenLockSixHourUsesLeft > 0
-                            ) { onLockScreen(Prefs.SCREEN_LOCK_SIXHOUR_MIN) }
+                            if (screenLockHourUsesLeft > 0) {
+                                ScreenLockChip(
+                                    label = "1h · ${screenLockHourUsesLeft}×",
+                                    enabled = true
+                                ) { onLockScreen(Prefs.SCREEN_LOCK_HOUR_MIN) }
+                            }
+                            if (screenLockSixHourUsesLeft > 0) {
+                                ScreenLockChip(
+                                    label = "6h · ${screenLockSixHourUsesLeft}×",
+                                    enabled = true
+                                ) { onLockScreen(Prefs.SCREEN_LOCK_SIXHOUR_MIN) }
+                            }
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
