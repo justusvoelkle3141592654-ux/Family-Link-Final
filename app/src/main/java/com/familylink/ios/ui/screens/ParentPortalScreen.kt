@@ -1826,6 +1826,8 @@ private fun ParentDashboard(
             lockedNow = lockedNow,
             lockedTimed = lockedTimed,
             screenLockLeft = screenLockLeft,
+            screenLockHourUsesLeft = prefs.screenLockHourUsesLeft,
+            screenLockSixHourUsesLeft = prefs.screenLockSixHourUsesLeft,
             onDismiss = { lockSheet = false },
             onLockNow = { onLockNow(); lockSheet = false },
             onLockFor = { onLockFor(it); lockSheet = false },
@@ -1952,6 +1954,8 @@ private fun LockSheet(
     lockedNow: Boolean,
     lockedTimed: Boolean,
     screenLockLeft: Int,
+    screenLockHourUsesLeft: Int,
+    screenLockSixHourUsesLeft: Int,
     onDismiss: () -> Unit,
     onLockNow: () -> Unit,
     onLockFor: (Int) -> Unit,
@@ -2011,12 +2015,47 @@ private fun LockSheet(
                         onClick = onReleaseScreen
                     )
                 } else {
-                    NovaRow(
-                        title = "Display sperren",
-                        subtitle = "Bildschirm aus, maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten",
-                        icon = Icons.Filled.PhoneAndroid,
-                        onClick = { onLockScreen(Prefs.MAX_SCREEN_LOCK_MIN) }
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(40.dp).clip(CircleShape).background(Nova.Accent),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.PhoneAndroid, null, tint = Nova.Primary, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Text("Display sperren", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                    }
+                    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                        // 5/10/15 minutes: a short breather, free to use as often as needed.
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(5, 10, 15).forEach { m ->
+                                ScreenLockChip(label = "${m}m", enabled = true) { onLockScreen(m) }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        // 1h and 6h: a real absence rather than a pause, so each is rationed per
+                        // week. The chip stays visible and just greys out once spent — it comes
+                        // back Monday, it does not vanish.
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ScreenLockChip(
+                                label = if (screenLockHourUsesLeft > 0) "1h · ${screenLockHourUsesLeft}×" else "1h",
+                                enabled = screenLockHourUsesLeft > 0
+                            ) { onLockScreen(Prefs.SCREEN_LOCK_HOUR_MIN) }
+                            ScreenLockChip(
+                                label = if (screenLockSixHourUsesLeft > 0) "6h · ${screenLockSixHourUsesLeft}×" else "6h",
+                                enabled = screenLockSixHourUsesLeft > 0
+                            ) { onLockScreen(Prefs.SCREEN_LOCK_SIXHOUR_MIN) }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "1 Std bis zu ${Prefs.SCREEN_LOCK_HOUR_WEEKLY_USES}×/Woche, 6 Std " +
+                                "1×/Woche. Setzt sich montags zurück.",
+                            fontSize = 11.sp, color = Nova.InkFaint
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
             }
@@ -2119,4 +2158,20 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
 @Composable
 private fun Chevron() {
     Text("›", color = Nova.InkFaint, fontSize = 22.sp)
+}
+
+/** One duration chip in the display-lock picker; greys out and stops reacting when spent. */
+@Composable
+private fun ScreenLockChip(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(9.dp))
+            .background(Nova.Danger.copy(alpha = if (enabled) 0.13f else 0.05f))
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Text(
+            label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            color = if (enabled) Nova.Danger else Nova.InkFaint
+        )
+    }
 }

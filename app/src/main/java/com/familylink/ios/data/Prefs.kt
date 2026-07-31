@@ -48,6 +48,9 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_WEEK_MARKER = "week_marker"
         private const val K_WEEK_COUNTED = "week_counted_sec"    // finished days this week
         private const val K_WEEK_TOTAL = "week_total_sec"
+        private const val K_SCREENLOCK_WEEK_MARKER = "screenlock_week_marker"
+        private const val K_SCREENLOCK_HOUR_COUNT = "screenlock_hour_count"
+        private const val K_SCREENLOCK_SIXHOUR_COUNT = "screenlock_sixhour_count"
         // streak: days in a row inside the daily budget
         private const val K_STREAK_ON = "streak_enabled"
         private const val K_STREAK_PENALTY = "streak_penalty_min"
@@ -79,7 +82,13 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val MIN_WEEK_MIN = 60
 
         /** Hard ceiling on the manual screen lock, so it can never strand the child. */
-        const val MAX_SCREEN_LOCK_MIN = 15
+        const val MAX_SCREEN_LOCK_MIN = 360
+
+        /** The two longer screen-lock options and how often each may be used per week. */
+        const val SCREEN_LOCK_HOUR_MIN = 60
+        const val SCREEN_LOCK_HOUR_WEEKLY_USES = 3
+        const val SCREEN_LOCK_SIXHOUR_MIN = 360
+        const val SCREEN_LOCK_SIXHOUR_WEEKLY_USES = 1
 
         /** How long the phone may be out of touch with the family before it seals. */
         const val DEFAULT_OFFLINE_LOCK_MIN = 60
@@ -548,9 +557,48 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     fun screenLockRemainingSeconds(now: Long = System.currentTimeMillis()): Int =
         ((screenLockUntil - now) / 1000L).toInt().coerceAtLeast(0)
 
-    /** Lock the display for [minutes], clamped to the maximum. */
+    /**
+     * The 60- and 360-minute options are rationed per week — a whole afternoon or evening off
+     * the child's phone is a real absence, not a quick pause like the 5/10/15-minute ones,
+     * which stay free to use as often as wanted. Both counters reset together on the same
+     * weekly boundary the other weekly pots use, so "resets Monday" means exactly what it does
+     * everywhere else in the app.
+     */
+    private fun ensureScreenLockWeek() {
+        val week = weekMarker()
+        if (sp.getInt(K_SCREENLOCK_WEEK_MARKER, -1) != week) {
+            sp.edit()
+                .putInt(K_SCREENLOCK_WEEK_MARKER, week)
+                .putInt(K_SCREENLOCK_HOUR_COUNT, 0)
+                .putInt(K_SCREENLOCK_SIXHOUR_COUNT, 0)
+                .apply()
+        }
+    }
+
+    val screenLockHourUsesLeft: Int
+        get() { ensureScreenLockWeek(); return (SCREEN_LOCK_HOUR_WEEKLY_USES - sp.getInt(K_SCREENLOCK_HOUR_COUNT, 0)).coerceAtLeast(0) }
+
+    val screenLockSixHourUsesLeft: Int
+        get() { ensureScreenLockWeek(); return (SCREEN_LOCK_SIXHOUR_WEEKLY_USES - sp.getInt(K_SCREENLOCK_SIXHOUR_COUNT, 0)).coerceAtLeast(0) }
+
+    /**
+     * Lock the display for [minutes], clamped to the maximum. The 60- and 360-minute options
+     * consume one of this week's rationed uses; refused once the ration is spent rather than
+     * silently locking anyway, so the button greying out in the UI is never a lie.
+     */
     fun startScreenLock(minutes: Int) {
         val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
+        ensureScreenLockWeek()
+        when (m) {
+            SCREEN_LOCK_HOUR_MIN -> {
+                if (screenLockHourUsesLeft <= 0) return
+                sp.edit().putInt(K_SCREENLOCK_HOUR_COUNT, sp.getInt(K_SCREENLOCK_HOUR_COUNT, 0) + 1).apply()
+            }
+            SCREEN_LOCK_SIXHOUR_MIN -> {
+                if (screenLockSixHourUsesLeft <= 0) return
+                sp.edit().putInt(K_SCREENLOCK_SIXHOUR_COUNT, sp.getInt(K_SCREENLOCK_SIXHOUR_COUNT, 0) + 1).apply()
+            }
+        }
         screenLockUntil = System.currentTimeMillis() + m * 60_000L
     }
 
