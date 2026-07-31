@@ -957,9 +957,9 @@ fun ParentPortalScreen(
             }
         }
 
-        // ---- protection level (supervised device only) ----
-        if (!prefs.isParentDevice) {
         }
+
+        // ---- protection level (supervised device only) ----
         if (showGroup("schutz")) {
         SectionHeader("Verbindung")
         NovaCard {
@@ -1020,32 +1020,6 @@ fun ParentPortalScreen(
                         "werden (Anleitung im README).",
                     fontSize = 13.sp, color = Nova.InkMuted
                 )
-            }
-        }
-
-        }
-
-
-        // ---- instant pause ----
-        SectionHeader("Sofort-Pause")
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                val paused = prefs.focusSession().let { it.isRunning() && it.label == "Pause" }
-                Text(
-                    if (paused) "Das Gerät ist pausiert. Nur Telefon ist erreichbar."
-                    else "Sperrt das Kindergerät sofort für 30 Minuten (z. B. beim Essen).",
-                    fontSize = 14.sp, color = Nova.InkMuted
-                )
-                Spacer(Modifier.height(12.dp))
-                if (paused) {
-                    NovaButton(text = "Pause beenden", color = Nova.Success) {
-                        sync.stopFocus(); v++; SyncService.pushNow(context)
-                    }
-                } else {
-                    NovaButton(text = "Jetzt pausieren (30 Min)", color = Nova.Danger) {
-                        sync.startFocus("Pause", 30, emptyList()); v++; SyncService.pushNow(context)
-                    }
-                }
             }
         }
 
@@ -1455,33 +1429,6 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier 
  * three ways to lock in one calm list rather than three shouting red blocks.
  */
 @Composable
-private fun LockChoiceRow(
-    title: String,
-    subtitle: String,
-    options: List<Pair<Int, String>>,
-    onPick: (Int) -> Unit
-) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-        Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted, lineHeight = 17.sp)
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { (value, label) ->
-                Box(
-                    Modifier.weight(1f)
-                        .clip(RoundedCornerShape(50))
-                        .background(Nova.Fill)
-                        .clickable { onPick(value) }
-                        .padding(vertical = 11.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                }
-            }
-        }
-    }
-}
-
 /** One entry in the settings list: key, title, explanatory line, glyph. */
 private data class MenuEntry(
     val key: String,
