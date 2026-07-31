@@ -13,6 +13,8 @@ sealed class LockDecision {
     data class AppLimitReached(val pkg: String, val usedSeconds: Int, val limitSeconds: Int) : LockDecision()
     /** App is generally blocked (BLOCKED category), independent of time. */
     data class AppBlocked(val pkg: String) : LockDecision()
+    /** System settings are blocked unless temporarily released via the portal. */
+    object SettingsBlocked : LockDecision()
     /** A parent-started focus session is running; only focus apps are allowed. */
     data class FocusActive(val label: String, val remainingSeconds: Int) : LockDecision()
     /**
@@ -267,12 +269,10 @@ class LimitEngine(private val prefs: Prefs) {
 
         if (pkg == null) return LockDecision.Allowed
 
-        // Settings is a system utility, not a "distraction" app: it is generally reachable and
-        // never counted against the time budget. The screens that actually matter — the ones
-        // that could switch this app's own protections off — are guarded separately by the
-        // accessibility service, which watches for Settings screens that name this app by
-        // title rather than blocking the whole app.
-        if (isSettings(pkg)) return LockDecision.Allowed
+        // System settings are locked by default; only a portal-granted window opens them.
+        if (isSettings(pkg)) {
+            return if (prefs.settingsUnlocked()) LockDecision.Allowed else LockDecision.SettingsBlocked
+        }
 
         val category = prefs.categoryOf(pkg)
         if (category == AppCategory.PLUS) return LockDecision.Allowed

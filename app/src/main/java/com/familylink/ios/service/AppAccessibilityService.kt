@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.familylink.ios.BlockActivity
-import com.familylink.ios.R
 import com.familylink.ios.admin.DeviceAdmin
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.util.ForegroundTracker
@@ -14,12 +13,10 @@ import com.familylink.ios.util.LockState
  * Second line of defence and a latency booster.
  *
  *  1. Instant foreground hints for the monitor service.
- *  2. Anti-tamper: Settings is otherwise reachable, but any Settings screen that names this app
- *     by title — the App-Info page, its entry in the accessibility-service list, the per-app
- *     "display over other apps" toggle, its entry in device-admin apps — is bounced immediately
- *     and replaced by our block overlay. Those are exactly the screens that could switch this
- *     app's own protections off. Locking the screen is only a last resort after repeated
- *     attempts, and it always returns to Home so the child never resumes on that screen.
+ *  2. Anti-tamper: the Settings app (incl. the App-Info page reached via long-press, which is
+ *     where "display over other apps" and the device-admin toggle live) is bounced immediately
+ *     and replaced by our block overlay. Locking the screen is only a last resort after repeated
+ *     attempts, and it always returns to Home so the child never resumes inside Settings.
  *  3. Anti-bypass: block the pop-up / split-screen (multi-window) view while a lock is active,
  *     plus guest/user-switch, the power menu and the quick-settings shade.
  */
@@ -44,9 +41,11 @@ class AppAccessibilityService : AccessibilityService() {
         if (prefs.isParentDevice) return
         val pkg = event.packageName?.toString() ?: return
 
-        // 2 — anti-tamper: a Settings screen that names this app is never reachable unless the
-        // parent released it from the portal. General Settings navigation is otherwise fine.
-        if (handleSettingsIntrusion(pkg, event)) return
+        // 2 — anti-tamper: the Settings app must not even be reachable unless the parent
+        // released it from the portal. This fires on the very first event from Settings
+        // (including the App-Info page reached via long-press), so the child never gets far
+        // enough to toggle "display over other apps" or deactivate the admin.
+        if (handleSettingsIntrusion(pkg)) return
 
         // 3 — anti-bypass surfaces.
         if (handlePotentialBypass(pkg, event)) return
@@ -85,33 +84,22 @@ class AppAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * General Settings screens (Wi-Fi, display, sound, date & time, …) are left alone. Only a
-     * screen that names this app is off-limits — that is where the accessibility-service
-     * toggle, the "display over other apps" permission and the device-admin entry for THIS app
-     * live, and switching any of those off disables every protection the app provides. Android
-     * titles exactly those screens with the app's own label ("Völkle Link"), which is what this
-     * checks for instead of blocking Settings wholesale.
-     *
+     * The Settings app is off-limits unless the parent released it from the portal.
      * Strategy (overlay first, screen lock only as a last resort):
-     *   1. immediately leave the screen (BACK, then HOME) and raise our block overlay,
+     *   1. immediately leave Settings (BACK, then HOME) and raise our block overlay,
      *   2. only if the child keeps hammering it (repeated attempts in a short window)
      *      do we fall back to locking the screen — and after unlocking they land on Home,
-     *      not back on that screen.
+     *      not back inside Settings.
      *
-     * @return true if this was an intrusion we handled.
+     * @return true if this was a Settings intrusion we handled.
      */
-    private fun handleSettingsIntrusion(pkg: String, event: AccessibilityEvent): Boolean {
+    private fun handleSettingsIntrusion(pkg: String): Boolean {
         if (!isSettingsPackage(pkg)) return false
         // Never interfere during setup or while the parent authorised settings access.
         if (!prefs.setupDone || prefs.settingsUnlocked()) return false
 
-        val label = getString(R.string.app_name)
-        val text = (event.text?.joinToString(" ") ?: "") +
-            " " + (event.contentDescription?.toString() ?: "")
-        if (!text.contains(label, ignoreCase = true)) return false
-
         val now = android.os.SystemClock.uptimeMillis()
-        // Short debounce only — we want to react on essentially every matching event so the
+        // Short debounce only — we want to react on essentially every settings event so the
         // child cannot linger on a toggle page between two reactions.
         if (now - lastSettingsActionAt < 400) return true
         lastSettingsActionAt = now
@@ -121,20 +109,20 @@ class AppAccessibilityService : AccessibilityService() {
         lastIntrusionStreakAt = now
         settingsAttempts++
 
-        // 1) Always: get out of the screen and show the overlay instead.
+        // 1) Always: get out of Settings and show the overlay instead.
         performGlobalAction(GLOBAL_ACTION_BACK)
         performGlobalAction(GLOBAL_ACTION_HOME)
         BlockActivity.launch(
             this,
-            "Geschützter Bereich",
-            "Diese Seite betrifft $label selbst und ist gesperrt. Freigabe über das Eltern-Portal.",
+            "Einstellungen gesperrt",
+            "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal.",
             bedtime = false,
-            // Dismissible: the child just needs to leave the screen, not stay locked out.
+            // Dismissible: the child just needs to leave Settings, not stay locked out.
             hardLock = false
         )
 
         // 2) Last resort only: persistent attempts -> lock the screen, then return Home so the
-        //    child does not reappear on that screen after unlocking.
+        //    child does not reappear inside Settings after unlocking.
         if (settingsAttempts >= LOCK_AFTER_ATTEMPTS) {
             settingsAttempts = 0
             DeviceAdmin.lockNow(this)

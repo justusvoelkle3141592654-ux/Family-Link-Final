@@ -1011,10 +1011,9 @@ fun ParentPortalScreen(
                 Spacer(Modifier.height(10.dp))
                 Text(
                     if (owner)
-                        "HOME wird bei Sperren blockiert, abgesicherter Modus, Gastprofil, " +
-                        "Zurücksetzen und Deinstallation sind vom System verboten. " +
-                        "Systemeinstellungen sind frei nutzbar — nur die App-Seite von " +
-                        "Völkle Link selbst bleibt gesperrt. Daten werden nie gelöscht."
+                        "HOME wird bei Sperren blockiert, Einstellungen sind ausgeblendet, " +
+                        "abgesicherter Modus, Gastprofil, Zurücksetzen und Deinstallation sind " +
+                        "vom System verboten. Daten werden nie gelöscht."
                     else
                         "Die App schützt so gut es ohne Geräteinhaber geht. Für echte " +
                         "Unumgehbarkeit muss die App einmalig als Geräteinhaber eingerichtet " +
@@ -1143,18 +1142,14 @@ fun ParentPortalScreen(
         }
 
 
-        // ---- device: settings are generally reachable; only the app-info page for THIS app
-        // (accessibility toggle, overlay permission, device-admin entry) is guarded, and
-        // released here temporarily for maintenance. ----
+        // ---- device: system settings are locked by default; released here temporarily ----
         SectionHeader("Gerät")
         NovaCard {
             Column(Modifier.padding(16.dp)) {
                 val open = prefs.settingsUnlocked()
                 Text(
-                    if (open) "Auch die App-Seite von Völkle Link ist vorübergehend freigegeben."
-                    else "Systemeinstellungen sind frei nutzbar. Nur die App-Seite von Völkle " +
-                        "Link selbst (Bedienungshilfen, Anzeige über anderen Apps, Geräte-Admin) " +
-                        "bleibt gesperrt — hier für 1 Minute freigeben, z. B. für Wartung.",
+                    if (open) "Systemeinstellungen sind vorübergehend freigegeben."
+                    else "Die Systemeinstellungen des Geräts sind gesperrt. Hier für 1 Minute freigeben und öffnen.",
                     fontSize = 14.sp, color = Nova.InkMuted
                 )
                 Spacer(Modifier.height(12.dp))
