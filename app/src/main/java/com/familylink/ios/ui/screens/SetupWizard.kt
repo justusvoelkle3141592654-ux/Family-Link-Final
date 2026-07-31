@@ -60,7 +60,7 @@ fun RoleChoiceScreen(onChosen: (DeviceRole) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(48.dp))
-        Text("Family Link", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
+        Text("Völkle Link", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
         Spacer(Modifier.height(8.dp))
         Text(
             "Auf welchem Gerät wird die App eingerichtet?",

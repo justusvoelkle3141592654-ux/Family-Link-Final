@@ -155,7 +155,7 @@ class ParentWatchService : Service() {
                 .apply { setShowBadge(false) }
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Family Link")
+            .setContentTitle("Völkle Link")
             .setContentText("Beobachtet das Kinder-Gerät")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)

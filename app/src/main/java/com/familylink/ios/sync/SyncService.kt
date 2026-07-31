@@ -109,11 +109,11 @@ class SyncService : Service() {
     private fun buildNotification(): Notification {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Family Link Sync", NotificationManager.IMPORTANCE_MIN)
+            NotificationChannel(CHANNEL_ID, "Völkle Link Sync", NotificationManager.IMPORTANCE_MIN)
                 .apply { setShowBadge(false) }
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Family Link verbunden")
+            .setContentTitle("Völkle Link verbunden")
             .setContentText(if (prefs.isChildDevice) "Synchronisiert mit Eltern-Gerät" else "Synchronisiert mit Kinder-Gerät")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)

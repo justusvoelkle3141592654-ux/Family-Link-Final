@@ -121,23 +121,25 @@ fun NovaRow(
         modifier = modifier
             .fillMaxWidth()
             .let { if (onClick != null) it.clickable { onClick() } else it }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            // Taller than a plain list row: the reference gives every entry room to breathe,
+            // which is most of what makes the page look like Family Link rather than a table.
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
+                Modifier.size(40.dp).clip(CircleShape).background(Nova.Accent),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(21.dp))
+                Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(20.dp))
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(16.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
             if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted, lineHeight = 17.sp)
+                Spacer(Modifier.height(3.dp))
+                Text(subtitle, fontSize = 14.sp, color = Nova.InkMuted, lineHeight = 19.sp)
             }
         }
         trailing()
@@ -147,9 +149,9 @@ fun NovaRow(
 /** Hairline between rows, matching the reference's very light dividers. */
 @Composable
 fun NovaDivider() {
-    Box(
-        Modifier.fillMaxWidth().padding(start = 70.dp).height(1.dp).background(Nova.Line)
-    )
+    // Edge to edge, exactly as in the reference: its lists separate rows across the whole card
+    // rather than indenting the line to the text.
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
 }
 
 @Composable

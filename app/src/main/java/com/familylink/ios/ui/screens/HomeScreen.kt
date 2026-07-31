@@ -76,7 +76,7 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("Family Link", fontSize = 15.sp, color = Nova.InkMuted)
+        Text("Völkle Link", fontSize = 15.sp, color = Nova.InkMuted)
         Text(TimeFmt.nowLong(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
 
         Spacer(Modifier.height(36.dp))

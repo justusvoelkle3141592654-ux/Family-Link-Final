@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
@@ -215,6 +217,7 @@ fun ParentPortalScreen(
                     pendingRequest = pendingRequest,
                     onRefresh = { refreshNow() },
                     onOpenMenu = { tab = 1 },
+                    onOpenGroup = { group -> settingsGroup = group; showSettings = true; tab = 1 },
                     onGrant = { minutes, asBonus -> sync.grantTime(minutes, asBonus); v++ },
                     onDecideRequest = { req, approve ->
                         thread(isDaemon = true) { sync.decideRequest(req, approve) }
@@ -588,7 +591,10 @@ fun ParentPortalScreen(
         }
 
 
-        // ---- streak ----
+        }
+
+        // ---- streak: its own area, reached from its own row in the menu ----
+        if (showGroup("streak")) {
         SectionHeader("Serie im Limit")
         NovaCard {
             NovaRow(
@@ -624,6 +630,10 @@ fun ParentPortalScreen(
             }
         }
 
+        }
+
+        // ---- schedules: the reference keeps them apart from the limits ----
+        if (showGroup("plaene")) {
         // ---- bedtime ----
         SectionHeader("Ruhezeit")
         NovaCard {
@@ -960,7 +970,7 @@ fun ParentPortalScreen(
                 if (!notificationsAllowed) {
                     Text(
                         "Android erlaubt der App noch keine Benachrichtigungen. Bitte in den " +
-                            "Systemeinstellungen für Family Link freigeben.",
+                            "Systemeinstellungen für Völkle Link freigeben.",
                         fontSize = 12.sp, color = Nova.Warning,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                     )
@@ -1199,11 +1209,13 @@ private fun ScopePicker(current: LimitScope, onPick: (LimitScope) -> Unit) {
 
 /** Group key -> the title shown once that group is open. */
 private val GROUP_TITLES = mapOf(
-    "zeit" to "Zeit & Limits",
+    "zeit" to "Zeitlimits",
+    "plaene" to "Zeitpläne",
+    "streak" to "Serie im Limit",
     "apps" to "Apps",
     "sperren" to "Sperren & Fokus",
     "verwaltung" to "Verwaltung",
-    "schutz" to "Schutz",
+    "schutz" to "Schutz & Verbindung",
     "meldungen" to "Benachrichtigungen",
     "geraet" to "Gerät & Design"
 )
@@ -1307,12 +1319,19 @@ private data class MenuEntry(
 )
 
 /** What the settings tab offers, in order. */
+/**
+ * The settings, arranged the way the reference arranges them: one row per area, each saying in
+ * one grey line what is inside, and the two that belong to screen time — the limits and the
+ * schedules — kept apart from each other.
+ */
 private val MENU_ENTRIES = listOf(
-    MenuEntry("zeit", "Zeitlimits", "Tageslimit, Wochenlimit, Gesamtlimit, Ruhezeit", Icons.Filled.HourglassBottom),
+    MenuEntry("zeit", "Zeitlimits", "Tageslimit, Wochenlimit und Gesamtlimit", Icons.Filled.HourglassBottom),
+    MenuEntry("plaene", "Zeitpläne", "Ruhezeit für die Nacht", Icons.Filled.CalendarMonth),
+    MenuEntry("streak", "Serie im Limit", "Tage in Folge, Stufen und Abzug", Icons.Filled.LocalFireDepartment),
     MenuEntry("apps", "Apps", "Gesperrte Apps und Freigaben für heute", Icons.Filled.Apps),
     MenuEntry("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus", Icons.Filled.Lock),
     MenuEntry("verwaltung", "Verwaltung", "Kategorien, Aufgaben, Bericht, Geräte", Icons.Filled.Tune),
-    MenuEntry("schutz", "Schutz", "Schutz-Stufe und Bypass-Sicherung", Icons.Filled.Shield),
+    MenuEntry("schutz", "Schutz & Verbindung", "Schutz-Stufe, Bypass-Sicherung, Offline-Sperre", Icons.Filled.Shield),
     MenuEntry("meldungen", "Benachrichtigungen", "Anfragen, Aufgaben und Limits melden lassen", Icons.Filled.Notifications),
     MenuEntry("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen", Icons.Filled.PhoneAndroid)
 )
@@ -1336,12 +1355,14 @@ private fun SettingsList(onPick: (String) -> Unit) {
         NovaCard {
             MENU_ENTRIES.forEachIndexed { i, e ->
                 if (i > 0) NovaDivider()
+                // No chevron: the reference's lists carry the glyph, the title and the line
+                // beneath it, and nothing on the right at all.
                 NovaRow(
                     title = e.title,
                     subtitle = e.subtitle,
                     icon = e.icon,
                     onClick = { onPick(e.key) }
-                ) { Chevron() }
+                )
             }
         }
         Spacer(Modifier.height(100.dp))
@@ -1368,6 +1389,8 @@ private fun ParentDashboard(
     pendingRequest: TimeRequest?,
     onRefresh: () -> Unit,
     onOpenMenu: () -> Unit,
+    /** Jump straight from the overview into one settings area, as the reference does. */
+    onOpenGroup: (String) -> Unit,
     onGrant: (Int, Boolean) -> Unit,
     onDecideRequest: (TimeRequest, Boolean) -> Unit,
     onLockFor: (Int) -> Unit,
@@ -1704,6 +1727,34 @@ private fun ParentDashboard(
                     }
                 }
             }
+        }
+
+        // ---- the two screen-time rows, exactly as the reference shows them ----
+        //
+        // One card, two rows, each with its glyph and a grey line that states what is set right
+        // now rather than repeating the label. Tapping one opens that area.
+        Spacer(Modifier.height(16.dp))
+        NovaCard {
+            NovaRow(
+                title = "Zeitlimits",
+                subtitle = buildString {
+                    append("Limit von ${TimeFmt.hm(prefs.globalLimitMinutes * 60)}")
+                    if (prefs.hardCapEnabled) {
+                        append(" · Gesamtlimit ${TimeFmt.hm(prefs.hardCapMinutes * 60)}")
+                    }
+                },
+                icon = Icons.Filled.HourglassBottom,
+                onClick = { onOpenGroup("zeit") }
+            )
+            NovaDivider()
+            NovaRow(
+                title = "Zeitpläne",
+                subtitle = if (prefs.bedtimeEnabled)
+                    "Ruhezeit ${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)}"
+                else "Ruhezeit deaktiviert",
+                icon = Icons.Filled.CalendarMonth,
+                onClick = { onOpenGroup("plaene") }
+            )
         }
 
         // ---- streak ----
