@@ -1809,6 +1809,92 @@ private fun AppGlyph(pkg: String, label: String) {
     }
 }
 
+/**
+ * Bonus time: the amounts at a tap, or a minute count set by hand.
+ *
+ * Both end in the same place — a countdown in which the device is open — so the sheet
+ * only has to answer "how long", never "which kind".
+ */
+@Composable
+private fun BonusSheet(
+    presets: List<Int>,
+    running: Boolean,
+    remaining: Int,
+    onDismiss: () -> Unit,
+    onGive: (Int) -> Unit,
+    onStop: () -> Unit
+) {
+    var manual by remember { mutableStateOf(15) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                .background(Nova.Surface)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Bonuszeit", fontSize = 21.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (running) "Läuft noch ${TimeFmt.hm(remaining)} — alles ist offen."
+                    else "Ein Countdown, in dem alles offen ist. Auch während der Ruhezeit.",
+                    fontSize = 14.sp, color = Nova.InkMuted, lineHeight = 19.sp
+                )
+
+                Spacer(Modifier.height(18.dp))
+                Text("Schnell", fontSize = 13.sp, color = Nova.InkFaint)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    presets.forEach { minutes ->
+                        Box(
+                            Modifier.weight(1f).height(44.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Nova.Accent)
+                                .clickable { onGive(minutes) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "+$minutes Min", fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium, color = Nova.Primary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Text("Manuell", fontSize = 13.sp, color = Nova.InkFaint)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Stepper(
+                        value = "$manual Min",
+                        onMinus = { manual = (manual - 5).coerceAtLeast(5) },
+                        onPlus = { manual = (manual + 5).coerceAtMost(240) }
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        Modifier.height(44.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Nova.Primary)
+                            .clickable { onGive(manual) }
+                            .padding(horizontal = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Geben", fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = Color.White)
+                    }
+                }
+
+                if (running) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Bonuszeit beenden", fontSize = 15.sp, color = Nova.Danger,
+                        modifier = Modifier.clickable { onStop() }
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Everything about locking, in one sheet, so the card itself stays a single button. */
 @Composable
 private fun LockSheet(
