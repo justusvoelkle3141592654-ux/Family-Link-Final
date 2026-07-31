@@ -26,6 +26,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
@@ -651,11 +653,23 @@ fun ParentPortalScreen(
         // ---- schedules: the reference keeps them apart from the limits ----
         if (showGroup("plaene")) {
         // ---- bedtime ----
-        SectionHeader("Ruhezeit")
-        NovaCard {
-            NovaRow(title = "Ruhezeit aktiv") {
+        Spacer(Modifier.height(8.dp))
+        NovaFeatureCard(
+            icon = Icons.Filled.Bedtime,
+            title = "Ruhezeit",
+            description = "Hilf deinem Kind zu schlafen, indem das Handy nachts gesperrt wird.",
+            tint = Nova.Night,
+            expanded = prefs.bedtimeEnabled,
+            control = {
                 NovaSwitch(checked = prefs.bedtimeEnabled) { prefs.bedtimeEnabled = it; v++ }
             }
+        ) {
+            NovaDivider()
+            NovaValueRow(
+                "Heute Nacht",
+                "${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)}"
+            )
+            NovaDivider()
             NovaRow(title = "Beginn") {
                 Stepper(
                     value = TimeFmt.clock(prefs.bedtimeStartMin),
@@ -663,6 +677,7 @@ fun ParentPortalScreen(
                     onPlus = { prefs.bedtimeStartMin = wrap(prefs.bedtimeStartMin + 30); v++ }
                 )
             }
+            NovaDivider()
             NovaRow(title = "Ende") {
                 Stepper(
                     value = TimeFmt.clock(prefs.bedtimeEndMin),
@@ -1527,45 +1542,13 @@ private fun ParentDashboard(
 
         Spacer(Modifier.height(14.dp))
 
-        // ---- the device, with the one number that matters ----
-        NovaCard {
-            // ---- block one: which device, and is it reachable ----
-            Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            remote?.deviceName ?: "Kinder-Gerät",
-                            fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
-                        )
-                        Text(
-                            when {
-                                !prefs.syncConfigured -> "Nicht verbunden"
-                                online -> "Verbunden"
-                                else -> "Zuletzt vor ${TimeFmt.hm(remote?.ageSeconds() ?: 0)}"
-                            },
-                            fontSize = 12.sp,
-                            color = if (online) Nova.Success else Nova.InkFaint
-                        )
-                    }
-                    if (remote != null && remote.batteryPercent in 0..100) {
-                        Text(
-                            "${remote.batteryPercent} %", fontSize = 12.sp,
-                            color = if (remote.batteryPercent < 20) Nova.Danger else Nova.InkFaint
-                        )
-                    }
-                }
-            }
-
-            NovaDivider()
-
-            // ---- block two: today's screen time, and what made it ----
-            //
-            // The whole phone's time today, the way the reference leads with it, and beside it
-            // the three apps that took the most of it. Tapping this block opens the report.
+        // ---- card one: the time spent today, and the apps that made it ----
+        //
+        // The reference leads with this and nothing else: one number, one line naming it, and
+        // the three apps beside it. Tapping it opens the report.
+        NovaCard(modifier = Modifier.clickable { onOpenDetails() }) {
             Row(
-                Modifier.fillMaxWidth()
-                    .clickable { onOpenDetails() }
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
@@ -1583,92 +1566,119 @@ private fun ParentDashboard(
                     }
                 }
             }
+        }
 
-            NovaDivider()
-
-            // ---- block three: what is left of the budget, and the two actions ----
-            Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-                val bedtimeNow = remote?.bedtimeActive == true
-                Text(
-                    when {
-                        lockedNow || lockedTimed -> "Gesperrt"
-                        bonusRunning -> TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())
-                        bedtimeNow -> "Ruhezeit"
-                        else -> TimeFmt.hm(remaining)
-                    },
-                    fontSize = 26.sp, fontWeight = FontWeight.Medium,
-                    color = when {
-                        lockedNow || lockedTimed -> Nova.Danger
-                        bonusRunning -> Nova.Success
-                        remaining == 0 -> Nova.Danger
-                        else -> Nova.Ink
+        // ---- card two: the device itself, its state, and what can be done to it ----
+        Spacer(Modifier.height(14.dp))
+        val bedtimeNow = remote?.bedtimeActive == true
+        NovaCard {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { onOpenDetails() }
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Nova.Fill),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.PhoneAndroid, null, tint = Nova.Ink,
+                            modifier = Modifier.size(20.dp))
                     }
-                )
-                Text(
-                    when {
-                        lockedNow -> "Von dir gesperrt"
-                        lockedTimed -> "Noch ${TimeFmt.hm(timedLock.remainingSeconds())}"
-                        bonusRunning -> "Bonuszeit läuft"
-                        bedtimeNow -> "Bis ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
-                        else -> "übrig heute"
-                    },
-                    fontSize = 13.sp, color = Nova.InkMuted
-                )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            remote?.deviceName ?: "Kinder-Gerät",
+                            fontSize = 17.sp, fontWeight = FontWeight.Normal, color = Nova.Ink
+                        )
+                        // The state in one line, coloured the way the reference colours it:
+                        // red while the phone is shut, plain grey while it is simply in use.
+                        val (stateText, stateColour) = when {
+                            lockedNow -> "Gesperrt" to Nova.Danger
+                            lockedTimed ->
+                                "Gesperrt · noch ${TimeFmt.hm(timedLock.remainingSeconds())}" to Nova.Danger
+                            bonusRunning ->
+                                "Bonuszeit · ${TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())}" to Nova.Success
+                            bedtimeNow ->
+                                "Ruhezeit bis ${TimeFmt.clock(prefs.bedtimeEndMin)}" to Nova.Danger
+                            !prefs.syncConfigured -> "Nicht verbunden" to Nova.InkFaint
+                            !online -> "Offline" to Nova.InkFaint
+                            else -> "${TimeFmt.hm(remaining)} übrig" to Nova.InkMuted
+                        }
+                        Text(stateText, fontSize = 13.sp, color = stateColour)
+                    }
+                    if (remote != null && remote.batteryPercent in 0..100) {
+                        Text(
+                            "${remote.batteryPercent} %", fontSize = 12.sp,
+                            color = if (remote.batteryPercent < 20) Nova.Danger else Nova.InkFaint
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Chevron()
+                }
 
-                Spacer(Modifier.height(14.dp))
-                ProgressBar(fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}",
-                        fontSize = 13.sp, color = Nova.InkMuted, modifier = Modifier.weight(1f)
+                // The budget as a bar, so the number above has something to sit against.
+                Column(Modifier.padding(horizontal = 18.dp)) {
+                    ProgressBar(
+                        fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f)
                     )
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        "Alle Apps",
-                        fontSize = 13.sp, color = Nova.Primary,
-                        modifier = Modifier.clickable { onOpenDetails() }
+                        "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)} angerechnet",
+                        fontSize = 12.sp, color = Nova.InkFaint
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
-                // Two actions side by side: the padlock is a glyph, because it needs no words,
-                // and bonus time takes the space it saves.
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Lock across the width, bonus time as the round button beside it — the two
+                // actions the reference puts here, in the same arrangement.
+                Row(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
-                        Modifier.size(46.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                        Modifier.weight(1f).height(46.dp)
+                            .clip(RoundedCornerShape(50))
                             .background(if (lockedNow || lockedTimed) Nova.Danger else Nova.Accent)
                             .clickable { lockSheet = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            if (lockedNow || lockedTimed) Icons.Filled.LockOpen else Icons.Filled.Lock,
-                            if (lockedNow || lockedTimed) "Entsperren" else "Sperren",
-                            tint = if (lockedNow || lockedTimed) Color.White else Nova.Primary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (lockedNow || lockedTimed) Icons.Filled.LockOpen
+                                else Icons.Filled.Lock,
+                                null,
+                                tint = if (lockedNow || lockedTimed) Color.White else Nova.Primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (lockedNow || lockedTimed) "Entsperren" else "Sperren",
+                                fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                color = if (lockedNow || lockedTimed) Color.White else Nova.Primary
+                            )
+                        }
                     }
                     Box(
-                        Modifier.weight(1f).height(46.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                        Modifier.size(46.dp)
+                            .clip(CircleShape)
                             .background(if (bonusRunning) Nova.Success else Nova.Accent)
                             .clickable { bonusSheet = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            if (bonusRunning)
-                                "Bonuszeit · ${TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())}"
-                            else "Bonuszeit",
-                            fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                            color = if (bonusRunning) Color.White else Nova.Primary
+                        Icon(
+                            Icons.Filled.MoreTime, "Bonuszeit",
+                            tint = if (bonusRunning) Color.White else Nova.Primary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
                 if (screenLockLeft > 0) {
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         "Display gesperrt — noch ${TimeFmt.hm(screenLockLeft)}",
-                        fontSize = 12.sp, color = Nova.Danger
+                        fontSize = 12.sp, color = Nova.Danger,
+                        modifier = Modifier.padding(start = 18.dp, bottom = 14.dp)
                     )
                 }
             }
@@ -1691,10 +1701,15 @@ private fun ParentDashboard(
             NovaDivider()
             NovaRow(
                 title = "Ruhezeit",
-                subtitle = if (prefs.bedtimeEnabled)
-                    "${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
-                else "Deaktiviert",
-                icon = Icons.Filled.CalendarMonth,
+                subtitle = when {
+                    bedtimeNow -> "Läuft · bis ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
+                    prefs.bedtimeEnabled ->
+                        "${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
+                    else -> "Deaktiviert"
+                },
+                icon = Icons.Filled.Bedtime,
+                // Red while it is actually running, as in the reference.
+                iconTint = if (bedtimeNow) Nova.Danger else Nova.Primary,
                 onClick = { onOpenGroup("plaene") }
             )
         }

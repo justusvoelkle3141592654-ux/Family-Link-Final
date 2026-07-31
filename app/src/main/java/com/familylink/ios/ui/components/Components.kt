@@ -114,6 +114,8 @@ fun NovaRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     icon: ImageVector? = null,
+    /** The reference colours a row's glyph by state — red while downtime is running. */
+    iconTint: Color = Nova.Primary,
     onClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {}
 ) {
@@ -128,10 +130,11 @@ fun NovaRow(
     ) {
         if (icon != null) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).background(Nova.Accent),
+                Modifier.size(40.dp).clip(CircleShape)
+                    .background(if (iconTint == Nova.Primary) Nova.Accent else iconTint.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(20.dp))
+                Icon(icon, null, tint = iconTint, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(16.dp))
         }
@@ -143,6 +146,69 @@ fun NovaRow(
             }
         }
         trailing()
+    }
+}
+
+/**
+ * The card the reference builds its settings out of.
+ *
+ * Its top line carries the glyph on a tinted disc and, on the far right, whatever controls the
+ * feature — a switch or a chevron. The name and the sentence explaining it sit underneath,
+ * across the full width, and only then come the rows. Nothing is squeezed onto one line.
+ *
+ * [content] is drawn only when [expanded]; a feature that is switched off collapses to its
+ * header, exactly as it does in the reference.
+ */
+@Composable
+fun NovaFeatureCard(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    tint: Color = Nova.Primary,
+    expanded: Boolean = true,
+    control: @Composable () -> Unit = {},
+    content: @Composable () -> Unit = {}
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+            .background(Nova.Surface)
+    ) {
+        Column {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).background(tint.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    control()
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                if (description.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(description, fontSize = 14.sp, color = Nova.InkMuted, lineHeight = 19.sp)
+                }
+            }
+            if (expanded) content()
+        }
+    }
+}
+
+/** A row that states a value rather than offering a control: "Heute — 1 Std 30 Min". */
+@Composable
+fun NovaValueRow(label: String, value: String, valueColor: Color = Nova.Ink) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 15.sp, color = Nova.Ink, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 15.sp, color = valueColor)
     }
 }
 
