@@ -358,12 +358,15 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
             onCancel = { route = Route.ChildFocus }
         )
 
-        // Display lock triggered from the child's own Fokus screen: the same family PIN set
-        // during setup, so a sibling cannot lock the display (or burn the weekly ration) alone.
+        // Display lock triggered from the child's own Fokus screen: guarded by the child's own
+        // PIN (not the family/parent one), so a sibling who grabs the phone cannot lock it. The
+        // first-ever use doubles as setup — the code chosen there is what future taps verify
+        // against. Unrationed on purpose: the child is choosing this for themselves, so none of
+        // the weekly caps a parent-triggered lock enforces apply here.
         Route.ChildDisplayLockPin -> PinScreen(
-            mode = PinMode.VERIFY,
+            mode = if (prefs.isChildLockPinSet) PinMode.CHILD_LOCK_VERIFY else PinMode.CHILD_LOCK_SET,
             onSuccess = {
-                prefs.startScreenLock(pendingDisplayLockMinutes)
+                prefs.startScreenLockUnrationed(pendingDisplayLockMinutes)
                 MonitorService.recheck(context)
                 SyncService.pushNow(context)
                 route = Route.ChildFocus

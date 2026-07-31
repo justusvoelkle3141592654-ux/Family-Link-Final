@@ -24,6 +24,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_OFFLINE_LOCK_MIN = "offline_lock_minutes"
         private const val K_SECURE_PIN_HASH = "secure_pin_hash"   // longer parent PIN
         private const val K_SECURE_PIN_SALT = "secure_pin_salt"
+        private const val K_CHILD_LOCK_PIN_HASH = "child_lock_pin_hash"   // the child's own PIN
+        private const val K_CHILD_LOCK_PIN_SALT = "child_lock_pin_salt"
         private const val K_GLOBAL_LIMIT_MIN = "global_limit_min"
         private const val K_BEDTIME_START = "bedtime_start_min"   // minutes since midnight
         private const val K_BEDTIME_END = "bedtime_end_min"
@@ -102,6 +104,8 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         /** From this many ignored attempts on, the screen is locked every single time. */
         const val HARDCAP_LOCK_ALWAYS_FROM = 3
         const val SECURE_PIN_MIN_LEN = 6
+        /** Short on purpose: the child chooses and remembers this one themselves. */
+        const val CHILD_LOCK_PIN_LEN = 4
         const val OWN_PKG = "com.familylink.ios"
 
         @Volatile private var instance: Prefs? = null
@@ -184,6 +188,28 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     fun checkSecurePin(pin: String): Boolean {
         val salt = sp.getString(K_SECURE_PIN_SALT, null) ?: return false
         val stored = sp.getString(K_SECURE_PIN_HASH, null) ?: return false
+        return stored == hash(pin, salt)
+    }
+
+    // ---- Child's own lock PIN -----------------------------------------------
+    //
+    // Deliberately NOT the family/parent PIN. This one belongs to the child alone, chosen the
+    // first time they use the self-service display lock, and its only job is keeping a sibling
+    // who picks up the phone from triggering the lock in the child's name.
+
+    val isChildLockPinSet: Boolean get() = sp.contains(K_CHILD_LOCK_PIN_HASH)
+
+    fun setChildLockPin(pin: String) {
+        val salt = System.nanoTime().toString()
+        sp.edit()
+            .putString(K_CHILD_LOCK_PIN_SALT, salt)
+            .putString(K_CHILD_LOCK_PIN_HASH, hash(pin, salt))
+            .apply()
+    }
+
+    fun checkChildLockPin(pin: String): Boolean {
+        val salt = sp.getString(K_CHILD_LOCK_PIN_SALT, null) ?: return false
+        val stored = sp.getString(K_CHILD_LOCK_PIN_HASH, null) ?: return false
         return stored == hash(pin, salt)
     }
 
@@ -599,6 +625,17 @@ class Prefs private constructor(private val sp: SharedPreferences) {
                 sp.edit().putInt(K_SCREENLOCK_SIXHOUR_COUNT, sp.getInt(K_SCREENLOCK_SIXHOUR_COUNT, 0) + 1).apply()
             }
         }
+        screenLockUntil = System.currentTimeMillis() + m * 60_000L
+    }
+
+    /**
+     * Self-service version for the child's own "Handy weglegen" screen: locking the display is
+     * something the child chooses to do to themselves, not a restriction rationed out against
+     * them, so none of the weekly caps [startScreenLock] enforces apply here — only the same
+     * absolute ceiling, so a mis-tap still cannot lock the phone forever.
+     */
+    fun startScreenLockUnrationed(minutes: Int) {
+        val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
         screenLockUntil = System.currentTimeMillis() + m * 60_000L
     }
 

@@ -15,11 +15,15 @@ import androidx.compose.ui.platform.LocalContext
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.ui.components.PinPad
 
-enum class PinMode { VERIFY, SET }
+enum class PinMode { VERIFY, SET, CHILD_LOCK_VERIFY, CHILD_LOCK_SET }
 
 /**
  * PIN gate. In SET mode the parent enters a new 4-digit code twice; in VERIFY mode the entered
  * code is checked against the stored hash.
+ *
+ * CHILD_LOCK_SET / CHILD_LOCK_VERIFY are a separate, shorter code the child chooses for
+ * themselves — not the family/parent PIN above. It only guards the child's self-service display
+ * lock, so a sibling who picks up the phone cannot trigger it in the child's name.
  */
 @Composable
 fun PinScreen(
@@ -34,8 +38,9 @@ fun PinScreen(
     var firstEntry by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf(false) }
 
-    // Longer PIN for the parent portal — 6 digits.
-    val length = 6
+    val isChildLockMode = mode == PinMode.CHILD_LOCK_SET || mode == PinMode.CHILD_LOCK_VERIFY
+    // Longer PIN for the parent portal — 6 digits. The child's own lock PIN is shorter.
+    val length = if (isChildLockMode) Prefs.CHILD_LOCK_PIN_LEN else 6
 
     fun submit(code: String) {
         when (mode) {
@@ -57,18 +62,41 @@ fun PinScreen(
                     entered = ""
                 }
             }
+            PinMode.CHILD_LOCK_VERIFY -> {
+                if (prefs.checkChildLockPin(code)) onSuccess()
+                else { error = true; entered = "" }
+            }
+            PinMode.CHILD_LOCK_SET -> {
+                val first = firstEntry
+                if (first == null) {
+                    firstEntry = code
+                    entered = ""
+                } else if (first == code) {
+                    prefs.setChildLockPin(code)
+                    onSuccess()
+                } else {
+                    error = true
+                    firstEntry = null
+                    entered = ""
+                }
+            }
         }
     }
 
     val title = when {
         mode == PinMode.SET && firstEntry == null -> "Neue PIN festlegen"
         mode == PinMode.SET -> "PIN bestätigen"
+        mode == PinMode.CHILD_LOCK_SET && firstEntry == null -> "Deine eigene Sperr-PIN"
+        mode == PinMode.CHILD_LOCK_SET -> "PIN bestätigen"
+        mode == PinMode.CHILD_LOCK_VERIFY -> "Deine Sperr-PIN"
         else -> "PIN eingeben"
     }
     val subtitle = when {
-        error && mode == PinMode.SET -> "Codes stimmen nicht überein"
+        error && (mode == PinMode.SET || mode == PinMode.CHILD_LOCK_SET) -> "Codes stimmen nicht überein"
         error -> "Falsche PIN"
         mode == PinMode.SET -> "6-stelligen Code wählen"
+        mode == PinMode.CHILD_LOCK_SET -> "4-stelligen Code wählen, den nur du kennst"
+        mode == PinMode.CHILD_LOCK_VERIFY -> "Schützt davor, dass andere sie auslösen"
         else -> "Eltern-Zugang"
     }
 

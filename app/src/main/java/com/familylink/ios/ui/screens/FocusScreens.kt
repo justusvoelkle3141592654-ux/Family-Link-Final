@@ -249,8 +249,10 @@ fun FocusScreen(onBack: () -> Unit) {
  * would not help anyone put their phone away; the countdown running out ends it by itself.
  *
  * The display-lock section below is a separate, independent action — it switches the screen off
- * right away instead of starting a timed session. It needs the parent PIN too: without it, any
- * kid holding the phone could trigger it (or burn through the weekly 1h/6h ration) on a whim.
+ * right away instead of starting a timed session, and is unrationed: the child is choosing it
+ * for themselves, not having it imposed, so none of the weekly 1h/6h caps apply. It is still PIN
+ * gated, but with the child's own PIN rather than the parent's — chosen on first use — so a
+ * sibling who picks up the phone cannot trigger it in the child's name.
  */
 @Composable
 fun ChildFocusScreen(
@@ -294,14 +296,15 @@ fun ChildFocusScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        // Independent of the timed session below: switches the display off right away.
-        // Protected by the parent PIN, set once during initial setup.
+        // Independent of the timed session below: switches the display off right away. Guarded
+        // by the child's own PIN, not the parent's — and unrationed, since this is the child
+        // choosing it for themselves, as often as they like.
         NovaCard {
             Column(Modifier.padding(16.dp)) {
                 Text("Display sofort sperren", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "Schaltet den Bildschirm aus. Braucht die Eltern-PIN.",
+                    "So oft du willst. Nur deine eigene PIN kennt sie.",
                     fontSize = 12.sp, color = Nova.InkMuted
                 )
                 Spacer(Modifier.height(12.dp))
@@ -310,21 +313,13 @@ fun ChildFocusScreen(
                         DisplayLockChip("${m}m", Modifier.weight(1f)) { onRequestDisplayLock(m) }
                     }
                 }
-                val hourLeft = prefs.screenLockHourUsesLeft
-                val sixHourLeft = prefs.screenLockSixHourUsesLeft
-                if (hourLeft > 0 || sixHourLeft > 0) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (hourLeft > 0) {
-                            DisplayLockChip("1h · ${hourLeft}×", Modifier.weight(1f)) {
-                                onRequestDisplayLock(Prefs.SCREEN_LOCK_HOUR_MIN)
-                            }
-                        }
-                        if (sixHourLeft > 0) {
-                            DisplayLockChip("6h · ${sixHourLeft}×", Modifier.weight(1f)) {
-                                onRequestDisplayLock(Prefs.SCREEN_LOCK_SIXHOUR_MIN)
-                            }
-                        }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DisplayLockChip("1h", Modifier.weight(1f)) {
+                        onRequestDisplayLock(Prefs.SCREEN_LOCK_HOUR_MIN)
+                    }
+                    DisplayLockChip("6h", Modifier.weight(1f)) {
+                        onRequestDisplayLock(Prefs.SCREEN_LOCK_SIXHOUR_MIN)
                     }
                 }
             }
