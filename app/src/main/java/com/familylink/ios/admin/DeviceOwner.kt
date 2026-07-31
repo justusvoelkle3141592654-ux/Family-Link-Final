@@ -39,13 +39,17 @@ object DeviceOwner {
         val admin = DeviceAdmin.componentName(context)
 
         // --- block the classic escape routes -----------------------------
+        //
+        // DISALLOW_INSTALL_UNKNOWN_SOURCES is deliberately left out: it would also block
+        // sideloading a new build of this app itself over the old one, which is exactly how
+        // updates are delivered here (no store, no auto-update). Nothing else in this list
+        // depends on it — uninstalling, force-stopping and the rest are blocked on their own.
         val restrictions = listOf(
             UserManager.DISALLOW_SAFE_BOOT,          // no safe-mode reboot
-            UserManager.DISALLOW_ADD_USER,           // no second user
+            UserManager.DISALLOW_ADD_USER,           // no second user, no guest profile
             UserManager.DISALLOW_FACTORY_RESET,      // no reset from settings
             UserManager.DISALLOW_APPS_CONTROL,       // no force-stop / clear-data on apps
             UserManager.DISALLOW_UNINSTALL_APPS,     // no uninstalling anything
-            UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
             UserManager.DISALLOW_CONFIG_CREDENTIALS,
             UserManager.DISALLOW_DEBUGGING_FEATURES  // no ADB tricks
         )
@@ -85,7 +89,6 @@ object DeviceOwner {
             UserManager.DISALLOW_FACTORY_RESET,
             UserManager.DISALLOW_APPS_CONTROL,
             UserManager.DISALLOW_UNINSTALL_APPS,
-            UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
             UserManager.DISALLOW_CONFIG_CREDENTIALS,
             UserManager.DISALLOW_DEBUGGING_FEATURES,
             UserManager.DISALLOW_ADD_MANAGED_PROFILE,
