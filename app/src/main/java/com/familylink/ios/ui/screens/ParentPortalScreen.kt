@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.CloudOff
@@ -211,9 +212,9 @@ fun ParentPortalScreen(
         Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
             when (tab) {
                 1 -> SettingsList(onPick = { group -> settingsGroup = group; showSettings = true })
-                // Chores stay inside the shell: opening a separate page would take the bottom
-                // bar away, and then sliding across to another tab is no longer possible.
-                2 -> ChoresParentScreen(onBack = { tab = 0 }, embedded = true)
+                // The third destination is the report: today in full and the week behind it.
+                // Chores moved into the settings, where the rest of the setup lives.
+                2 -> UsageDetailScreen(prefs = prefs, remote = remote, used = used, limit = limit)
                 else -> ParentDashboard(
                     prefs = prefs,
                     remote = remote,
@@ -241,7 +242,7 @@ fun ParentPortalScreen(
                         v++
                     },
                     onOpenChores = onOpenChores,
-                    onOpenDetails = { showDetails = true },
+                    onOpenDetails = { tab = 2 },
                     onExit = onExit
                 )
             }
@@ -1216,7 +1217,56 @@ private fun UsageDetailScreen(
             .padding(16.dp)
     ) {
         Spacer(Modifier.height(8.dp))
-        Text("Nutzung im Detail", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Text("Bericht", fontSize = 28.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Text("Heute im Detail und die Woche davor", fontSize = 13.sp, color = Nova.InkMuted)
+
+        // ---- the week, as bars, before the detail of today ----
+        // The parent phone measures nothing itself, so its own history would be a flat
+        // line of zeroes. The child's seven days come up with the status.
+        val history = remote?.weekHistory?.takeIf { it.isNotEmpty() }
+            ?: if (prefs.isParentDevice) emptyList() else prefs.getWeekHistory()
+        if (history.isNotEmpty()) {
+            val dayLimit = prefs.globalLimitMinutes * 60
+            val peak = (history.maxOfOrNull { it.second } ?: 1)
+                .coerceAtLeast(dayLimit).coerceAtLeast(1)
+            Spacer(Modifier.height(16.dp))
+            SectionHeader("Wochenbericht")
+            NovaCard {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().height(120.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        history.forEach { (day, seconds) ->
+                            val over = dayLimit > 0 && seconds > dayLimit
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    TimeFmt.hm(seconds), fontSize = 10.sp,
+                                    color = if (over) Nova.Danger else Nova.InkFaint
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Box(
+                                    Modifier.width(22.dp)
+                                        .height((8 + 78 * seconds / peak).dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (over) Nova.Danger else Nova.Primary)
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(day, fontSize = 11.sp, color = Nova.InkMuted)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    val week = history.sumOf { it.second }
+                    Text(
+                        "Diese Woche ${TimeFmt.hm(week)} · Schnitt " +
+                            TimeFmt.hm(week / history.size.coerceAtLeast(1)) + " pro Tag",
+                        fontSize = 13.sp, color = Nova.InkMuted
+                    )
+                }
+            }
+        }
 
         if (remote == null) {
             Spacer(Modifier.height(20.dp))
@@ -1372,7 +1422,7 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit, modifier: Modifier 
     val items = listOf(
         Triple(0, "Bildschirmzeit", Icons.Filled.BarChart),
         Triple(1, "Einstellungen", Icons.Filled.Person),
-        Triple(2, "Aufgaben", Icons.Filled.CheckCircle)
+        Triple(2, "Bericht", Icons.Filled.Insights)
     )
     Column(modifier.fillMaxWidth().background(Nova.Surface)) {
         // Hairline above the bar so it reads as a separate surface on a white card below it.
@@ -1606,7 +1656,7 @@ private fun ParentDashboard(
         Spacer(Modifier.height(14.dp))
 
         // ---- the device, with the one number that matters ----
-        NovaCard {
+        NovaCard(modifier = Modifier.clickable { onOpenDetails() }) {
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ChildAvatar(prefs, 42)
@@ -1636,6 +1686,30 @@ private fun ParentDashboard(
 
                 Spacer(Modifier.height(16.dp))
 
+                // ---- the screen time, with the three apps that made it ----
+                //
+                // The whole phone's time today, the way the reference leads with it, and beside
+                // it the three apps that took the most of it. The card as a whole opens the
+                // report, so no list is needed on the overview itself.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            TimeFmt.hm(remote?.totalDeviceSeconds ?: 0),
+                            fontSize = 34.sp, fontWeight = FontWeight.Normal, color = Nova.Ink
+                        )
+                        Text("Bildschirmzeit heute", fontSize = 13.sp, color = Nova.InkMuted)
+                    }
+                    val topThree = remote?.perAppSeconds.orEmpty()
+                        .entries.sortedByDescending { it.value }.take(3)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        topThree.forEach { (pkg, _) ->
+                            AppGlyph(pkg, remote?.perAppLabels?.get(pkg) ?: pkg)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+
                 // The headline number: a running bonus countdown replaces it while it lasts.
                 val bedtimeNow = remote?.bedtimeActive == true
                 Text(
@@ -1645,7 +1719,7 @@ private fun ParentDashboard(
                         bedtimeNow -> "Ruhezeit"
                         else -> TimeFmt.hm(remaining)
                     },
-                    fontSize = 40.sp, fontWeight = FontWeight.Normal,
+                    fontSize = 26.sp, fontWeight = FontWeight.Medium,
                     color = when {
                         lockedNow || lockedTimed -> Nova.Danger
                         bonusRunning -> Nova.Success
@@ -1835,24 +1909,6 @@ private fun ParentDashboard(
             }
         }
 
-        // ---- the three apps that took the most time ----
-        val top = remote?.perAppSeconds.orEmpty().entries.sortedByDescending { it.value }.take(3)
-        if (top.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            NovaCard {
-                Column(Modifier.padding(vertical = 4.dp)) {
-                    top.forEachIndexed { i, (pkg, secs) ->
-                        if (i > 0) NovaDivider()
-                        NovaRow(
-                            title = remote?.perAppLabels?.get(pkg) ?: pkg,
-                            subtitle = TimeFmt.hm(secs),
-                            onClick = { onOpenDetails() }
-                        )
-                    }
-                }
-            }
-        }
-
         Spacer(Modifier.height(100.dp))
     }
 
@@ -1868,6 +1924,30 @@ private fun ParentDashboard(
             onUnlock = { onUnlock(); lockSheet = false },
             onReleaseScreen = { onReleaseScreen(); lockSheet = false }
         )
+    }
+}
+
+/**
+ * One app's icon. The parent's phone does not have the child's apps installed, so there is
+ * usually no icon to draw — the first letter on a tinted disc stands in for it there.
+ */
+@Composable
+private fun AppGlyph(pkg: String, label: String) {
+    val context = LocalContext.current
+    val icon = remember(pkg) { InstalledApps.iconBitmap(context, pkg) }
+    Box(
+        Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Nova.Fill),
+        contentAlignment = Alignment.Center
+    ) {
+        if (icon != null) {
+            androidx.compose.foundation.Image(
+                bitmap = icon.asImageBitmap(), contentDescription = label,
+                modifier = Modifier.size(30.dp)
+            )
+        } else {
+            Text(label.take(1).uppercase(), fontSize = 14.sp,
+                fontWeight = FontWeight.Medium, color = Nova.InkMuted)
+        }
     }
 }
 

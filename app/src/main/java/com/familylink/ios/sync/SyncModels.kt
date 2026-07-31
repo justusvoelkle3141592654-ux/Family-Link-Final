@@ -230,6 +230,8 @@ data class ChildStatus(
     /** Counted and whole-device time so far this week, today included. */
     val weekCountedSeconds: Int = 0,
     val weekTotalSeconds: Int = 0,
+    /** The last seven days as (weekday, seconds) — the parent draws the report from it. */
+    val weekHistory: List<Pair<String, Int>> = emptyList(),
     val perAppSeconds: Map<String, Int>,
     val perAppLabels: Map<String, String>,
     val blockedToday: List<String>,
@@ -256,6 +258,11 @@ data class ChildStatus(
         put("bonusSeconds", bonusSeconds)
         put("weekCountedSeconds", weekCountedSeconds)
         put("weekTotalSeconds", weekTotalSeconds)
+        put("history", JSONArray().also { arr ->
+            weekHistory.forEach { (day, secs) ->
+                arr.put(JSONObject().put(Keys.NAME, day).put(Keys.SECONDS, secs))
+            }
+        })
         put("focusLabel", focusLabel)
         put("batteryPercent", batteryPercent)
         put("bedtimeActive", bedtimeActive)
@@ -314,6 +321,13 @@ data class ChildStatus(
                 bonusSeconds = o.optInt("bonusSeconds", 0),
                 weekCountedSeconds = o.optInt("weekCountedSeconds", 0),
                 weekTotalSeconds = o.optInt("weekTotalSeconds", 0),
+                weekHistory = o.optJSONArray("history")?.let { arr ->
+                    (0 until arr.length()).mapNotNull { i ->
+                        arr.optJSONObject(i)?.let {
+                            it.optString(Keys.NAME, "") to it.optInt(Keys.SECONDS, 0)
+                        }
+                    }
+                }.orEmpty(),
                 perAppSeconds = usage,
                 perAppLabels = labels,
                 blockedToday = blocked,

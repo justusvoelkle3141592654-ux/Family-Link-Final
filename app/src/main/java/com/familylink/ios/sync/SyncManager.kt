@@ -345,6 +345,7 @@ class SyncManager(private val context: Context) {
             streakPenaltyMinutes = streak.penaltyMinutesToday,
             weekCountedSeconds = prefs.weekCountedSeconds(),
             weekTotalSeconds = prefs.weekTotalSeconds(),
+            weekHistory = runCatching { prefs.getWeekHistory() }.getOrDefault(emptyList()),
             perAppSeconds = usage,
             perAppLabels = labels,
             blockedToday = prefs.getBlockedToday().keys.toList(),
