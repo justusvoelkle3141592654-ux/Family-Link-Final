@@ -285,14 +285,13 @@ class MonitorService : Service() {
             bedtime = isBedtimeNow
         )
 
-        // Device owner: hide the Settings app outright unless the parent released it.
-        // (Falls back to the bounce-and-overlay behaviour when not device owner.)
-        val settingsShouldHide = !prefs.settingsUnlocked()
-        if (settingsShouldHide != lastSettingsHidden) {
-            lastSettingsHidden = settingsShouldHide
-            runCatching {
-                com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, settingsShouldHide)
-            }
+        // Settings is generally reachable now — only the screens that name this app
+        // specifically (accessibility toggle, overlay permission, device-admin entry) are
+        // still guarded, by the accessibility service. Lift a hide left over from an earlier
+        // hard lock the moment that lock ends.
+        if (lastSettingsHidden != false) {
+            lastSettingsHidden = false
+            runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, false) }
         }
 
         // Focus mode: take the apps the session does not allow off the launcher entirely, so
@@ -328,18 +327,12 @@ class MonitorService : Service() {
             decision is LockDecision.HardCapReached ||
             decision is LockDecision.ManualLock
         if (!blocksEverything) {
-            when (decision) {
-                // Settings is blocked directly (it is not a "managed" launchable app).
-                is LockDecision.SettingsBlocked -> { /* fall through to block */ }
-                else -> {
-                    // Daytime limit blocks: launcher stays free and only real launchable apps
-                    // count. "Launchable" is checked live as well as from the cached list —
-                    // a cloned app appears under a package we have never seen, and skipping
-                    // everything unknown let exactly those through.
-                    if (engine.isForegroundExempt(pkg)) return
-                    if (!isBlockableApp(pkg)) return
-                }
-            }
+            // Daytime limit blocks: launcher stays free and only real launchable apps count.
+            // "Launchable" is checked live as well as from the cached list — a cloned app
+            // appears under a package we have never seen, and skipping everything unknown let
+            // exactly those through.
+            if (engine.isForegroundExempt(pkg)) return
+            if (!isBlockableApp(pkg)) return
         }
         // Bedtime: block EVERYTHING that is not always-exempt (launcher, PLUS apps, settings, …).
 
@@ -403,7 +396,6 @@ class MonitorService : Service() {
      * covered. Only real, launchable apps — never the launcher, the phone or our own screens.
      */
     private fun suspendBlocked(pkg: String, decision: LockDecision) {
-        if (decision is LockDecision.SettingsBlocked) return   // settings is hidden, not suspended
         if (engine.isForegroundExempt(pkg)) return
         // Live check, not just the cached list: a cloned app carries a package name we have
         // never categorised, and testing against the cache alone let exactly those keep running.
@@ -509,8 +501,6 @@ class MonitorService : Service() {
             "App-Limit erreicht" to "Genutzt: ${TimeFmt.hm(decision.usedSeconds)} von ${TimeFmt.hm(decision.limitSeconds)}."
         is LockDecision.AppBlocked ->
             "App gesperrt" to "Diese App ist dauerhaft gesperrt."
-        is LockDecision.SettingsBlocked ->
-            "Einstellungen gesperrt" to "Die Systemeinstellungen sind gesperrt. Freigabe über das Eltern-Portal."
         is LockDecision.FocusActive ->
             "Fokus: ${decision.label}" to "Noch ${TimeFmt.hm(decision.remainingSeconds)} — nur Fokus-Apps sind erlaubt."
         is LockDecision.ManualLock ->
