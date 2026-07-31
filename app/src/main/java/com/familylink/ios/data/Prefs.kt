@@ -626,6 +626,79 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() { ensureToday(); return sp.getInt(K_TOTAL_USED, 0) }
         set(v) { ensureToday(); sp.edit().putInt(K_TOTAL_USED, v.coerceAtLeast(0)).apply() }
 
+    // ---- Personal: whose phone this is, and how it looks -------------------
+    //
+    // The reference greets the parent with the child's name and picture rather than with the
+    // word "device". Name and colour travel to the child's phone with the rules; the picture
+    // stays on the phone that chose it, because a photo has no business on a sync server.
+
+    var childName: String
+        get() = sp.getString("child_name", "") ?: ""
+        set(v) = sp.edit().putString("child_name", v.trim().take(24)).apply()
+
+    /** BLUE, GREEN, PURPLE or ORANGE — the accent the whole app is drawn in. */
+    var accentChoice: String
+        get() = sp.getString("accent_choice", "BLUE") ?: "BLUE"
+        set(v) = sp.edit().putString("accent_choice", v).apply()
+
+    var childPhotoUri: String
+        get() = sp.getString("child_photo", "") ?: ""
+        set(v) = sp.edit().putString("child_photo", v).apply()
+
+    /** The three amounts offered as buttons for bonus time. */
+    var bonusPresets: List<Int>
+        get() = (sp.getString("bonus_presets", "10,20,45") ?: "10,20,45")
+            .split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it > 0 }
+            .ifEmpty { listOf(10, 20, 45) }
+        set(v) = sp.edit()
+            .putString("bonus_presets", v.map { it.coerceIn(1, 240) }.joinToString(","))
+            .apply()
+
+    // ---- What happened: the bell's feed ------------------------------------
+    //
+    // The same events the parent can be notified about, kept as a short list so they can be
+    // read back later. A notification is gone the moment it is swiped away; this is not.
+
+    data class Event(val type: String, val title: String, val text: String, val at: Long)
+
+    fun addEvent(type: String, title: String, text: String) {
+        val arr = runCatching { org.json.JSONArray(sp.getString("events_json", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        val out = org.json.JSONArray()
+        out.put(
+            JSONObject().put("t", type).put("h", title).put("x", text)
+                .put("a", System.currentTimeMillis())
+        )
+        // Keep the newest forty; the tail is history nobody scrolls to.
+        for (i in 0 until minOf(arr.length(), 39)) out.put(arr.get(i))
+        sp.edit()
+            .putString("events_json", out.toString())
+            .putInt("events_unread", sp.getInt("events_unread", 0) + 1)
+            .apply()
+    }
+
+    fun events(): List<Event> {
+        val arr = runCatching { org.json.JSONArray(sp.getString("events_json", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        val out = ArrayList<Event>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(
+                Event(
+                    type = o.optString("t", ""),
+                    title = o.optString("h", ""),
+                    text = o.optString("x", ""),
+                    at = o.optLong("a", 0)
+                )
+            )
+        }
+        return out
+    }
+
+    fun unreadEventCount(): Int = sp.getInt("events_unread", 0)
+
+    fun markEventsRead() = sp.edit().putInt("events_unread", 0).apply()
+
     // ---- Streak: days in a row inside the daily budget ---------------------
     //
     // Storage only. Every rule lives in [StreakLogic], which knows nothing about Android and is

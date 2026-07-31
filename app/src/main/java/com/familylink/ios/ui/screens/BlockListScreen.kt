@@ -135,7 +135,7 @@ fun BlockListScreen(
                 Nova.Success
             ) { showPlus = true }
             Spacer(Modifier.height(12.dp))
-            BigButton("Verlängerung", Nova.Primary) { onExtend() }
+            BigButton("Bonuszeit", Nova.Primary) { onExtend() }
             Spacer(Modifier.height(24.dp))
         }
 

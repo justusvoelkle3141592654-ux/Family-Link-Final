@@ -129,6 +129,8 @@ class LimitEngine(private val prefs: Prefs) {
      */
     fun sealedReason(usage: Map<String, Int>): LockDecision? {
         if (prefs.manualLockEnabled) return LockDecision.ManualLock(prefs.manualLockReason)
+        // Bonus time opens the device completely while it runs — see decide().
+        if (prefs.bonusCountdownActive()) return null
         if (prefs.isBedtime()) return LockDecision.Bedtime
         if (prefs.offlineLockDue()) return LockDecision.OfflineLock(prefs.offlineSeconds())
 
@@ -195,6 +197,11 @@ class LimitEngine(private val prefs: Prefs) {
             return LockDecision.ManualLock(prefs.manualLockReason)
         }
 
+        // Granted bonus time is free time, and it outranks everything the clock says — the
+        // Ruhezeit included. The parent handed out those minutes knowing the time of day. Only
+        // a manual lock stays above it, being just as deliberate and more recent.
+        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
+
         if (prefs.isBedtime()) return LockDecision.Bedtime
 
         // Out of touch with the family for too long. Ranked this high because being unreachable
@@ -204,15 +211,6 @@ class LimitEngine(private val prefs: Prefs) {
             if (isAlwaysExempt(pkg)) return LockDecision.Allowed
             return LockDecision.OfflineLock(prefs.offlineSeconds())
         }
-
-        // Granted bonus time is free time, and it outranks the ceiling.
-        //
-        // It is not a hole in the ceiling: the same grant raises the ceiling by exactly the
-        // minutes handed out (see bonusSecondsToday below), so the time spent during the
-        // countdown is paid for in advance rather than taken off the child afterwards. Five
-        // minutes of bonus means five more minutes of Gesamtlimit — and when they are up, the
-        // ceiling closes again on its own.
-        if (prefs.bonusCountdownActive()) return LockDecision.Allowed
 
         // The absolute ceiling across ALL apps. Deliberately checked this early: neither the
         // off-button nor the Plus category ever lifts it. Only the phone and emergency

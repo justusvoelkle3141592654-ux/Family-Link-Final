@@ -39,6 +39,8 @@ class SyncManager(private val context: Context) {
             bedtimeEndMin = prefs.bedtimeEndMin,
             offlineLockEnabled = prefs.offlineLockEnabled,
             streakEnabled = prefs.streakEnabled,
+            childName = prefs.childName,
+            accentChoice = prefs.accentChoice,
             streakPenaltyMinutes = prefs.streakPenaltyMinutes,
             offlineLockMinutes = prefs.offlineLockMinutes,
             bonusMinutes = prefs.bonusSecondsToday / 60,
@@ -109,8 +111,24 @@ class SyncManager(private val context: Context) {
      * Parent: hand out more time, either as an extension of the limits or as a free countdown.
      * Returns the minutes actually granted after the daily allowance.
      */
-    fun grantTime(minutes: Int, asBonusCountdown: Boolean): Int =
-        if (asBonusCountdown) prefs.grantBonusCountdown(minutes) else prefs.grantExtension(minutes)
+    /**
+     * Give the child time. Always a countdown now: bonus time is a window in which everything is
+     * open, and it ends on the clock. Zero minutes ends a running one early.
+     */
+    fun grantTime(minutes: Int, asBonusCountdown: Boolean = true): Int {
+        if (minutes <= 0) {
+            prefs.stopBonusCountdown()
+            pushConfigAsync()
+            return 0
+        }
+        val given = prefs.grantBonusCountdown(minutes)
+        pushConfigAsync()
+        return given
+    }
+
+    private fun pushConfigAsync() {
+        kotlin.concurrent.thread(isDaemon = true) { runCatching { pushConfig() } }
+    }
 
     fun unlockDevice() {
         prefs.manualLockEnabled = false
@@ -446,6 +464,8 @@ class SyncManager(private val context: Context) {
         prefs.bedtimeEndMin = cfg.bedtimeEndMin
         prefs.offlineLockEnabled = cfg.offlineLockEnabled
         prefs.streakEnabled = cfg.streakEnabled
+        if (cfg.childName.isNotBlank()) prefs.childName = cfg.childName
+        prefs.accentChoice = cfg.accentChoice
         prefs.streakPenaltyMinutes = cfg.streakPenaltyMinutes
         prefs.offlineLockMinutes = cfg.offlineLockMinutes
         prefs.setBonusMinutesAbsolute(cfg.bonusMinutes)

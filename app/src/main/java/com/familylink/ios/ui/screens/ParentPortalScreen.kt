@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -30,7 +31,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -47,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -166,6 +170,7 @@ fun ParentPortalScreen(
     // never faces the whole endless list at once.
     var settingsGroup by remember { mutableStateOf<String?>(null) }
     var showDetails by remember { mutableStateOf(false) }
+    var showEvents by remember { mutableStateOf(false) }
     /** 0 = Bildschirmzeit, 1 = Einstellungen, 2 = Aufgaben. */
     var tab by remember { mutableStateOf(0) }
 
@@ -178,6 +183,7 @@ fun ParentPortalScreen(
      */
     androidx.activity.compose.BackHandler(enabled = prefs.isParentDevice) {
         when {
+            showEvents -> showEvents = false
             settingsGroup != null -> { settingsGroup = null; showSettings = false; tab = 1 }
             showDetails -> showDetails = false
             tab != 0 -> tab = 0
@@ -218,6 +224,7 @@ fun ParentPortalScreen(
                     onRefresh = { refreshNow() },
                     onOpenMenu = { tab = 1 },
                     onOpenGroup = { group -> settingsGroup = group; showSettings = true; tab = 1 },
+                    onOpenEvents = { showEvents = true },
                     onGrant = { minutes, asBonus -> sync.grantTime(minutes, asBonus); v++ },
                     onDecideRequest = { req, approve ->
                         thread(isDaemon = true) { sync.decideRequest(req, approve) }
@@ -244,6 +251,11 @@ fun ParentPortalScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+        return
+    }
+
+    if (prefs.isParentDevice && showEvents) {
+        EventsScreen(prefs)
         return
     }
 
@@ -540,7 +552,7 @@ fun ParentPortalScreen(
             NovaRow(
                 title = "Gesamtlimit aktiv",
                 subtitle = "Zählt jede App mit — auch Plus. Der Aus-Knopf hebt es nicht auf; " +
-                    "eine Verlängerung hebt es um genau die geschenkte Zeit an."
+                    "Bonuszeit öffnet es, solange sie läuft."
             ) {
                 NovaSwitch(checked = prefs.hardCapEnabled) { prefs.hardCapEnabled = it; v++ }
             }
@@ -591,6 +603,136 @@ fun ParentPortalScreen(
         }
 
 
+        }
+
+        // ---- everything personal ----
+        if (showGroup("persoenlich")) {
+        SectionHeader("Persönlich")
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                Text("Name des Kindes", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "Steht auf der Übersicht und auf dem Kinder-Handy.",
+                    fontSize = 14.sp, color = Nova.InkMuted
+                )
+                Spacer(Modifier.height(10.dp))
+                var name by remember { mutableStateOf(prefs.childName) }
+                androidx.compose.material.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; prefs.childName = it; v++ },
+                    singleLine = true,
+                    placeholder = { Text("z. B. Mia") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                Text("Foto", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "Erscheint als rundes Bild auf der Übersicht. Bleibt auf diesem Handy.",
+                    fontSize = 14.sp, color = Nova.InkMuted
+                )
+                Spacer(Modifier.height(12.dp))
+                val picker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocument()
+                ) { uri ->
+                    if (uri != null) {
+                        // Without the persistable grant the picture would be unreadable after
+                        // the next restart.
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(
+                                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+                        prefs.childPhotoUri = uri.toString()
+                        v++
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ChildAvatar(prefs, 56)
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        "Bild wählen", fontSize = 15.sp, color = Nova.Primary,
+                        modifier = Modifier.clickable { picker.launch(arrayOf("image/*")) }
+                    )
+                    if (prefs.childPhotoUri.isNotBlank()) {
+                        Spacer(Modifier.width(18.dp))
+                        Text(
+                            "Entfernen", fontSize = 15.sp, color = Nova.Danger,
+                            modifier = Modifier.clickable { prefs.childPhotoUri = ""; v++ }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                Text("Farbe", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(3.dp))
+                Text("Färbt die App auf beiden Handys.", fontSize = 14.sp, color = Nova.InkMuted)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf(
+                        "BLUE" to Color(0xFF0B57D0),
+                        "GREEN" to Color(0xFF146C2E),
+                        "PURPLE" to Color(0xFF6750A4),
+                        "ORANGE" to Color(0xFFA8500A)
+                    ).forEach { (key, colour) ->
+                        val picked = prefs.accentChoice == key
+                        Box(
+                            Modifier.size(44.dp).clip(CircleShape).background(colour)
+                                .clickable { prefs.accentChoice = key; onThemeChanged(); v++ },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (picked) {
+                                Icon(
+                                    Icons.Filled.CheckCircle, null, tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        NovaCard {
+            Column(Modifier.padding(16.dp)) {
+                Text("Bonuszeit-Beträge", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "Die drei Knöpfe auf der Übersicht.",
+                    fontSize = 14.sp, color = Nova.InkMuted
+                )
+            }
+            val presets = prefs.bonusPresets
+            presets.forEachIndexed { index, minutes ->
+                NovaDivider()
+                NovaRow(title = "Knopf ${index + 1}") {
+                    Stepper(
+                        value = "$minutes Min",
+                        onMinus = {
+                            prefs.bonusPresets = presets.toMutableList()
+                                .also { it[index] = (minutes - 5).coerceAtLeast(5) }
+                            v++
+                        },
+                        onPlus = {
+                            prefs.bonusPresets = presets.toMutableList()
+                                .also { it[index] = (minutes + 5).coerceAtMost(240) }
+                            v++
+                        }
+                    )
+                }
+            }
+        }
         }
 
         // ---- streak: its own area, reached from its own row in the menu ----
@@ -947,7 +1089,7 @@ fun ParentPortalScreen(
                 }
             }
             if (prefs.notifyEnabled) {
-                NovaRow(title = "Verlängerung angefragt", subtitle = "Wenn dein Kind um Zeit bittet") {
+                NovaRow(title = "Bonuszeit angefragt", subtitle = "Wenn dein Kind um Zeit bittet") {
                     NovaSwitch(checked = prefs.notifyRequest) {
                         prefs.notifyRequest = it; v++
                     }
@@ -1212,6 +1354,7 @@ private val GROUP_TITLES = mapOf(
     "zeit" to "Zeitlimits",
     "plaene" to "Zeitpläne",
     "streak" to "Serie im Limit",
+    "persoenlich" to "Persönlich",
     "apps" to "Apps",
     "sperren" to "Sperren & Fokus",
     "verwaltung" to "Verwaltung",
@@ -1333,6 +1476,7 @@ private val MENU_ENTRIES = listOf(
     MenuEntry("verwaltung", "Verwaltung", "Kategorien, Aufgaben, Bericht, Geräte", Icons.Filled.Tune),
     MenuEntry("schutz", "Schutz & Verbindung", "Schutz-Stufe, Bypass-Sicherung, Offline-Sperre", Icons.Filled.Shield),
     MenuEntry("meldungen", "Benachrichtigungen", "Anfragen, Aufgaben und Limits melden lassen", Icons.Filled.Notifications),
+    MenuEntry("persoenlich", "Persönlich", "Name, Foto, Farbe und Bonuszeit-Beträge", Icons.Filled.Person),
     MenuEntry("geraet", "Gerät & Design", "Hell/Dunkel, PIN, Systemeinstellungen", Icons.Filled.PhoneAndroid)
 )
 
@@ -1369,15 +1513,12 @@ private fun SettingsList(onPick: (String) -> Unit) {
     }
 }
 /**
- * The parent app's landing screen: everything that matters at a glance, nothing to scroll for.
+ * The parent's start page.
  *
- *  - how much of the day's budget is gone and what is left,
- *  - the absolute ceiling across all apps,
- *  - the three apps the child used most today,
- *  - one prominent button to grant extra time,
- *  - a pending request from the child, answerable right here.
- *
- * Every setting lives behind the ☰ button instead of on one endless page.
+ * Modelled on the reference: the device itself at the top with the one number that matters and
+ * the way to lock it, then the two areas that own the rules, then only what actually needs an
+ * answer today. Everything else lives behind the settings tab — the page is meant to end after
+ * a short scroll, not to be a report.
  */
 @Composable
 private fun ParentDashboard(
@@ -1391,6 +1532,7 @@ private fun ParentDashboard(
     onOpenMenu: () -> Unit,
     /** Jump straight from the overview into one settings area, as the reference does. */
     onOpenGroup: (String) -> Unit,
+    onOpenEvents: () -> Unit,
     onGrant: (Int, Boolean) -> Unit,
     onDecideRequest: (TimeRequest, Boolean) -> Unit,
     onLockFor: (Int) -> Unit,
@@ -1404,343 +1546,182 @@ private fun ParentDashboard(
     onExit: () -> Unit
 ) {
     val online = prefs.syncConfigured && System.currentTimeMillis() - prefs.lastSyncAt < 120_000
-    val remaining = (limit - used).coerceAtLeast(0)
-    val total = remote?.totalDeviceSeconds ?: 0
-    val cap = prefs.hardCapMinutes * 60
-    val timedLock = prefs.focusSession()
     val lockedNow = prefs.manualLockEnabled
+    val timedLock = prefs.focusSession()
     val lockedTimed = timedLock.isRunning()
-    // Ticks every second so the screen-lock countdown actually counts down.
+    // Ticks every second so both countdowns actually count down.
     var secondTick by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(1000); secondTick++ } }
     @Suppress("UNUSED_EXPRESSION") secondTick
     val screenLockLeft = prefs.screenLockRemainingSeconds()
-    var grantAsBonus by remember { mutableStateOf(false) }
+    var lockSheet by remember { mutableStateOf(false) }
+
+    val remaining = (limit - used).coerceAtLeast(0)
+    val bonusRunning = prefs.bonusCountdownActive()
+    val unread = prefs.unreadEventCount()
 
     Column(
         Modifier.fillMaxSize()
             .background(Nova.Canvas)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        // ---- header: the device pill on the left, actions on the right ----
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(Nova.RadiusPill.dp))
-                    .background(Nova.Surface)
-                    .clickable { onOpenMenu() }
-                    .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Stands in for the avatar in the reference: the child device's initial.
-                Box(
-                    Modifier.size(36.dp).clip(CircleShape).background(Nova.Accent),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        (remote?.deviceName?.trim()?.firstOrNull() ?: 'K').uppercase(),
-                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Nova.Primary
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(
-                        remote?.deviceName ?: "Kinder-Gerät",
-                        fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
-                        maxLines = 1
-                    )
-                    Text(
-                        if (online) "Verbunden" else "Keine Verbindung",
-                        fontSize = 11.sp, color = if (online) Nova.Success else Nova.Warning
-                    )
-                }
-            }
-            if (prefs.syncConfigured) {
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    Modifier.size(42.dp).clip(CircleShape)
-                        .background(Nova.Surface)
-                        .clickable(enabled = !refreshing) { onRefresh() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.Refresh, "Aktualisieren",
-                        tint = if (refreshing) Nova.InkFaint else Nova.Primary,
-                        modifier = Modifier.size(21.dp)
-                    )
-                }
-            }
-        }
+        // ---- header: the child, the bell, the refresh ----
         Spacer(Modifier.height(18.dp))
-        Text("Bildschirmzeit", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
-        if (refreshing) {
-            Text("Aktualisiere…", fontSize = 12.sp, color = Nova.InkMuted, modifier = Modifier.padding(top = 6.dp))
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        if (remote == null) {
-            NovaCard {
-                Column(Modifier.padding(18.dp)) {
-                    Text("Noch keine Daten", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Nova.InkMuted)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (!prefs.syncConfigured) "Dieses Gerät ist mit keinem Konto verbunden."
-                        else "Warte auf das Kinder-Gerät.",
-                        fontSize = 13.sp, color = Nova.InkMuted
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                prefs.childName.ifBlank { "Übersicht" },
+                fontSize = 26.sp, fontWeight = FontWeight.Normal, color = Nova.Ink,
+                modifier = Modifier.weight(1f)
+            )
+            // The bell carries a dot while something is unread; the list itself is its own page.
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(Nova.Surface)
+                    .clickable { onOpenEvents() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Notifications, "Meldungen", tint = Nova.Ink,
+                    modifier = Modifier.size(20.dp))
+                if (unread > 0) {
+                    Box(
+                        Modifier.size(9.dp).offset(x = 7.dp, y = (-7).dp)
+                            .clip(CircleShape).background(Nova.Danger)
                     )
                 }
             }
-        } else {
-            // ---- headline: what is left of the day's budget ----
-            // The whole card opens the detailed breakdown — the numbers are what a parent
-            // taps on, so that is where the details belong rather than among the settings.
-            NovaCard(modifier = Modifier.clickable { onOpenDetails() }) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Noch übrig heute", fontSize = 13.sp, color = Nova.InkMuted,
-                            modifier = Modifier.weight(1f))
-                        Text("Details ›", fontSize = 13.sp, color = Nova.Primary)
-                    }
-                    Text(
-                        TimeFmt.hm(remaining),
-                        fontSize = 52.sp, fontWeight = FontWeight.Normal,
-                        color = if (remaining == 0) Nova.Danger else Nova.Primary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)} verbraucht",
-                        fontSize = 13.sp, color = Nova.InkMuted
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    ProgressBar(if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
-
-                    // ---- the weekly pot, when one is in force ----
-                    if (prefs.limitScope != LimitScope.DAY) {
-                        Spacer(Modifier.height(14.dp))
-                        val weekPot = prefs.weeklyLimitMinutes * 60
-                        val weekUsed = remote.weekCountedSeconds
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Diese Woche", fontSize = 13.sp, color = Nova.InkMuted,
-                                modifier = Modifier.weight(1f))
-                            Text(
-                                "${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
-                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                color = if (weekUsed >= weekPot) Nova.Danger else Nova.Ink
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        ProgressBar((weekUsed.toFloat() / weekPot.coerceAtLeast(1)).coerceIn(0f, 1f))
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    // ---- the absolute ceiling across every app ----
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Gesamtlimit (alle Apps)", fontSize = 13.sp, color = Nova.InkMuted,
-                            modifier = Modifier.weight(1f))
-                        val weekly = prefs.hardCapScope == LimitScope.WEEK
-                        val shownUsed = if (weekly) remote.weekTotalSeconds else total
-                        val shownCap = if (weekly) prefs.weeklyHardCapMinutes * 60 else cap
-                        Text(
-                            if (prefs.hardCapEnabled)
-                                "${TimeFmt.hm(shownUsed)} / ${TimeFmt.hm(shownCap)}" +
-                                    if (weekly) " (Woche)" else ""
-                            else "aus",
-                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                            color = if (prefs.hardCapEnabled && shownUsed >= shownCap) Nova.Danger else Nova.Ink
-                        )
-                    }
-                    if (prefs.hardCapEnabled) {
-                        val weekly = prefs.hardCapScope == LimitScope.WEEK
-                        val shownUsed = if (weekly) remote.weekTotalSeconds else total
-                        val shownCap = if (weekly) prefs.weeklyHardCapMinutes * 60 else cap
-                        Spacer(Modifier.height(8.dp))
-                        ProgressBar((shownUsed.toFloat() / shownCap.coerceAtLeast(1)).coerceIn(0f, 1f))
-                    }
-
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (remote.bedtimeActive) NovaPill("Ruhezeit", Nova.Night)
-                        if (remote.focusLabel.isNotBlank()) NovaPill("Fokus: ${remote.focusLabel}", Nova.Focus)
-                        if (remote.bonusSeconds > 0) NovaPill("+${remote.bonusSeconds / 60} Bonus", Nova.Success)
-                        if (remote.batteryPercent in 0..100) NovaPill(
-                            "Akku ${remote.batteryPercent}%",
-                            if (remote.batteryPercent < 20) Nova.Danger else Nova.InkMuted
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    val age = remote.ageSeconds()
-                    Text(
-                        if (age < 60) "Aktualisiert gerade eben" else "Zuletzt aktualisiert vor ${TimeFmt.hm(age)}",
-                        fontSize = 11.sp, color = Nova.InkFaint
-                    )
-                }
-            }
-
-            // ---- top 3 apps ----
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth().clickable { onOpenDetails() },
-                verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { SectionHeader("Meistgenutzt heute") }
-                Text("Alle ›", fontSize = 13.sp, color = Nova.Primary)
-            }
-            NovaCard {
-                val top3 = remote.perAppSeconds.entries.sortedByDescending { it.value }.take(3)
-                if (top3.isEmpty()) {
-                    Text(
-                        "Heute noch keine App genutzt.",
-                        fontSize = 13.sp, color = Nova.InkMuted, modifier = Modifier.padding(16.dp)
-                    )
-                } else {
-                    Column(Modifier.padding(vertical = 6.dp)) {
-                        val top = top3.first().value.coerceAtLeast(1)
-                        top3.forEachIndexed { i, (pkg, secs) ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "${i + 1}", fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                                    color = Nova.InkFaint, modifier = Modifier.width(22.dp)
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        remote.perAppLabels[pkg] ?: pkg,
-                                        fontSize = 15.sp, color = Nova.Ink
-                                    )
-                                    Spacer(Modifier.height(5.dp))
-                                    Box(
-                                        Modifier.fillMaxWidth().height(5.dp)
-                                            .clip(RoundedCornerShape(3.dp)).background(Nova.Fill)
-                                    ) {
-                                        Box(
-                                            Modifier.fillMaxWidth((secs.toFloat() / top).coerceIn(0.02f, 1f))
-                                                .height(5.dp).clip(RoundedCornerShape(3.dp))
-                                                .background(Nova.Primary)
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    TimeFmt.hm(secs), fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold, color = Nova.InkMuted
-                                )
-                            }
-                        }
-                    }
-                }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(Nova.Surface)
+                    .clickable(enabled = !refreshing) { onRefresh() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Refresh, "Aktualisieren",
+                    tint = if (refreshing) Nova.InkFaint else Nova.Primary,
+                    modifier = Modifier.size(19.dp)
+                )
             }
         }
 
-        // ---- a request waiting for an answer ----
-        if (pendingRequest != null) {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("Anfrage vom Kind")
-            NovaCard {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "+${pendingRequest.minutes} Minuten",
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
-                    )
-                    Text(pendingRequest.reason, fontSize = 13.sp, color = Nova.InkMuted)
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            NovaButton(text = "Geben", color = Nova.Success) {
-                                onDecideRequest(pendingRequest, true)
-                            }
-                        }
-                        Box(Modifier.weight(1f)) {
-                            NovaButtonTonal(text = "Ablehnen") { onDecideRequest(pendingRequest, false) }
-                        }
-                    }
-                }
-            }
-        }
+        Spacer(Modifier.height(14.dp))
 
-        // ---- lock the device, on a timer or outright ----
-        Spacer(Modifier.height(16.dp))
-        SectionHeader("Sperren")
+        // ---- the device, with the one number that matters ----
         NovaCard {
-            Column(Modifier.padding(vertical = 4.dp)) {
-                when {
-                    // ---- something is locked: one clear state, one way out ----
-                    lockedNow || lockedTimed || screenLockLeft > 0 -> {
-                        val (what, detail) = when {
-                            screenLockLeft > 0 ->
-                                "Display aus" to "Noch ${TimeFmt.hm(screenLockLeft)}"
-                            lockedNow ->
-                                "Gerät gesperrt" to "Ohne Zeitende — bis du es aufhebst"
-                            else ->
-                                "Auf Zeit gesperrt" to "Noch ${TimeFmt.hm(timedLock.remainingSeconds())}"
-                        }
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier.size(40.dp).clip(CircleShape)
-                                    .background(Nova.Danger.copy(alpha = 0.13f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Lock, null, tint = Nova.Danger,
-                                    modifier = Modifier.size(21.dp))
-                            }
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(what, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-                                Text(detail, fontSize = 13.sp, color = Nova.InkMuted)
-                            }
-                        }
-                        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                            NovaButtonTonal(text = "Freigeben", color = Nova.Success) {
-                                if (screenLockLeft > 0) onReleaseScreen() else onUnlock()
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
+            Column(Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ChildAvatar(prefs, 42)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            remote?.deviceName ?: "Kinder-Gerät",
+                            fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
+                        )
+                        Text(
+                            when {
+                                !prefs.syncConfigured -> "Nicht verbunden"
+                                online -> "Verbunden"
+                                else -> "Zuletzt vor ${TimeFmt.hm(remote?.ageSeconds() ?: 0)}"
+                            },
+                            fontSize = 12.sp,
+                            color = if (online) Nova.Success else Nova.InkFaint
+                        )
                     }
+                    if (remote != null && remote.batteryPercent in 0..100) {
+                        Text(
+                            "${remote.batteryPercent} %", fontSize = 12.sp,
+                            color = if (remote.batteryPercent < 20) Nova.Danger else Nova.InkFaint
+                        )
+                    }
+                }
 
-                    // ---- nothing locked: the three ways to lock, calmly ----
-                    else -> {
-                        LockChoiceRow(
-                            title = "Auf Zeit sperren",
-                            subtitle = "Nichts geht ausser Telefon — endet von selbst",
-                            options = listOf(30 to "30 Min", 60 to "1 Std", 120 to "2 Std"),
-                            onPick = onLockFor
-                        )
-                        NovaDivider()
-                        LockChoiceRow(
-                            title = "Display ausschalten",
-                            subtitle = "Kein Overlay — der Bildschirm geht aus und bleibt aus",
-                            options = listOf(5 to "5 Min", 10 to "10 Min", 15 to "15 Min"),
-                            onPick = onLockScreen
-                        )
-                        NovaDivider()
-                        NovaRow(
-                            title = "Gerät komplett sperren",
-                            subtitle = "Ohne Zeitende, bis du es wieder aufhebst",
-                            icon = Icons.Filled.Lock,
-                            onClick = onLockNow
-                        ) { Chevron() }
+                Spacer(Modifier.height(16.dp))
+
+                // The headline number: a running bonus countdown replaces it while it lasts.
+                val bedtimeNow = remote?.bedtimeActive == true
+                Text(
+                    when {
+                        lockedNow || lockedTimed -> "Gesperrt"
+                        bonusRunning -> TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())
+                        bedtimeNow -> "Ruhezeit"
+                        else -> TimeFmt.hm(remaining)
+                    },
+                    fontSize = 40.sp, fontWeight = FontWeight.Normal,
+                    color = when {
+                        lockedNow || lockedTimed -> Nova.Danger
+                        bonusRunning -> Nova.Success
+                        remaining == 0 -> Nova.Danger
+                        else -> Nova.Ink
                     }
+                )
+                Text(
+                    when {
+                        lockedNow -> "Von dir gesperrt"
+                        lockedTimed -> "Noch ${TimeFmt.hm(timedLock.remainingSeconds())}"
+                        bonusRunning -> "Bonuszeit läuft"
+                        bedtimeNow -> "Bis ${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
+                        else -> "übrig heute"
+                    },
+                    fontSize = 13.sp, color = Nova.InkMuted
+                )
+
+                Spacer(Modifier.height(14.dp))
+                ProgressBar(fraction = if (limit == 0) 1f else (used.toFloat() / limit).coerceIn(0f, 1f))
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${TimeFmt.hm(used)} von ${TimeFmt.hm(limit)}",
+                        fontSize = 13.sp, color = Nova.InkMuted, modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "Alle Apps",
+                        fontSize = 13.sp, color = Nova.Primary,
+                        modifier = Modifier.clickable { onOpenDetails() }
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                // One button, one sheet: locking now, locking for a while, locking the display.
+                Box(
+                    Modifier.fillMaxWidth().height(46.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (lockedNow || lockedTimed) Nova.Danger else Nova.Accent)
+                        .clickable { lockSheet = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (lockedNow || lockedTimed) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                            null,
+                            tint = if (lockedNow || lockedTimed) Color.White else Nova.Primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (lockedNow || lockedTimed) "Gerät entsperren" else "Gerät sperren",
+                            fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = if (lockedNow || lockedTimed) Color.White else Nova.Primary
+                        )
+                    }
+                }
+                if (screenLockLeft > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Display gesperrt — noch ${TimeFmt.hm(screenLockLeft)}",
+                        fontSize = 12.sp, color = Nova.Danger
+                    )
                 }
             }
         }
 
-        // ---- the two screen-time rows, exactly as the reference shows them ----
-        //
-        // One card, two rows, each with its glyph and a grey line that states what is set right
-        // now rather than repeating the label. Tapping one opens that area.
-        Spacer(Modifier.height(16.dp))
+        // ---- the two areas that own the rules ----
+        Spacer(Modifier.height(14.dp))
         NovaCard {
             NovaRow(
                 title = "Zeitlimits",
                 subtitle = buildString {
                     append("Limit von ${TimeFmt.hm(prefs.globalLimitMinutes * 60)}")
                     if (prefs.hardCapEnabled) {
-                        append(" · Gesamtlimit ${TimeFmt.hm(prefs.hardCapMinutes * 60)}")
+                        append(" · Gesamt ${TimeFmt.hm(prefs.hardCapMinutes * 60)}")
                     }
                 },
                 icon = Icons.Filled.HourglassBottom,
@@ -1748,176 +1729,303 @@ private fun ParentDashboard(
             )
             NovaDivider()
             NovaRow(
-                title = "Zeitpläne",
+                title = "Ruhezeit",
                 subtitle = if (prefs.bedtimeEnabled)
-                    "Ruhezeit ${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)}"
-                else "Ruhezeit deaktiviert",
+                    "${TimeFmt.clock(prefs.bedtimeStartMin)}–${TimeFmt.clock(prefs.bedtimeEndMin)} Uhr"
+                else "Deaktiviert",
                 icon = Icons.Filled.CalendarMonth,
                 onClick = { onOpenGroup("plaene") }
             )
         }
 
-        // ---- streak ----
-        //
-        // Read straight from the child's status: the parent phone measures nothing itself, so
-        // its own counters would always be zero.
-        if (prefs.streakEnabled && remote != null) {
-            Spacer(Modifier.height(16.dp))
-            SectionHeader("Serie im Limit")
-            NovaCard {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            when (remote.streakCurrent) {
-                                0 -> "Keine Serie"
-                                1 -> "1 Tag"
-                                else -> "${remote.streakCurrent} Tage"
-                            },
-                            fontSize = 26.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        if (remote.streakBonusMinutes > 0) {
-                            NovaPill("heute +${remote.streakBonusMinutes} Min", Nova.Success)
-                        } else if (remote.streakPenaltyMinutes > 0) {
-                            NovaPill("heute −${remote.streakPenaltyMinutes} Min", Nova.Warning)
-                        }
-                        Spacer(Modifier.weight(1f))
-                        if (remote.streakLongest > 0) {
-                            Text(
-                                "Bestwert ${remote.streakLongest}",
-                                fontSize = 12.sp, color = Nova.InkFaint
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    val toGo = com.familylink.ios.data.StreakLogic
-                        .daysToNextMilestone(remote.streakCurrent)
-                    val reward = com.familylink.ios.data.StreakLogic
-                        .nextMilestoneBonus(remote.streakCurrent)
-                    Text(
-                        if (toGo == null) "Alle Stufen erreicht."
-                        else "Noch $toGo Tag(e) bis zur nächsten Stufe (+$reward Min.).",
-                        fontSize = 13.sp, color = Nova.InkMuted
-                    )
-                }
-            }
-        }
-
-        // ---- chores waiting to be confirmed ----
-        val chores = prefs.getChores()
-        val claimed = chores.filter { it.isClaimed }
-        Spacer(Modifier.height(16.dp))
-        SectionHeader("Aufgaben")
+        // ---- bonus time, in the amounts the parent chose ----
+        Spacer(Modifier.height(14.dp))
         NovaCard {
             Column(Modifier.padding(16.dp)) {
-                if (claimed.isEmpty()) {
-                    Text(
-                        if (chores.isEmpty()) "Noch keine Aufgaben angelegt."
-                        else "${chores.count { it.isOpen }} offen · nichts zu bestätigen.",
-                        fontSize = 13.sp, color = Nova.InkMuted
-                    )
-                } else {
-                    Text(
-                        "${claimed.size} erledigt gemeldet",
-                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Ink
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    claimed.take(3).forEach { chore ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(chore.title, fontSize = 15.sp, color = Nova.Ink)
-                                Text(
-                                    "+${chore.rewardMinutes} Min Bonus",
-                                    fontSize = 12.sp, color = Nova.InkMuted
-                                )
-                            }
-                            Box(
-                                Modifier.clip(RoundedCornerShape(10.dp))
-                                    .background(Nova.Success.copy(alpha = 0.15f))
-                                    .clickable { onApproveChore(chore.id) }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
-                            ) {
-                                Text(
-                                    "Bestätigen", fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold, color = Nova.Success
-                                )
-                            }
-                        }
-                    }
-                }
+                Text("Bonuszeit geben", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    if (bonusRunning)
+                        "Läuft noch ${TimeFmt.hm(prefs.bonusCountdownRemainingSeconds())} — alles ist offen."
+                    else "Ein Countdown, in dem alles offen ist. Auch während der Ruhezeit.",
+                    fontSize = 14.sp, color = Nova.InkMuted, lineHeight = 19.sp
+                )
                 Spacer(Modifier.height(12.dp))
-                NovaButtonTonal(text = "Aufgaben verwalten", onClick = onOpenChores)
-            }
-        }
-
-        // ---- grant extra time straight from here ----
-        Spacer(Modifier.height(16.dp))
-        SectionHeader("Mehr Zeit geben")
-        NovaCard {
-            Column(Modifier.padding(16.dp)) {
-                val already = prefs.grantedBonusMinutes()
-                val bonusLeft = prefs.bonusCountdownRemainingSeconds()
-
-                if (bonusLeft > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        NovaPill("Bonuszeit läuft", Nova.Success)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Noch ${TimeFmt.hm(bonusLeft)}", fontSize = 13.sp, color = Nova.InkMuted)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                }
-
-                // Which kind of time is being handed out.
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(false to "Verlängerung", true to "Bonuszeit").forEach { (isBonus, label) ->
-                        val sel = grantAsBonus == isBonus
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    prefs.bonusPresets.forEach { minutes ->
                         Box(
-                            Modifier.weight(1f)
-                                .clip(RoundedCornerShape(Nova.RadiusControl.dp))
-                                .background(if (sel) Nova.Primary else Nova.Fill)
-                                .clickable { grantAsBonus = isBonus }
-                                .padding(vertical = 11.dp),
+                            Modifier.weight(1f).height(42.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(Nova.Accent)
+                                .clickable { onGrant(minutes, true) },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                color = if (sel) Color.White else Nova.InkMuted
+                                "+$minutes Min", fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium, color = Nova.Primary
                             )
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (grantAsBonus)
-                        "Bonuszeit: ein Countdown, in dem alles offen ist. Läuft er ab, ist " +
-                            "wieder gesperrt — egal was benutzt wurde."
-                    else
-                        "Verlängerung: hebt Tageslimit, Wochenlimit, Gesamtlimit und den Beginn " +
-                            "der Ruhezeit um dieselbe Zeit an.",
-                    fontSize = 12.sp, color = Nova.InkMuted
-                )
-
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf(10, 15, 30).forEach { m ->
-                        Box(Modifier.weight(1f)) {
-                            NovaButton(text = "+$m", color = Nova.Danger) { onGrant(m, grantAsBonus) }
-                        }
-                    }
+                if (bonusRunning) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Bonuszeit beenden",
+                        fontSize = 14.sp, color = Nova.Danger,
+                        modifier = Modifier.clickable { onGrant(0, false) }
+                    )
                 }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    if (already > 0) "Heute bereits $already Minuten gegeben — ohne Obergrenze."
-                    else "Keine Obergrenze: du entscheidest, wie viel Zeit dazukommt.",
-                    fontSize = 12.sp, color = Nova.InkMuted
-                )
             }
         }
 
-        // Clearance for the bottom navigation bar.
+        // ---- only what needs an answer ----
+        if (pendingRequest != null) {
+            Spacer(Modifier.height(14.dp))
+            NovaCard {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "Anfrage: ${pendingRequest.minutes} Minuten",
+                        fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
+                    )
+                    if (pendingRequest.reason.isNotBlank()) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(pendingRequest.reason, fontSize = 14.sp, color = Nova.InkMuted)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(50))
+                                .background(Nova.Accent)
+                                .clickable { onDecideRequest(pendingRequest, true) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Geben", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                color = Nova.Primary)
+                        }
+                        Box(
+                            Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(50))
+                                .background(Nova.Fill)
+                                .clickable { onDecideRequest(pendingRequest, false) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Ablehnen", fontSize = 14.sp, color = Nova.InkMuted)
+                        }
+                    }
+                }
+            }
+        }
+
+        val claimed = prefs.getChores().filter { it.isClaimed }
+        if (claimed.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            NovaCard {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    claimed.forEachIndexed { i, chore ->
+                        if (i > 0) NovaDivider()
+                        NovaRow(
+                            title = chore.title,
+                            subtitle = "Erledigt gemeldet · +${chore.rewardMinutes} Min",
+                            icon = Icons.Filled.CheckCircle,
+                            onClick = { onApproveChore(chore.id) }
+                        ) {
+                            Text("Bestätigen", fontSize = 14.sp, color = Nova.Primary)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- the three apps that took the most time ----
+        val top = remote?.perAppSeconds.orEmpty().entries.sortedByDescending { it.value }.take(3)
+        if (top.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            NovaCard {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    top.forEachIndexed { i, (pkg, secs) ->
+                        if (i > 0) NovaDivider()
+                        NovaRow(
+                            title = remote?.perAppLabels?.get(pkg) ?: pkg,
+                            subtitle = TimeFmt.hm(secs),
+                            onClick = { onOpenDetails() }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(100.dp))
+    }
+
+    if (lockSheet) {
+        LockSheet(
+            lockedNow = lockedNow,
+            lockedTimed = lockedTimed,
+            screenLockLeft = screenLockLeft,
+            onDismiss = { lockSheet = false },
+            onLockNow = { onLockNow(); lockSheet = false },
+            onLockFor = { onLockFor(it); lockSheet = false },
+            onLockScreen = { onLockScreen(it); lockSheet = false },
+            onUnlock = { onUnlock(); lockSheet = false },
+            onReleaseScreen = { onReleaseScreen(); lockSheet = false }
+        )
+    }
+}
+
+/** The child's picture, or their initial when there is none. */
+@Composable
+private fun ChildAvatar(prefs: Prefs, size: Int) {
+    val context = LocalContext.current
+    val uri = prefs.childPhotoUri
+    val bitmap = remember(uri) {
+        if (uri.isBlank()) null
+        else runCatching {
+            context.contentResolver.openInputStream(android.net.Uri.parse(uri)).use {
+                android.graphics.BitmapFactory.decodeStream(it)
+            }
+        }.getOrNull()
+    }
+    Box(
+        Modifier.size(size.dp).clip(CircleShape).background(Nova.Accent),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.size(size.dp).clip(CircleShape)
+            )
+        } else {
+            Text(
+                prefs.childName.trim().take(1).uppercase().ifBlank { "K" },
+                fontSize = (size / 2.4).sp, fontWeight = FontWeight.Medium, color = Nova.Primary
+            )
+        }
+    }
+}
+
+/** Everything about locking, in one sheet, so the card itself stays a single button. */
+@Composable
+private fun LockSheet(
+    lockedNow: Boolean,
+    lockedTimed: Boolean,
+    screenLockLeft: Int,
+    onDismiss: () -> Unit,
+    onLockNow: () -> Unit,
+    onLockFor: (Int) -> Unit,
+    onLockScreen: (Int) -> Unit,
+    onUnlock: () -> Unit,
+    onReleaseScreen: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                .background(Nova.Surface)
+        ) {
+            Column(Modifier.padding(vertical = 8.dp)) {
+                Text(
+                    "Gerät sperren",
+                    fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
+                    modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp)
+                )
+                if (lockedNow || lockedTimed) {
+                    NovaRow(
+                        title = "Entsperren",
+                        subtitle = "Hebt die Sperre sofort auf",
+                        icon = Icons.Filled.LockOpen,
+                        onClick = onUnlock
+                    )
+                    NovaDivider()
+                }
+                if (!lockedNow) {
+                    NovaRow(
+                        title = "Jetzt sperren",
+                        subtitle = "Bleibt gesperrt, bis du es aufhebst",
+                        icon = Icons.Filled.Lock,
+                        onClick = onLockNow
+                    )
+                    NovaDivider()
+                }
+                NovaRow(
+                    title = "Für 30 Minuten",
+                    subtitle = "Endet von selbst",
+                    icon = Icons.Filled.HourglassBottom,
+                    onClick = { onLockFor(30) }
+                )
+                NovaDivider()
+                NovaRow(
+                    title = "Für 60 Minuten",
+                    subtitle = "Endet von selbst",
+                    icon = Icons.Filled.HourglassBottom,
+                    onClick = { onLockFor(60) }
+                )
+                NovaDivider()
+                if (screenLockLeft > 0) {
+                    NovaRow(
+                        title = "Display-Sperre aufheben",
+                        subtitle = "Noch ${TimeFmt.hm(screenLockLeft)}",
+                        icon = Icons.Filled.PhoneAndroid,
+                        onClick = onReleaseScreen
+                    )
+                } else {
+                    NovaRow(
+                        title = "Display sperren",
+                        subtitle = "Bildschirm aus, maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten",
+                        icon = Icons.Filled.PhoneAndroid,
+                        onClick = { onLockScreen(Prefs.MAX_SCREEN_LOCK_MIN) }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+/** The bell's page: what happened, newest first. */
+@Composable
+private fun EventsScreen(prefs: Prefs) {
+    val events = remember { prefs.events() }
+    LaunchedEffect(Unit) { prefs.markEventsRead() }
+    Column(
+        Modifier.fillMaxSize()
+            .background(Nova.Canvas)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(20.dp))
+        Text("Meldungen", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Spacer(Modifier.height(16.dp))
+        if (events.isEmpty()) {
+            NovaCard {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Noch nichts passiert.", fontSize = 15.sp, color = Nova.InkMuted)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Anfragen, erledigte Aufgaben und erreichte Limits erscheinen hier.",
+                        fontSize = 13.sp, color = Nova.InkFaint
+                    )
+                }
+            }
+        } else {
+            NovaCard {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    events.forEachIndexed { i, e ->
+                        if (i > 0) NovaDivider()
+                        NovaRow(
+                            title = e.title,
+                            subtitle = "${e.text} · ${TimeFmt.dayTime(e.at)}",
+                            icon = when (e.type) {
+                                "request" -> Icons.Filled.HourglassBottom
+                                "chore" -> Icons.Filled.CheckCircle
+                                "offline" -> Icons.Filled.CloudOff
+                                else -> Icons.Filled.Notifications
+                            }
+                        )
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(100.dp))
     }
 }

@@ -41,13 +41,27 @@ object ParentNotifications {
             "Meldungen vom Kinder-Gerät",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "Verlängerungswünsche, erledigte Aufgaben und erreichte Limits."
+            description = "Bonuszeit-Wünsche, erledigte Aufgaben und erreichte Limits."
             setShowBadge(true)
         }
         manager(context).createNotificationChannel(channel)
     }
 
     private fun show(context: Context, id: Int, title: String, text: String) {
+        // The bell's list is written whether or not a notification is allowed to appear: a
+        // parent who switched notifications off should still be able to look up what happened.
+        runCatching {
+            com.familylink.ios.data.Prefs.get(context).addEvent(
+                type = when (id) {
+                    ID_REQUEST -> "request"
+                    ID_CHORE -> "chore"
+                    ID_OFFLINE -> "offline"
+                    else -> "limit"
+                },
+                title = title,
+                text = text
+            )
+        }
         ensureChannel(context)
         val open = PendingIntent.getActivity(
             context, id,
@@ -68,7 +82,7 @@ object ParentNotifications {
 
     fun timeRequest(context: Context, minutes: Int, reason: String) = show(
         context, ID_REQUEST,
-        "Verlängerung angefragt",
+        "Bonuszeit angefragt",
         "Dein Kind bittet um $minutes Minuten." + if (reason.isNotBlank()) "\n„$reason\"" else ""
     )
 

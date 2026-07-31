@@ -67,6 +67,21 @@ object Nova {
     const val RadiusControl = 20
     const val RadiusPill = 999
 
+    /**
+     * Swap the brand colour for the one the parent picked. Everything else stays as it is: the
+     * greys, the surfaces and the semantic colours are what keep the app readable, and only the
+     * accent is a matter of taste.
+     */
+    internal fun applyAccent(choice: String) {
+        when (choice) {
+            "GREEN" -> { Primary = Color(0xFF146C2E); PrimaryDeep = Color(0xFF0B5122) }
+            "PURPLE" -> { Primary = Color(0xFF6750A4); PrimaryDeep = Color(0xFF4F378B) }
+            "ORANGE" -> { Primary = Color(0xFFA8500A); PrimaryDeep = Color(0xFF7A3A06) }
+            else -> { Primary = Color(0xFF0B57D0); PrimaryDeep = Color(0xFF0842A0) }
+        }
+        Accent = if (isDark) Primary.copy(alpha = 0.30f) else Primary.copy(alpha = 0.14f)
+    }
+
     internal fun applyLight() {
         isDark = false
         // Near-black text on a very light blue-grey page with white cards, and quiet greys for
@@ -123,6 +138,10 @@ private val NovaTypography = Typography(
 @Composable
 fun FamilyLinkTheme(dark: Boolean = false, content: @Composable () -> Unit) {
     if (dark) Nova.applyDark() else Nova.applyLight()
+    // The palette above is the product's; this is the family's own choice on top of it.
+    val accent = com.familylink.ios.data.Prefs
+        .get(androidx.compose.ui.platform.LocalContext.current).accentChoice
+    Nova.applyAccent(accent)
 
     // Re-key so every screen recomposes with the new palette the moment the mode flips.
     key(dark) {

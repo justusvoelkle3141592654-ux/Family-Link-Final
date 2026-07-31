@@ -25,4 +25,15 @@ object TimeFmt {
 
     fun now(): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
     fun nowLong(): String = SimpleDateFormat("EEEE, d. MMMM", Locale.getDefault()).format(Date())
+
+    /** "Heute 14:32" for something that happened today, "Mo 14:32" for anything older. */
+    fun dayTime(epochMillis: Long): String {
+        if (epochMillis <= 0) return ""
+        val then = Date(epochMillis)
+        val sameDay = SimpleDateFormat("yyyyDDD", Locale.getDefault())
+            .let { it.format(then) == it.format(Date()) }
+        val clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(then)
+        return if (sameDay) "Heute $clock"
+        else SimpleDateFormat("EEE", Locale.getDefault()).format(then) + " " + clock
+    }
 }

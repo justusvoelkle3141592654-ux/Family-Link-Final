@@ -98,6 +98,9 @@ data class FamilyConfig(
     /** Streak rules the parent owns; the child keeps the count itself. */
     val streakEnabled: Boolean,
     val streakPenaltyMinutes: Int,
+    /** What the child is called, so both phones greet them the same way. */
+    val childName: String = "",
+    val accentChoice: String = "BLUE",
     val bonusMinutes: Int,
     val offUntilEpoch: Long,
     val settingsUnlockedUntil: Long,
@@ -151,6 +154,8 @@ data class FamilyConfig(
         put("offlineLockMinutes", offlineLockMinutes)
         put("streakEnabled", streakEnabled)
         put("streakPenaltyMinutes", streakPenaltyMinutes)
+        put("childName", childName)
+        put("accentChoice", accentChoice)
         put("bonusMinutes", bonusMinutes)
         put("offUntilEpoch", offUntilEpoch)
         put("settingsUnlockedUntil", settingsUnlockedUntil)
@@ -187,6 +192,8 @@ data class FamilyConfig(
                 streakEnabled = o.optBoolean("streakEnabled", true),
                 streakPenaltyMinutes =
                     o.optInt("streakPenaltyMinutes", StreakLogic.DEFAULT_PENALTY_MIN),
+                childName = o.optString("childName", ""),
+                accentChoice = o.optString("accentChoice", "BLUE"),
                 bonusMinutes = o.optInt("bonusMinutes", 0),
                 offUntilEpoch = o.optLong("offUntilEpoch", 0),
                 settingsUnlockedUntil = o.optLong("settingsUnlockedUntil", 0),
