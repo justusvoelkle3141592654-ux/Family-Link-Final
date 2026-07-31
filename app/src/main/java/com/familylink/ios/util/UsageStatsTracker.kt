@@ -34,6 +34,15 @@ object UsageStatsTracker {
     /**
      * Foreground seconds per package since midnight, aggregated from foreground/background
      * events so the numbers are precise.
+     *
+     * Only one app can really be in front at a time, so a single "currently open" package is
+     * tracked instead of a last-seen timestamp per package. A foreground event for a new
+     * package always closes out whatever was open before it — even when the OS never sends the
+     * matching MOVE_TO_BACKGROUND for the old one, which happens for example behind our own
+     * lock overlay (a SYSTEM_ALERT_WINDOW does not pause the activity underneath it). With a
+     * per-package map that old session was simply left running until the app happened to send a
+     * background event, so it kept collecting time in parallel with whatever ran on top of it —
+     * inflating the "whole phone" total well past what Android's own usage report shows.
      */
     fun todayUsageSeconds(context: Context): Map<String, Int> {
         val usm = manager(context) ?: return emptyMap()
@@ -41,27 +50,32 @@ object UsageStatsTracker {
         val now = System.currentTimeMillis()
 
         val events = usm.queryEvents(start, now)
-        val lastForegroundAt = HashMap<String, Long>()
         val totalsMs = HashMap<String, Long>()
         val e = UsageEvents.Event()
+
+        var openPkg: String? = null
+        var openAt = 0L
+
+        fun close(at: Long) {
+            val pkg = openPkg ?: return
+            if (at > openAt) totalsMs[pkg] = (totalsMs[pkg] ?: 0L) + (at - openAt)
+            openPkg = null
+        }
 
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
             val pkg = e.packageName ?: continue
             when (e.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> lastForegroundAt[pkg] = e.timeStamp
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    val from = lastForegroundAt.remove(pkg)
-                    if (from != null && e.timeStamp > from) {
-                        totalsMs[pkg] = (totalsMs[pkg] ?: 0L) + (e.timeStamp - from)
-                    }
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    close(e.timeStamp)
+                    openPkg = pkg
+                    openAt = e.timeStamp
                 }
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> if (pkg == openPkg) close(e.timeStamp)
             }
         }
-        // Apps still in the foreground right now (no closing event yet).
-        for ((pkg, from) in lastForegroundAt) {
-            if (now > from) totalsMs[pkg] = (totalsMs[pkg] ?: 0L) + (now - from)
-        }
+        // Still in the foreground right now (no closing event yet).
+        close(now)
 
         return totalsMs.mapValues { (it.value / 1000L).toInt() }
     }
