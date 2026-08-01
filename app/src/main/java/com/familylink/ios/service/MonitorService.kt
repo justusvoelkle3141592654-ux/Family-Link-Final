@@ -170,7 +170,7 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
-        if (ticksSincePkgRefresh++ >= 10) {
+        if (ticksSincePkgRefresh++ >= 20) {
             ticksSincePkgRefresh = 0
             refreshManagedPackages()
             prefs.networkAvailable = hasWorkingInternet()
@@ -200,11 +200,11 @@ class MonitorService : Service() {
         // days plus today, so today's number has to survive the rollover into the week total.
         prefs.totalDeviceSecondsToday = engine.computeTotalDeviceSeconds(usage)
 
-        // Report upward from here as well (every ~9s). The monitor is the component that
+        // Report upward from here as well (every ~4.5s). The monitor is the component that
         // always runs on the child and holds the freshest numbers, so the parent no longer
         // depends on SyncService alone to see live usage.
-        // ~4.5s cadence: fast enough that the parent portal feels live.
-        if (prefs.syncConfigured && ticksSinceStatusPush++ >= 3) {
+        // Fast enough that the parent portal feels live.
+        if (prefs.syncConfigured && ticksSinceStatusPush++ >= 6) {
             ticksSinceStatusPush = 0
             runCatching { syncManager.pushStatus() }
         }
@@ -563,7 +563,7 @@ class MonitorService : Service() {
     }
 
     companion object {
-        private const val TICK_MS = 1500L
+        private const val TICK_MS = 750L
         private const val RELAUNCH_COOLDOWN_MS = 2500L
         /** One counted attempt per this window, so ticks do not inflate the counter. */
         private const val HARDCAP_ATTEMPT_MS = 15_000L
