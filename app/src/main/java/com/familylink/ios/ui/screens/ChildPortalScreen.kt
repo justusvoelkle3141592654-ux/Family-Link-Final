@@ -1,7 +1,6 @@
 package com.familylink.ios.ui.screens
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDone
@@ -42,7 +42,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +50,9 @@ import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.AppCategory
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
+import com.familylink.ios.ui.components.NovaCard
+import com.familylink.ios.ui.components.NovaDivider
+import com.familylink.ios.ui.components.NovaRow
 import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
@@ -65,7 +67,8 @@ fun ChildPortalScreen(
     onExtendTime: () -> Unit,
     onOpenChores: () -> Unit,
     onOpenFocus: () -> Unit,
-    onOpenParentArea: () -> Unit
+    onOpenParentArea: () -> Unit,
+    onOpenAllApps: () -> Unit
 ) {
     val context = LocalContext.current
     val prefs = remember { Prefs.get(context) }
@@ -235,6 +238,24 @@ fun ChildPortalScreen(
             Spacer(Modifier.height(16.dp))
         }
 
+        // ---- the way into the full app list ----
+        //
+        // The same row type the parent portal uses to reach its own lists, so tapping it here
+        // does what it does there: it opens everything the phone has, not just today's few.
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            NovaCard {
+                NovaRow(
+                    title = "Bildschirmzeit",
+                    subtitle = "${TimeFmt.hm(remaining)} übrig heute",
+                    icon = Icons.Filled.BarChart,
+                    chevron = true,
+                    onClick = onOpenAllApps
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         // ---- usage list ----
         SectionTitle("Heute genutzt")
         if (perApp.isEmpty()) {
@@ -244,16 +265,20 @@ fun ChildPortalScreen(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
             )
         } else {
-            val maxSec = perApp.first().value.coerceAtLeast(1)
             Column(Modifier.padding(horizontal = 16.dp)) {
-                perApp.forEach { (pkg, secs) ->
-                    UsageRow(
-                        pkg = pkg,
-                        label = InstalledApps.labelFor(context, pkg),
-                        seconds = secs,
-                        fraction = secs.toFloat() / maxSec,
-                        category = prefs.categoryOf(pkg)
-                    )
+                NovaCard {
+                    perApp.forEachIndexed { i, (pkg, secs) ->
+                        if (i > 0) NovaDivider(inset = true)
+                        val category = prefs.categoryOf(pkg)
+                        AppRow(
+                            pkg = pkg,
+                            title = InstalledApps.labelFor(context, pkg),
+                            subtitle = if (category == AppCategory.BLOCKED) "Gesperrt"
+                            else "${TimeFmt.hm(secs)} heute",
+                            subtitleColor = if (category == AppCategory.BLOCKED) Nova.Danger
+                            else Nova.InkMuted
+                        )
+                    }
                 }
             }
         }
@@ -465,52 +490,3 @@ private fun InfoStrip(text: String, color: Color) {
     }
 }
 
-@Composable
-private fun UsageRow(
-    pkg: String,
-    label: String,
-    seconds: Int,
-    fraction: Float,
-    category: AppCategory
-) {
-    val context = LocalContext.current
-    val icon = remember(pkg) { InstalledApps.iconBitmap(context, pkg) }
-    val barColor = when (category) {
-        AppCategory.PLUS -> Nova.Success
-        AppCategory.LIMIT -> Nova.Warning
-        AppCategory.BLOCKED -> Nova.Danger
-        AppCategory.STANDARD -> Nova.Primary
-    }
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(Nova.Fill),
-            contentAlignment = Alignment.Center
-        ) {
-            if (icon != null) {
-                Image(bitmap = icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(32.dp))
-            } else {
-                Text(label.take(1), fontSize = 15.sp, color = Nova.Ink)
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 15.sp, color = Nova.Ink, modifier = Modifier.weight(1f))
-                Text(TimeFmt.hm(seconds), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Nova.InkMuted)
-            }
-            Spacer(Modifier.height(5.dp))
-            Box(
-                Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp))
-                    .background(Color(0x11000000))
-            ) {
-                Box(
-                    Modifier.fillMaxWidth(fraction.coerceIn(0.02f, 1f)).height(5.dp)
-                        .clip(RoundedCornerShape(3.dp)).background(barColor)
-                )
-            }
-        }
-    }
-}

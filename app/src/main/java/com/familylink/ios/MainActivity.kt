@@ -40,6 +40,7 @@ import com.familylink.ios.ui.screens.StatsScreen
 import com.familylink.ios.ui.screens.DevicesScreen
 import com.familylink.ios.ui.screens.FocusScreen
 import com.familylink.ios.ui.screens.RequestTimeScreen
+import com.familylink.ios.ui.screens.ChildAppsScreen
 import com.familylink.ios.ui.screens.ChildFocusScreen
 import com.familylink.ios.ui.screens.ChildPortalScreen
 import com.familylink.ios.ui.screens.ExtendTimeScreen
@@ -116,6 +117,7 @@ private sealed class Route {
     object ChildFocus : Route()
     object ChildFocusEnd : Route()
     object ChildDisplayLockPin : Route()
+    object ChildApps : Route()
     object PortalStats : Route()
 }
 
@@ -164,7 +166,7 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         Route.PortalApps, Route.PortalPermissions, Route.PortalChangePin, Route.PortalSecurePin,
         Route.PortalFocus, Route.PortalDevices, Route.PortalChores, Route.PortalStats -> Route.Portal
         Route.VerifyPin, Route.ExtendTime, Route.RequestTime,
-        Route.ChildChores, Route.ChildFocus -> Route.Home
+        Route.ChildChores, Route.ChildFocus, Route.ChildApps -> Route.Home
         Route.ChildFocusEnd, Route.ChildDisplayLockPin -> Route.ChildFocus
         else -> null
     }
@@ -274,7 +276,8 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
                 onExtendTime = { route = Route.RequestTime },
                 onOpenChores = { route = Route.ChildChores },
                 onOpenFocus = { route = Route.ChildFocus },
-                onOpenParentArea = { route = Route.VerifyPin }
+                onOpenParentArea = { route = Route.VerifyPin },
+                onOpenAllApps = { route = Route.ChildApps }
             )
         }
 
@@ -337,6 +340,10 @@ private fun RootNav(onThemeChanged: () -> Unit = {}) {
         // Chores: parent defines and confirms, child claims.
         Route.PortalChores -> ChoresParentScreen(onBack = { route = Route.Portal })
         Route.ChildChores -> ChoresChildScreen(onBack = { route = Route.Home })
+
+        // Every app on the phone, as the child may see it: look, don't touch. Reached from the
+        // "Bildschirmzeit" row on the child's home screen.
+        Route.ChildApps -> ChildAppsScreen()
 
         // Child-started focus ("Handy weglegen"). Ending it early needs the parent PIN, so a
         // session the child committed to cannot be undone with a single tap.
