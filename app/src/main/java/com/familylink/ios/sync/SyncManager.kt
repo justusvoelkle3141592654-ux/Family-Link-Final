@@ -495,6 +495,8 @@ class SyncManager(private val context: Context) {
         }
         prefs.weeklyLimitMinutes = cfg.weeklyLimitMinutes
         prefs.weeklyHardCapMinutes = cfg.weeklyHardCapMinutes
+        // Only the parent's own lock travels with the config; the child's lives in its own
+        // field precisely so this line cannot wipe it.
         prefs.screenLockUntil = cfg.screenLockUntil
         prefs.applyGrants(cfg.extensionMinutes, cfg.bonusUntilEpoch)
         prefs.manualLockEnabled = cfg.manualLock

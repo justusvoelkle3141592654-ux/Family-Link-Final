@@ -908,10 +908,16 @@ fun ParentPortalScreen(
             NovaRow(
                 title = if (screenLeft > 0) "Display gesperrt — noch ${TimeFmt.hm(screenLeft)}"
                 else "Display sperren",
-                subtitle = if (screenLeft > 0) "Tippe zum Aufheben"
-                else "Bildschirm aus, maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten"
+                subtitle = when {
+                    prefs.ownLockSealed ->
+                        "Vollsperre — läuft von selbst ab, vorher nicht aufhebbar"
+                    screenLeft > 0 -> "Tippe zum Aufheben"
+                    else -> "Bildschirm aus, 15 Min · 30 Min · 1 Std"
+                }
             ) {
-                if (screenLeft > 0) {
+                if (prefs.ownLockSealed) {
+                    NovaPill("Vollsperre", Nova.Danger)
+                } else if (screenLeft > 0) {
                     Box(
                         Modifier.clip(RoundedCornerShape(10.dp))
                             .background(Nova.Success.copy(alpha = 0.15f))
@@ -922,14 +928,17 @@ fun ParentPortalScreen(
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(1, 5, Prefs.MAX_SCREEN_LOCK_MIN).distinct().forEach { m ->
+                        listOf(15, 30, 60).forEach { m ->
                             Box(
                                 Modifier.clip(RoundedCornerShape(9.dp))
                                     .background(Nova.Danger.copy(alpha = 0.13f))
                                     .clickable(enabled = canLock) { startScreenLock(context, sync, m); v++ }
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
-                                Text("${m}m", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger)
+                                Text(
+                                    if (m >= 60) "${m / 60}h" else "${m}m",
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger
+                                )
                             }
                         }
                     }
@@ -2127,9 +2136,9 @@ private fun LockSheet(
                 } else {
                     NovaRow(
                         title = "Display sperren",
-                        subtitle = "Bildschirm aus, maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten",
+                        subtitle = "Bildschirm aus, 15 Minuten",
                         icon = Icons.Filled.PhoneAndroid,
-                        onClick = { onLockScreen(Prefs.MAX_SCREEN_LOCK_MIN) }
+                        onClick = { onLockScreen(15) }
                     )
                 }
                 Spacer(Modifier.height(8.dp))

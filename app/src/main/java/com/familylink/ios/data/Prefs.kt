@@ -78,8 +78,11 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val MAX_WEEK_HARDCAP_MIN = 35 * 60
         const val MIN_WEEK_MIN = 60
 
-        /** Hard ceiling on the manual screen lock, so it can never strand the child. */
-        const val MAX_SCREEN_LOCK_MIN = 15
+        /**
+         * Hard ceiling on the manual screen lock. A day, because the child's own lock offers a
+         * "rest of the day" option — nothing may ever run past the next midnight, sealed or not.
+         */
+        const val MAX_SCREEN_LOCK_MIN = 24 * 60
 
         /** How long the phone may be out of touch with the family before it seals. */
         const val DEFAULT_OFFLINE_LOCK_MIN = 60
@@ -543,18 +546,76 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getLong("screen_lock_until", 0)
         set(v) = sp.edit().putLong("screen_lock_until", v).apply()
 
-    fun screenLockActive(now: Long = System.currentTimeMillis()): Boolean = now < screenLockUntil
+    /**
+     * The lock the child started on themselves, kept apart from [screenLockUntil] on purpose:
+     * that one is the parent's rule and travels with every config push, so a shared field would
+     * see the child's own lock wiped by the next sync.
+     */
+    var ownLockUntil: Long
+        get() = sp.getLong("own_lock_until", 0)
+        set(v) = sp.edit().putLong("own_lock_until", v).apply()
+
+    /**
+     * A sealed lock is one nobody lifts — not the child who started it, not the parent. Only the
+     * clock ends it, which is the whole point of the "rest of the day" option: a promise you
+     * cannot talk yourself out of ten minutes later.
+     *
+     * Reads false as soon as the lock expires, so the flag can never outlive its lock.
+     */
+    var ownLockSealed: Boolean
+        get() = sp.getBoolean("own_lock_sealed", false) &&
+            System.currentTimeMillis() < ownLockUntil
+        set(v) = sp.edit().putBoolean("own_lock_sealed", v).apply()
+
+    fun screenLockActive(now: Long = System.currentTimeMillis()): Boolean =
+        now < screenLockUntil || now < ownLockUntil
 
     fun screenLockRemainingSeconds(now: Long = System.currentTimeMillis()): Int =
-        ((screenLockUntil - now) / 1000L).toInt().coerceAtLeast(0)
+        (((maxOf(screenLockUntil, ownLockUntil)) - now) / 1000L).toInt().coerceAtLeast(0)
 
-    /** Lock the display for [minutes], clamped to the maximum. */
+    /** Lock the display for [minutes] on the parent's behalf, clamped to the maximum. */
     fun startScreenLock(minutes: Int) {
         val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
         screenLockUntil = System.currentTimeMillis() + m * 60_000L
     }
 
-    fun stopScreenLock() { screenLockUntil = 0 }
+    /**
+     * The child locking their own phone. A running sealed lock can only be extended by this,
+     * never cut short — not even by starting a shorter one.
+     */
+    fun startOwnLock(minutes: Int, sealed: Boolean = false) {
+        val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
+        val until = System.currentTimeMillis() + m * 60_000L
+        if (ownLockSealed && until <= ownLockUntil) return
+        ownLockUntil = until
+        ownLockSealed = sealed
+    }
+
+    /** Minutes from now until the next midnight — the length of a "rest of the day" lock. */
+    fun minutesUntilMidnight(): Int {
+        val c = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return ((c.timeInMillis - System.currentTimeMillis()) / 60_000L).toInt().coerceAtLeast(1)
+    }
+
+    /**
+     * Lift every lock that may be lifted. The parent's own always goes; the child's goes too
+     * unless it was sealed, which is the one lock nothing but time ends.
+     *
+     * @return true if nothing is left running.
+     */
+    fun stopScreenLock(): Boolean {
+        screenLockUntil = 0
+        if (ownLockSealed) return false
+        ownLockUntil = 0
+        ownLockSealed = false
+        return true
+    }
 
     // ---- Weekly limits -----------------------------------------------------
     //

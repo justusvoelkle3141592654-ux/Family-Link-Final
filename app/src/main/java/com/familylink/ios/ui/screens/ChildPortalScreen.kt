@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.HourglassBottom
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -101,6 +100,33 @@ fun ChildPortalScreen(
 
     val perAppAll = prefs.getPerAppSeconds().filterKeys { it != "com.familylink.ios" }
     val perApp = perAppAll.entries.sortedByDescending { it.value }
+    // The headline number is the whole phone, not just what counts against the limit — the
+    // budget below it is where the counted time belongs.
+    val totalDevice = remember(perAppAll) {
+        com.familylink.ios.data.LimitEngine(prefs).computeTotalDeviceSeconds(perAppAll)
+    }
+
+    // Tapping "Sperren" opens the same kind of sheet the parent portal has, so the button is
+    // one choice ("how long?") instead of one silent action.
+    var lockSheet by remember { mutableStateOf(false) }
+    if (lockSheet) {
+        ChildLockSheet(
+            onDismiss = { lockSheet = false },
+            onLockFor = { minutes ->
+                prefs.startOwnLock(minutes)
+                ScreenLock.lockNow(context)
+                com.familylink.ios.service.MonitorService.recheck(context)
+                lockSheet = false
+            },
+            onLockRestOfDay = {
+                // Sealed: from here the clock is the only way out, for everyone.
+                prefs.startOwnLock(prefs.minutesUntilMidnight(), sealed = true)
+                ScreenLock.lockNow(context)
+                com.familylink.ios.service.MonitorService.recheck(context)
+                lockSheet = false
+            }
+        )
+    }
 
     Column(Modifier.fillMaxSize().background(Nova.Canvas)) {
         Box(Modifier.weight(1f)) {
@@ -109,6 +135,7 @@ fun ChildPortalScreen(
                     prefs = prefs,
                     refreshing = refreshing,
                     onRefresh = ::refreshNow,
+                    totalDevice = totalDevice,
                     used = used,
                     limit = limit,
                     remaining = remaining,
@@ -116,12 +143,18 @@ fun ChildPortalScreen(
                     bedtime = bedtime,
                     disabled = disabled,
                     topApps = perApp.take(TOP_APPS_ON_OVERVIEW),
+                    // Read here, where the one-second tick lands, so the countdown on the
+                    // button actually ticks down.
+                    lockedFor = prefs.screenLockRemainingSeconds(),
+                    lockSealed = prefs.ownLockSealed,
+                    onOpenLockSheet = { lockSheet = true },
                     onExtendTime = onExtendTime
                 )
             } else {
                 SettingsTab(
                     prefs = prefs,
                     perApp = perApp,
+                    totalDevice = totalDevice,
                     onOpenChores = onOpenChores,
                     onOpenFocus = onOpenFocus,
                     onExtendTime = onExtendTime,
@@ -130,6 +163,116 @@ fun ChildPortalScreen(
             }
         }
         BottomNav(current = tab, onSelect = { tab = it })
+    }
+}
+
+/**
+ * The child's own lock menu. Deliberately not the parent's sheet: there is no "unlock" here —
+ * lifting a lock is the parent's job — and it carries one option the parent's does not, the
+ * lock for the rest of the day that nothing but midnight ends.
+ */
+@Composable
+private fun ChildLockSheet(
+    onDismiss: () -> Unit,
+    onLockFor: (Int) -> Unit,
+    onLockRestOfDay: () -> Unit
+) {
+    var confirmDay by remember { mutableStateOf(false) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                .background(Nova.Surface)
+        ) {
+            Column(Modifier.padding(vertical = 8.dp)) {
+                Text(
+                    if (confirmDay) "Wirklich für heute?" else "Handy sperren",
+                    fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
+                    modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp)
+                )
+                if (confirmDay) {
+                    Text(
+                        "Das Handy bleibt bis Mitternacht gesperrt. Das kannst weder du noch " +
+                            "deine Eltern vorher aufheben. Notrufe gehen weiter.",
+                        fontSize = 13.sp, color = Nova.InkMuted,
+                        modifier = Modifier.padding(horizontal = 20.dp, bottom = 12.dp)
+                    )
+                    SheetRow(
+                        icon = Icons.Filled.Lock,
+                        title = "Ja, für heute sperren",
+                        subtitle = "Endet erst um Mitternacht",
+                        tint = Nova.Danger,
+                        onClick = onLockRestOfDay
+                    )
+                    SheetDivider()
+                    SheetRow(
+                        icon = Icons.Filled.ChevronRight,
+                        title = "Doch nicht",
+                        subtitle = "Zurück zur Auswahl",
+                        onClick = { confirmDay = false }
+                    )
+                } else {
+                    LOCK_DURATIONS.forEachIndexed { i, (label, minutes) ->
+                        if (i > 0) SheetDivider()
+                        SheetRow(
+                            icon = Icons.Filled.HourglassBottom,
+                            title = label,
+                            subtitle = "Endet von selbst",
+                            onClick = { onLockFor(minutes) }
+                        )
+                    }
+                    SheetDivider()
+                    SheetRow(
+                        icon = Icons.Filled.Lock,
+                        title = "Für heute sperren",
+                        subtitle = "Bis Mitternacht — nicht mehr aufhebbar",
+                        tint = Nova.Danger,
+                        onClick = { confirmDay = true }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+private val LOCK_DURATIONS = listOf(
+    "15 Minuten" to 15,
+    "30 Minuten" to 30,
+    "1 Stunde" to 60,
+    "6 Stunden" to 360
+)
+
+@Composable
+private fun SheetRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    tint: Color = Nova.Primary,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(CircleShape).background(tint.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(19.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+            Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
+        }
+    }
+}
+
+@Composable
+private fun SheetDivider() {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
     }
 }
 
@@ -145,6 +288,7 @@ private fun OverviewTab(
     prefs: Prefs,
     refreshing: Boolean,
     onRefresh: () -> Unit,
+    totalDevice: Int,
     used: Int,
     limit: Int,
     remaining: Int,
@@ -152,6 +296,9 @@ private fun OverviewTab(
     bedtime: Boolean,
     disabled: Boolean,
     topApps: List<Map.Entry<String, Int>>,
+    lockedFor: Int,
+    lockSealed: Boolean,
+    onOpenLockSheet: () -> Unit,
     onExtendTime: () -> Unit
 ) {
     val context = LocalContext.current
@@ -159,7 +306,12 @@ private fun OverviewTab(
         OverviewHeader(refreshing = refreshing, onRefresh = onRefresh)
 
         Spacer(Modifier.height(14.dp))
-        ScreenTimeCard(used = used, apps = topApps, categoryOf = { prefs.categoryOf(it) })
+        ScreenTimeCard(
+            totalDevice = totalDevice,
+            counted = used,
+            apps = topApps,
+            categoryOf = { prefs.categoryOf(it) }
+        )
 
         Spacer(Modifier.height(12.dp))
         DeviceCard(
@@ -170,12 +322,10 @@ private fun OverviewTab(
 
         Spacer(Modifier.height(12.dp))
         LockActionRow(
-            locked = bedtime,
-            onLock = {
-                // The child's own lock: the display goes off right away. Nothing is taken
-                // away by it — the phone unlocks again as usual.
-                ScreenLock.lockNow(context)
-            },
+            lockedUntil = lockedFor,
+            sealed = lockSealed,
+            bedtime = bedtime,
+            onLock = onOpenLockSheet,
             onAddTime = onExtendTime
         )
 
@@ -219,13 +369,14 @@ private fun RoundIconButton(
 }
 
 /**
- * Today's screen time, and directly underneath it which apps that time went into — the two
- * belong together, so the per-app list lives inside this card instead of in a section of its
- * own further down the page.
+ * The headline is the whole phone: every minute the screen was on today, whether it counts
+ * against the budget or not. Underneath sits how much of that was counted, and then which apps
+ * the time went into — the three belong together, so they share one card.
  */
 @Composable
 private fun ScreenTimeCard(
-    used: Int,
+    totalDevice: Int,
+    counted: Int,
     apps: List<Map.Entry<String, Int>>,
     categoryOf: (String) -> AppCategory
 ) {
@@ -238,8 +389,18 @@ private fun ScreenTimeCard(
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                Text(TimeFmt.hm(used), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Nova.Ink)
-                Text("Heutige Bildschirmzeit", fontSize = 14.sp, color = Nova.InkMuted)
+                Text(
+                    TimeFmt.hm(totalDevice),
+                    fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
+                )
+                Text("Heutige Bildschirmzeit gesamt", fontSize = 14.sp, color = Nova.InkMuted)
+                Spacer(Modifier.height(2.dp))
+                // The headline counts the whole phone; this says how much of it the budget
+                // actually saw, so the two numbers below never look like a contradiction.
+                Text(
+                    "Davon ${TimeFmt.hm(counted)} angerechnet",
+                    fontSize = 13.sp, color = Nova.InkFaint
+                )
             }
             Box(
                 Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Nova.Primary),
@@ -315,23 +476,35 @@ private fun DeviceCard(
 }
 
 @Composable
-private fun LockActionRow(locked: Boolean, onLock: () -> Unit, onAddTime: () -> Unit) {
+private fun LockActionRow(
+    lockedUntil: Int,
+    sealed: Boolean,
+    bedtime: Boolean,
+    onLock: () -> Unit,
+    onAddTime: () -> Unit
+) {
+    val label = when {
+        sealed -> "Für heute gesperrt"
+        lockedUntil > 0 -> "Gesperrt — ${TimeFmt.hm(lockedUntil)}"
+        bedtime -> "Ruhezeit"
+        else -> "Sperren"
+    }
+    val tint = if (sealed || lockedUntil > 0) Nova.Danger else Nova.Ink
     Row(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(50))
-                .background(Nova.Surface).clickable { onLock() },
+                .background(Nova.Surface)
+                // A running lock is a statement, not a button — there is nothing left to pick.
+                .clickable(enabled = lockedUntil == 0) { onLock() },
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Lock, null, tint = Nova.Ink, modifier = Modifier.size(18.dp))
+            Icon(Icons.Filled.Lock, null, tint = tint, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(
-                if (locked) "Gesperrt" else "Sperren",
-                fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
-            )
+            Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = tint)
         }
         Spacer(Modifier.width(10.dp))
         Box(
@@ -397,6 +570,7 @@ private fun InfoRow(icon: ImageVector, title: String, subtitle: String) {
 private fun SettingsTab(
     prefs: Prefs,
     perApp: List<Map.Entry<String, Int>>,
+    totalDevice: Int,
     onOpenChores: () -> Unit,
     onOpenFocus: () -> Unit,
     onExtendTime: () -> Unit,
@@ -410,11 +584,6 @@ private fun SettingsTab(
         )
 
         Spacer(Modifier.height(16.dp))
-
-        if (prefs.streakEnabled) {
-            StreakCard(prefs.streakState())
-            Spacer(Modifier.height(16.dp))
-        }
 
         Column(Modifier.padding(horizontal = 16.dp)) {
             val chores = prefs.getChores()
@@ -449,10 +618,6 @@ private fun SettingsTab(
 
         // The weekly figures are detail, not headline — they belong on the page that scrolls.
         Spacer(Modifier.height(20.dp))
-        val totalDevice = remember(perApp) {
-            com.familylink.ios.data.LimitEngine(prefs)
-                .computeTotalDeviceSeconds(perApp.associate { it.key to it.value })
-        }
         SectionTitle("Zahlen")
         Column(Modifier.padding(horizontal = 20.dp)) {
             SubText("Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}", Nova.InkMuted)
@@ -590,88 +755,6 @@ private fun SectionTitle(text: String) {
         text.uppercase(), fontSize = 12.sp, color = Nova.InkMuted,
         modifier = Modifier.padding(start = 20.dp, bottom = 6.dp)
     )
-}
-
-/**
- * Days in a row inside the daily budget, what the next milestone is worth, and — when there is
- * one today — the reward or the reduction in force right now.
- *
- * Written for the child: it says what they get and what they can reach next, not what they lost.
- */
-@Composable
-private fun StreakCard(state: com.familylink.ios.data.StreakState) {
-    val streak = state.current
-    val bonus = state.bonusMinutesToday
-    val malus = state.penaltyMinutesToday
-    val accent = when {
-        bonus > 0 -> Nova.Success
-        malus > 0 -> Nova.Warning
-        streak > 0 -> Nova.Primary
-        else -> Nova.InkMuted
-    }
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        Column(
-            Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
-                .background(Nova.Surface)
-                .padding(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(44.dp).clip(CircleShape).background(accent.copy(alpha = 0.13f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.LocalFireDepartment, null, tint = accent,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        when (streak) {
-                            0 -> "Noch keine Serie"
-                            1 -> "1 Tag im Limit"
-                            else -> "$streak Tage im Limit"
-                        },
-                        fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
-                    )
-                    val toGo = com.familylink.ios.data.StreakLogic.daysToNextMilestone(streak)
-                    val reward = com.familylink.ios.data.StreakLogic.nextMilestoneBonus(streak)
-                    Text(
-                        when {
-                            toGo == null -> "Alle Stufen erreicht — stark!"
-                            toGo == 1 -> "Noch 1 Tag bis +$reward Min."
-                            else -> "Noch $toGo Tage bis +$reward Min."
-                        },
-                        fontSize = 13.sp, color = Nova.InkMuted
-                    )
-                }
-                if (state.longest > 0) {
-                    Text("Best: ${state.longest}", fontSize = 12.sp, color = Nova.InkFaint)
-                }
-            }
-
-            if (bonus > 0 || malus > 0) {
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(accent.copy(alpha = 0.12f))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (bonus > 0)
-                            "Heute +$bonus Min. für ${state.milestoneReached} Tage Serie!"
-                        else
-                            "Heute −$malus Min., weil das Limit gestern überschritten war.",
-                        fontSize = 13.sp, fontWeight = FontWeight.Medium, color = accent
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable
