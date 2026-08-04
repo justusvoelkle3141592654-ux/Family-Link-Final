@@ -195,7 +195,7 @@ private fun ChildLockSheet(
                         "Das Handy bleibt bis Mitternacht gesperrt. Das kannst weder du noch " +
                             "deine Eltern vorher aufheben. Notrufe gehen weiter.",
                         fontSize = 13.sp, color = Nova.InkMuted,
-                        modifier = Modifier.padding(horizontal = 20.dp, bottom = 12.dp)
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)
                     )
                     SheetRow(
                         icon = Icons.Filled.Lock,
