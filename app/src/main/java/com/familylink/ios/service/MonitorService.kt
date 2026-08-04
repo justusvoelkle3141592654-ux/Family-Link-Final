@@ -183,7 +183,7 @@ class MonitorService : Service() {
             val now = SystemClock.uptimeMillis()
             if (now - lastScreenLockAt >= SCREEN_LOCK_REPEAT_MS) {
                 lastScreenLockAt = now
-                runCatching { com.familylink.ios.admin.DeviceAdmin.lockNow(this) }
+                runCatching { com.familylink.ios.util.ScreenLock.lockNow(this) }
             }
             return
         }
@@ -454,7 +454,7 @@ class MonitorService : Service() {
         val cooldown = if (persistent) HARDCAP_LOCK_PERSISTENT_MS else HARDCAP_LOCK_GRACE_MS
         if (now - lastHardCapLockAt < cooldown) return
         lastHardCapLockAt = now
-        runCatching { com.familylink.ios.admin.DeviceAdmin.lockNow(this) }
+        runCatching { com.familylink.ios.util.ScreenLock.lockNow(this) }
     }
 
     /**

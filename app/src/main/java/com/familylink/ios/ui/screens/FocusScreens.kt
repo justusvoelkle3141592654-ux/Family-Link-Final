@@ -303,6 +303,13 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                         fontSize = 13.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(16.dp))
+                    // A focus session blocks the apps but leaves the screen on. Putting the
+                    // phone away properly means the display going dark too, so that is its own
+                    // button here rather than something only the parent can trigger.
+                    NovaButtonTonal(text = "Display jetzt sperren") {
+                        com.familylink.ios.util.ScreenLock.lockNow(context)
+                    }
+                    Spacer(Modifier.height(8.dp))
                     if (fromParent) {
                         Text(
                             "Diese Fokus-Zeit haben deine Eltern gestartet. Sie endet automatisch.",
@@ -385,6 +392,9 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                 com.familylink.ios.service.MonitorService.recheck(context)
                 SyncService.pushNow(context)
                 session = prefs.effectiveFocusSession()
+                // "Put the phone away" means the screen goes off, not just that apps stop
+                // opening — otherwise the phone stays lit in your hand.
+                com.familylink.ios.util.ScreenLock.lockNow(context)
             }
         }
 

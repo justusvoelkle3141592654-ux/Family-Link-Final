@@ -22,10 +22,8 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAlarm
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.HourglassBottom
@@ -46,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,13 +54,16 @@ import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.sync.Account
 import com.familylink.ios.ui.theme.Nova
+import com.familylink.ios.util.ScreenLock
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 
 /**
  * The child device's home screen — deliberately different from the parent app.
- * It is purely informational: remaining time, what was used today and for how long,
- * which apps are free, and when bedtime starts. No settings, no rules to change.
+ *
+ * Two destinations along the bottom, as on the reference: the overview and everything else.
+ * The overview is one fixed screenful on purpose — the numbers that matter are all visible at
+ * a glance and nothing hides below the fold. Only the second tab scrolls.
  */
 @Composable
 fun ChildPortalScreen(
@@ -86,6 +88,9 @@ fun ChildPortalScreen(
     LaunchedEffect(Unit) { while (true) { delay(1000); tick++ } }
     @Suppress("UNUSED_EXPRESSION") tick
 
+    /** 0 = Übersicht, 1 = Einstellungen. */
+    var tab by remember { mutableStateOf(0) }
+
     val used = prefs.globalUsedSeconds
     val bonus = prefs.bonusSecondsToday
     val limit = prefs.globalLimitMinutes * 60 + bonus
@@ -95,130 +100,94 @@ fun ChildPortalScreen(
     val disabled = prefs.limitsDisabled()
 
     val perAppAll = prefs.getPerAppSeconds().filterKeys { it != "com.familylink.ios" }
-    val perApp = perAppAll.entries.sortedByDescending { it.value }.take(12)
-
-    val battery = remember { readBattery(context) }
+    val perApp = perAppAll.entries.sortedByDescending { it.value }
 
     Column(Modifier.fillMaxSize().background(Nova.Canvas)) {
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState())
-        ) {
-            OverviewHeader(refreshing = refreshing, onRefresh = ::refreshNow)
-
-            Spacer(Modifier.height(16.dp))
-            ScreenTimeCard(context, used, perApp)
-
-            Spacer(Modifier.height(14.dp))
-            DeviceCard(
-                remaining = remaining, used = used, limit = limit, fraction = fraction,
-                deviceName = remember { Account.deviceName() }, battery = battery
-            )
-
-            if (prefs.limitScope != com.familylink.ios.data.LimitScope.DAY) {
-                val weekUsed = prefs.weekCountedSeconds()
-                val weekPot = prefs.weeklyLimitMinutes * 60
-                SubText(
-                    "Diese Woche: ${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
-                    if (weekUsed >= weekPot) Nova.Danger else Nova.InkFaint
-                )
-            }
-            if (prefs.hardCapEnabled && prefs.hardCapScope != com.familylink.ios.data.LimitScope.DAY) {
-                SubText(
-                    "Gesamt diese Woche: ${TimeFmt.hm(prefs.weekTotalSeconds())} von " +
-                        TimeFmt.hm(prefs.weeklyHardCapMinutes * 60),
-                    Nova.InkFaint
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-            LockActionRow(
-                locked = bedtime,
-                onLock = onOpenFocus,
-                onAddTime = onExtendTime
-            )
-
-            Spacer(Modifier.height(14.dp))
-            InfoListCard(prefs, disabled)
-
-            Spacer(Modifier.height(20.dp))
-
-            // ---- streak ----
-            if (prefs.streakEnabled) {
-                StreakCard(prefs.streakState())
-                Spacer(Modifier.height(16.dp))
-            }
-
-            // ---- chores ----
-            val chores = prefs.getChores()
-            val openChores = chores.count { it.isOpen }
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(Nova.RadiusCard.dp))
-                        .background(Nova.Surface)
-                        .clickable { onOpenChores() }.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.CheckCircle, null, tint = Nova.Primary,
-                            modifier = Modifier.size(21.dp))
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Aufgaben erledigen", color = Nova.Ink, fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium)
-                        Text(
-                            if (openChores > 0) "$openChores offen · verdiene Extra-Zeit"
-                            else "Keine offenen Aufgaben",
-                            color = Nova.InkMuted, fontSize = 13.sp
-                        )
-                    }
-                    Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint,
-                        modifier = Modifier.size(20.dp))
-                }
-            }
-
-            // ---- usage list ----
-            Spacer(Modifier.height(20.dp))
-            SectionTitle("Heute genutzt")
-            if (perApp.isEmpty()) {
-                Text(
-                    "Heute noch keine App genutzt.",
-                    fontSize = 14.sp, color = Nova.InkMuted,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        Box(Modifier.weight(1f)) {
+            if (tab == 0) {
+                OverviewTab(
+                    prefs = prefs,
+                    refreshing = refreshing,
+                    onRefresh = ::refreshNow,
+                    used = used,
+                    limit = limit,
+                    remaining = remaining,
+                    fraction = fraction,
+                    bedtime = bedtime,
+                    disabled = disabled,
+                    topApps = perApp.take(TOP_APPS_ON_OVERVIEW),
+                    onExtendTime = onExtendTime
                 )
             } else {
-                val maxSec = perApp.first().value.coerceAtLeast(1)
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    perApp.forEach { (pkg, secs) ->
-                        UsageRow(
-                            pkg = pkg,
-                            label = InstalledApps.labelFor(context, pkg),
-                            seconds = secs,
-                            fraction = secs.toFloat() / maxSec,
-                            category = prefs.categoryOf(pkg)
-                        )
-                    }
-                }
+                SettingsTab(
+                    prefs = prefs,
+                    perApp = perApp,
+                    onOpenChores = onOpenChores,
+                    onOpenFocus = onOpenFocus,
+                    onExtendTime = onExtendTime,
+                    onOpenParentArea = onOpenParentArea
+                )
             }
-            Spacer(Modifier.height(20.dp))
         }
-
-        BottomNav(onOpenParentArea = onOpenParentArea)
+        BottomNav(current = tab, onSelect = { tab = it })
     }
 }
 
-private fun readBattery(context: android.content.Context): Int = runCatching {
-    val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
-    bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-}.getOrDefault(-1)
+/** How many apps fit into the screen-time card without pushing the overview off screen. */
+private const val TOP_APPS_ON_OVERVIEW = 3
+
+// ---------------------------------------------------------------------------
+// Übersicht — one screenful, never scrolls.
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun OverviewTab(
+    prefs: Prefs,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    used: Int,
+    limit: Int,
+    remaining: Int,
+    fraction: Float,
+    bedtime: Boolean,
+    disabled: Boolean,
+    topApps: List<Map.Entry<String, Int>>,
+    onExtendTime: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize()) {
+        OverviewHeader(refreshing = refreshing, onRefresh = onRefresh)
+
+        Spacer(Modifier.height(14.dp))
+        ScreenTimeCard(used = used, apps = topApps, categoryOf = { prefs.categoryOf(it) })
+
+        Spacer(Modifier.height(12.dp))
+        DeviceCard(
+            remaining = remaining, used = used, limit = limit, fraction = fraction,
+            deviceName = remember { Account.deviceName() },
+            battery = remember { readBattery(context) }
+        )
+
+        Spacer(Modifier.height(12.dp))
+        LockActionRow(
+            locked = bedtime,
+            onLock = {
+                // The child's own lock: the display goes off right away. Nothing is taken
+                // away by it — the phone unlocks again as usual.
+                ScreenLock.lockNow(context)
+            },
+            onAddTime = onExtendTime
+        )
+
+        Spacer(Modifier.height(12.dp))
+        InfoListCard(prefs, disabled)
+    }
+}
 
 @Composable
 private fun OverviewHeader(refreshing: Boolean, onRefresh: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 24.dp),
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 22.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -236,7 +205,7 @@ private fun OverviewHeader(refreshing: Boolean, onRefresh: () -> Unit) {
 
 @Composable
 private fun RoundIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     tint: Color = Nova.Ink,
     onClick: () -> Unit
@@ -249,12 +218,18 @@ private fun RoundIconButton(
     }
 }
 
+/**
+ * Today's screen time, and directly underneath it which apps that time went into — the two
+ * belong together, so the per-app list lives inside this card instead of in a section of its
+ * own further down the page.
+ */
 @Composable
 private fun ScreenTimeCard(
-    context: android.content.Context,
     used: Int,
-    perApp: List<Map.Entry<String, Int>>
+    apps: List<Map.Entry<String, Int>>,
+    categoryOf: (String) -> AppCategory
 ) {
+    val context = LocalContext.current
     Column(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth()
             .clip(RoundedCornerShape(Nova.RadiusCard.dp))
@@ -273,36 +248,21 @@ private fun ScreenTimeCard(
                 Icon(Icons.Filled.BarChart, null, tint = Color.White, modifier = Modifier.size(22.dp))
             }
         }
-        if (perApp.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            Row {
-                perApp.take(3).forEach { (pkg, _) ->
-                    AppBadgeIcon(context, pkg)
-                    Spacer(Modifier.width(10.dp))
-                }
+        if (apps.isEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text("Heute noch keine App genutzt.", fontSize = 13.sp, color = Nova.InkFaint)
+        } else {
+            val maxSec = apps.first().value.coerceAtLeast(1)
+            Spacer(Modifier.height(12.dp))
+            apps.forEach { (pkg, secs) ->
+                UsageRow(
+                    pkg = pkg,
+                    label = InstalledApps.labelFor(context, pkg),
+                    seconds = secs,
+                    fraction = secs.toFloat() / maxSec,
+                    category = categoryOf(pkg)
+                )
             }
-        }
-    }
-}
-
-@Composable
-private fun AppBadgeIcon(context: android.content.Context, pkg: String) {
-    val icon = remember(pkg) { InstalledApps.iconBitmap(context, pkg) }
-    Box(Modifier.size(44.dp)) {
-        Box(
-            Modifier.size(40.dp).clip(CircleShape).background(Nova.Fill),
-            contentAlignment = Alignment.Center
-        ) {
-            if (icon != null) {
-                Image(bitmap = icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(36.dp))
-            }
-        }
-        Box(
-            Modifier.size(16.dp).clip(CircleShape).background(Nova.Success)
-                .align(Alignment.BottomEnd),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(10.dp))
         }
     }
 }
@@ -327,13 +287,14 @@ private fun DeviceCard(
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("${TimeFmt.hm(remaining)} übrig", fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                Text(
+                    "${TimeFmt.hm(remaining)} übrig",
+                    fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
+                )
                 Text(deviceName, fontSize = 13.sp, color = Nova.InkMuted)
             }
             if (battery in 0..100) {
                 Text("$battery %", fontSize = 14.sp, color = Nova.InkMuted)
-                Spacer(Modifier.width(2.dp))
-                Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint, modifier = Modifier.size(18.dp))
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -354,16 +315,11 @@ private fun DeviceCard(
 }
 
 @Composable
-private fun SubText(text: String, color: Color) {
-    Text(
-        text, fontSize = 13.sp, color = color,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)
-    )
-}
-
-@Composable
 private fun LockActionRow(locked: Boolean, onLock: () -> Unit, onAddTime: () -> Unit) {
-    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Row(
             Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(50))
                 .background(Nova.Surface).clickable { onLock() },
@@ -383,7 +339,10 @@ private fun LockActionRow(locked: Boolean, onLock: () -> Unit, onAddTime: () -> 
                 .clickable { onAddTime() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.AddAlarm, "Mehr Zeit anfragen", tint = Nova.Primary, modifier = Modifier.size(22.dp))
+            Icon(
+                Icons.Filled.AddAlarm, "Mehr Zeit anfragen",
+                tint = Nova.Primary, modifier = Modifier.size(22.dp)
+            )
         }
     }
 }
@@ -410,7 +369,7 @@ private fun InfoListCard(prefs: Prefs, disabled: Boolean) {
 }
 
 @Composable
-private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String) {
+private fun InfoRow(icon: ImageVector, title: String, subtitle: String) {
     Row(
         Modifier.fillMaxWidth().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -429,26 +388,167 @@ private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title
     }
 }
 
+// ---------------------------------------------------------------------------
+// Einstellungen — everything that does not fit on one screen lives here, and this
+// is the only tab that scrolls.
+// ---------------------------------------------------------------------------
+
 @Composable
-private fun BottomNav(onOpenParentArea: () -> Unit) {
+private fun SettingsTab(
+    prefs: Prefs,
+    perApp: List<Map.Entry<String, Int>>,
+    onOpenChores: () -> Unit,
+    onOpenFocus: () -> Unit,
+    onExtendTime: () -> Unit,
+    onOpenParentArea: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Text(
+            "Einstellungen", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp)
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        if (prefs.streakEnabled) {
+            StreakCard(prefs.streakState())
+            Spacer(Modifier.height(16.dp))
+        }
+
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            val chores = prefs.getChores()
+            val openChores = chores.count { it.isOpen }
+            ActionRow(
+                icon = Icons.Filled.CheckCircle,
+                title = "Aufgaben erledigen",
+                subtitle = if (openChores > 0) "$openChores offen · verdiene Extra-Zeit"
+                else "Keine offenen Aufgaben",
+                onClick = onOpenChores
+            )
+            Spacer(Modifier.height(10.dp))
+
+            val ownFocus = prefs.effectiveFocusSession()
+            ActionRow(
+                icon = Icons.Filled.Lock,
+                title = "Handy weglegen",
+                subtitle = if (ownFocus.isRunning())
+                    "Läuft — noch ${TimeFmt.hm(ownFocus.remainingSeconds())}"
+                else "Fokus-Zeit selbst starten",
+                onClick = onOpenFocus
+            )
+            Spacer(Modifier.height(10.dp))
+
+            ActionRow(
+                icon = Icons.Filled.AddAlarm,
+                title = "Mehr Zeit anfragen",
+                subtitle = "Deine Eltern entscheiden",
+                onClick = onExtendTime
+            )
+        }
+
+        // The weekly figures are detail, not headline — they belong on the page that scrolls.
+        Spacer(Modifier.height(20.dp))
+        val totalDevice = remember(perApp) {
+            com.familylink.ios.data.LimitEngine(prefs)
+                .computeTotalDeviceSeconds(perApp.associate { it.key to it.value })
+        }
+        SectionTitle("Zahlen")
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            SubText("Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}", Nova.InkMuted)
+            if (prefs.limitScope != com.familylink.ios.data.LimitScope.DAY) {
+                val weekUsed = prefs.weekCountedSeconds()
+                val weekPot = prefs.weeklyLimitMinutes * 60
+                SubText(
+                    "Diese Woche: ${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
+                    if (weekUsed >= weekPot) Nova.Danger else Nova.InkMuted
+                )
+            }
+            if (prefs.hardCapEnabled && prefs.hardCapScope != com.familylink.ios.data.LimitScope.DAY) {
+                SubText(
+                    "Gesamt diese Woche: ${TimeFmt.hm(prefs.weekTotalSeconds())} von " +
+                        TimeFmt.hm(prefs.weeklyHardCapMinutes * 60),
+                    Nova.InkMuted
+                )
+            }
+        }
+
+        // The full per-app list — the overview only has room for the top few.
+        Spacer(Modifier.height(20.dp))
+        SectionTitle("Heute genutzt")
+        if (perApp.isEmpty()) {
+            Text(
+                "Heute noch keine App genutzt.",
+                fontSize = 14.sp, color = Nova.InkMuted,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+        } else {
+            val maxSec = perApp.first().value.coerceAtLeast(1)
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                perApp.take(20).forEach { (pkg, secs) ->
+                    UsageRow(
+                        pkg = pkg,
+                        label = InstalledApps.labelFor(context, pkg),
+                        seconds = secs,
+                        fraction = secs.toFloat() / maxSec,
+                        category = prefs.categoryOf(pkg)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Text(
+            "Eltern-Bereich",
+            fontSize = 14.sp, color = Nova.InkFaint,
+            modifier = Modifier.fillMaxWidth().clickable { onOpenParentArea() }
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        )
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Nova.RadiusCard.dp))
+            .background(Nova.Surface)
+            .clickable { onClick() }.padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(21.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Nova.Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = Nova.InkMuted, fontSize = 13.sp)
+        }
+        Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint, modifier = Modifier.size(20.dp))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared pieces
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun BottomNav(current: Int, onSelect: (Int) -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Nova.Surface)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        NavItem(Icons.Filled.BarChart, "Bildschirmzeit", selected = true) {}
-        NavItem(Icons.Filled.Shield, "Einstellungen", selected = false) { onOpenParentArea() }
-        NavItem(Icons.Filled.Apps, "Apps", selected = false) { onOpenParentArea() }
+        NavItem(Icons.Filled.BarChart, "Übersicht", current == 0) { onSelect(0) }
+        NavItem(Icons.Filled.Shield, "Einstellungen", current == 1) { onSelect(1) }
     }
 }
 
 @Composable
-private fun NavItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
+private fun NavItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
     Column(
         Modifier.clickable { onClick() }.padding(horizontal = 14.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -471,6 +571,25 @@ private fun NavItem(
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
         )
     }
+}
+
+private fun readBattery(context: android.content.Context): Int = runCatching {
+    val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE)
+        as android.os.BatteryManager
+    bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+}.getOrDefault(-1)
+
+@Composable
+private fun SubText(text: String, color: Color) {
+    Text(text, fontSize = 13.sp, color = color, modifier = Modifier.padding(vertical = 2.dp))
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text.uppercase(), fontSize = 12.sp, color = Nova.InkMuted,
+        modifier = Modifier.padding(start = 20.dp, bottom = 6.dp)
+    )
 }
 
 /**
@@ -556,14 +675,6 @@ private fun StreakCard(state: com.familylink.ios.data.StreakState) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text.uppercase(), fontSize = 12.sp, color = Nova.InkMuted,
-        modifier = Modifier.padding(start = 20.dp, bottom = 6.dp)
-    )
-}
-
-@Composable
 private fun UsageRow(
     pkg: String,
     label: String,
@@ -588,7 +699,10 @@ private fun UsageRow(
             contentAlignment = Alignment.Center
         ) {
             if (icon != null) {
-                Image(bitmap = icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(32.dp))
+                Image(
+                    bitmap = icon.asImageBitmap(), contentDescription = null,
+                    modifier = Modifier.size(32.dp)
+                )
             } else {
                 Text(label.take(1), fontSize = 15.sp, color = Nova.Ink)
             }
@@ -597,7 +711,10 @@ private fun UsageRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, fontSize = 15.sp, color = Nova.Ink, modifier = Modifier.weight(1f))
-                Text(TimeFmt.hm(seconds), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Nova.InkMuted)
+                Text(
+                    TimeFmt.hm(seconds), fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium, color = Nova.InkMuted
+                )
             }
             Spacer(Modifier.height(5.dp))
             Box(

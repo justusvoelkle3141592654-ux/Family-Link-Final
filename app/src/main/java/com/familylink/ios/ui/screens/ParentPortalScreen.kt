@@ -258,8 +258,8 @@ fun ParentPortalScreen(
                     onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
                     onLockNow = { sync.lockDevice(); v++ },
                     onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
-                    onLockScreen = { minutes -> sync.lockScreenForMinutes(minutes); v++ },
-                    onReleaseScreen = { sync.releaseScreenLock(); v++ },
+                    onLockScreen = { minutes -> startScreenLock(context, sync, minutes); v++ },
+                    onReleaseScreen = { releaseScreenLock(context, sync); v++ },
                     onApproveChore = { id ->
                         thread(isDaemon = true) { sync.approveChore(id) }
                         v++
@@ -899,6 +899,52 @@ fun ParentPortalScreen(
                         }
                     }
                 }
+            }
+            // Display lock: the screen itself goes dark and re-locks on every unlock. Reachable
+            // here as well as from the dashboard sheet, because the supervised phone's portal
+            // has no dashboard at all.
+            val screenLeft = prefs.screenLockRemainingSeconds()
+            val canLock = !prefs.isParentDevice || prefs.syncConfigured
+            NovaRow(
+                title = if (screenLeft > 0) "Display gesperrt — noch ${TimeFmt.hm(screenLeft)}"
+                else "Display sperren",
+                subtitle = if (screenLeft > 0) "Tippe zum Aufheben"
+                else "Bildschirm aus, maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten"
+            ) {
+                if (screenLeft > 0) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(Nova.Success.copy(alpha = 0.15f))
+                            .clickable { releaseScreenLock(context, sync); v++ }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text("Aufheben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(1, 5, Prefs.MAX_SCREEN_LOCK_MIN).distinct().forEach { m ->
+                            Box(
+                                Modifier.clip(RoundedCornerShape(9.dp))
+                                    .background(Nova.Danger.copy(alpha = 0.13f))
+                                    .clickable(enabled = canLock) { startScreenLock(context, sync, m); v++ }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("${m}m", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger)
+                            }
+                        }
+                    }
+                }
+            }
+            // Without the accessibility service (or, on Android 8, the device admin) the OS
+            // gives no app any way to switch the display off — say so instead of offering a
+            // button that quietly does nothing.
+            if (!prefs.isParentDevice && !com.familylink.ios.util.ScreenLock.available(context)) {
+                Text(
+                    "Zum Sperren des Displays wird die Bedienungshilfe (oder auf Android 8 der " +
+                        "Geräteadministrator) benötigt. Bitte unter Berechtigungen erteilen.",
+                    fontSize = 12.sp, color = Nova.Warning,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
             }
             // Focus keeps its own entry: unlike a lock it leaves chosen apps usable.
             NovaRow(
@@ -1988,6 +2034,29 @@ private fun BonusSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * Start a timed display lock.
+ *
+ * On the parent's phone this is only a rule that travels to the child with the next config
+ * push. On the supervised phone itself — the portal is reachable there with the PIN — the
+ * screen has to go off now rather than on the next monitor tick, so it is locked directly and
+ * the monitor is nudged to take over keeping it locked.
+ */
+private fun startScreenLock(context: android.content.Context, sync: SyncManager, minutes: Int) {
+    sync.lockScreenForMinutes(minutes)
+    if (!Prefs.get(context).isParentDevice) {
+        com.familylink.ios.util.ScreenLock.lockNow(context)
+        com.familylink.ios.service.MonitorService.recheck(context)
+    }
+}
+
+private fun releaseScreenLock(context: android.content.Context, sync: SyncManager) {
+    sync.releaseScreenLock()
+    if (!Prefs.get(context).isParentDevice) {
+        com.familylink.ios.service.MonitorService.recheck(context)
     }
 }
 

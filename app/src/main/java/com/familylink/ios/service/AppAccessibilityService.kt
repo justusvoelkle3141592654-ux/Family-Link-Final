@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.familylink.ios.BlockActivity
-import com.familylink.ios.admin.DeviceAdmin
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.util.ForegroundTracker
 import com.familylink.ios.util.LockState
@@ -32,7 +31,18 @@ class AppAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         prefs = Prefs.get(this)
+        instance = this
         if (!prefs.isParentDevice) MonitorService.start(this)
+    }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        if (instance === this) instance = null
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -125,7 +135,7 @@ class AppAccessibilityService : AccessibilityService() {
         //    child does not reappear inside Settings after unlocking.
         if (settingsAttempts >= LOCK_AFTER_ATTEMPTS) {
             settingsAttempts = 0
-            DeviceAdmin.lockNow(this)
+            com.familylink.ios.util.ScreenLock.lockNow(this)
             performGlobalAction(GLOBAL_ACTION_HOME)
         }
         return true
@@ -175,8 +185,16 @@ class AppAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() { /* no-op */ }
 
-    private companion object {
+    companion object {
         /** Screen locking is the last resort — only after this many rapid Settings attempts. */
-        const val LOCK_AFTER_ATTEMPTS = 3
+        private const val LOCK_AFTER_ATTEMPTS = 3
+
+        /**
+         * The connected service, or null while the permission is off. [ScreenLock] needs it to
+         * lock the display without the device-admin permission.
+         */
+        @Volatile
+        var instance: AppAccessibilityService? = null
+            private set
     }
 }
