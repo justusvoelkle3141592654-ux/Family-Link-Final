@@ -131,6 +131,9 @@ data class FamilyConfig(
     val extensionMinutes: Int = 0,
     /** Epoch at which a running free-time countdown ends. */
     val bonusUntilEpoch: Long = 0,
+    /** Does the child earn bonus time for keeping a self-started lock running, and how much? */
+    val ownLockRewardEnabled: Boolean = true,
+    val ownLockRewardPerHour: Int = 10,
     /** Parent locked the device by hand; stays until they lift it. */
     val manualLock: Boolean = false,
     val manualLockReason: String = "",
@@ -149,6 +152,8 @@ data class FamilyConfig(
         put("screenLockUntil", screenLockUntil)
         put("extensionMinutes", extensionMinutes)
         put("bonusUntilEpoch", bonusUntilEpoch)
+        put("ownLockRewardEnabled", ownLockRewardEnabled)
+        put("ownLockRewardPerHour", ownLockRewardPerHour)
         put("manualLock", manualLock)
         put("manualLockReason", manualLockReason)
         put("globalLimitMinutes", globalLimitMinutes)
@@ -223,6 +228,8 @@ data class FamilyConfig(
                 screenLockUntil = o.optLong("screenLockUntil", 0),
                 extensionMinutes = o.optInt("extensionMinutes", 0),
                 bonusUntilEpoch = o.optLong("bonusUntilEpoch", 0),
+                ownLockRewardEnabled = o.optBoolean("ownLockRewardEnabled", true),
+                ownLockRewardPerHour = o.optInt("ownLockRewardPerHour", 10),
                 manualLock = o.optBoolean("manualLock", false),
                 manualLockReason = o.optString("manualLockReason", ""),
                 updatedAt = o.optLong("updatedAt", 0)

@@ -61,6 +61,8 @@ class SyncManager(private val context: Context) {
             hardCapScope = prefs.hardCapScope.name,
             weeklyHardCapMinutes = prefs.weeklyHardCapMinutes,
             screenLockUntil = prefs.screenLockUntil,
+            ownLockRewardEnabled = prefs.ownLockRewardEnabled,
+            ownLockRewardPerHour = prefs.ownLockRewardPerHour,
             extensionMinutes = prefs.extensionMinutesToday,
             bonusUntilEpoch = prefs.bonusUntilEpoch,
             manualLock = prefs.manualLockEnabled,
@@ -498,6 +500,8 @@ class SyncManager(private val context: Context) {
         // Only the parent's own lock travels with the config; the child's lives in its own
         // field precisely so this line cannot wipe it.
         prefs.screenLockUntil = cfg.screenLockUntil
+        prefs.ownLockRewardEnabled = cfg.ownLockRewardEnabled
+        prefs.ownLockRewardPerHour = cfg.ownLockRewardPerHour
         prefs.applyGrants(cfg.extensionMinutes, cfg.bonusUntilEpoch)
         prefs.manualLockEnabled = cfg.manualLock
         prefs.manualLockReason = cfg.manualLockReason

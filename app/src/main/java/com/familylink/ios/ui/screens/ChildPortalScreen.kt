@@ -106,20 +106,27 @@ fun ChildPortalScreen(
         com.familylink.ios.data.LimitEngine(prefs).computeTotalDeviceSeconds(perAppAll)
     }
 
+    // Pay out whatever a finished self-lock earned. The monitor does this too; doing it here as
+    // well means the number is already right the moment the child unlocks and looks.
+    LaunchedEffect(tick) { prefs.settleOwnLockReward() }
+
     // Tapping "Sperren" opens the same kind of sheet the parent portal has, so the button is
     // one choice ("how long?") instead of one silent action.
     var lockSheet by remember { mutableStateOf(false) }
+    fun lock(minutes: Int, sealed: Boolean) {
+        if (prefs.startOwnLock(minutes, sealed)) {
+            ScreenLock.lockNow(context)
+            com.familylink.ios.service.MonitorService.recheck(context)
+        }
+        lockSheet = false
+    }
     if (lockSheet) {
         ChildLockSheet(
             leftFor = { prefs.ownLocksLeft(it) },
+            rewardPerHour = if (prefs.ownLockRewardEnabled) prefs.ownLockRewardPerHour else 0,
             onDismiss = { lockSheet = false },
-            onLockFor = { minutes ->
-                if (prefs.startOwnLock(minutes)) {
-                    ScreenLock.lockNow(context)
-                    com.familylink.ios.service.MonitorService.recheck(context)
-                }
-                lockSheet = false
-            }
+            onLockFor = { minutes -> lock(minutes, sealed = false) },
+            onLockRestOfDay = { lock(prefs.minutesUntilMidnight(), sealed = true) }
         )
     }
 
@@ -141,6 +148,7 @@ fun ChildPortalScreen(
                     // Read here, where the one-second tick lands, so the countdown on the
                     // button actually ticks down.
                     lockedFor = prefs.screenLockRemainingSeconds(),
+                    lockSealed = prefs.ownLockSealed,
                     onOpenLockSheet = { lockSheet = true },
                     onExtendTime = onExtendTime
                 )
@@ -165,15 +173,27 @@ fun ChildPortalScreen(
  * lifting a lock stays the parent's job.
  *
  * The two long options are rationed by the week, and a spent one is not shown greyed out but
- * simply gone, so the menu only ever offers what is actually available.
+ * simply gone, so the menu only ever offers what is actually available. Each row says what the
+ * lock is worth in bonus time, because that is the reason to pick a longer one.
  */
 @Composable
 private fun ChildLockSheet(
     leftFor: (Int) -> Int,
+    rewardPerHour: Int,
     onDismiss: () -> Unit,
-    onLockFor: (Int) -> Unit
+    onLockFor: (Int) -> Unit,
+    onLockRestOfDay: () -> Unit
 ) {
+    var confirmDay by remember { mutableStateOf(false) }
     val available = LOCK_DURATIONS.filter { leftFor(it.minutes) > 0 }
+
+    /** What this length is worth, phrased for the row it sits on. */
+    fun reward(minutes: Int): String? {
+        if (rewardPerHour <= 0) return null
+        val earned = (minutes * rewardPerHour / 60).coerceAtMost(Prefs.OWN_LOCK_REWARD_MAX_PER_DAY)
+        return if (earned > 0) "+$earned Min. Bonus" else null
+    }
+
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Box(
             Modifier.fillMaxWidth()
@@ -182,19 +202,60 @@ private fun ChildLockSheet(
         ) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(
-                    "Handy sperren",
+                    if (confirmDay) "Wirklich für heute?" else "Handy sperren",
                     fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
                     modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp)
                 )
-                available.forEachIndexed { i, option ->
-                    if (i > 0) SheetDivider()
-                    val left = leftFor(option.minutes)
+                if (confirmDay) {
+                    Text(
+                        "Das Handy bleibt bis Mitternacht gesperrt. Das kannst weder du noch " +
+                            "deine Eltern vorher aufheben. Notrufe gehen weiter.",
+                        fontSize = 13.sp, color = Nova.InkMuted,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)
+                    )
                     SheetRow(
-                        icon = Icons.Filled.HourglassBottom,
-                        title = option.label,
-                        subtitle = if (option.perWeek == null) "Endet von selbst"
-                        else "Noch ${left}× diese Woche",
-                        onClick = { onLockFor(option.minutes) }
+                        icon = Icons.Filled.Lock,
+                        title = "Ja, für heute sperren",
+                        subtitle = "Endet erst um Mitternacht",
+                        tint = Nova.Danger,
+                        onClick = onLockRestOfDay
+                    )
+                    SheetDivider()
+                    SheetRow(
+                        icon = Icons.Filled.ChevronRight,
+                        title = "Doch nicht",
+                        subtitle = "Zurück zur Auswahl",
+                        onClick = { confirmDay = false }
+                    )
+                } else {
+                    if (rewardPerHour > 0) {
+                        Text(
+                            "Jede Stunde, die du durchhältst, bringt dir $rewardPerHour Minuten " +
+                                "Bildschirmzeit zurück.",
+                            fontSize = 13.sp, color = Nova.InkMuted,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp)
+                        )
+                    }
+                    available.forEachIndexed { i, option ->
+                        if (i > 0) SheetDivider()
+                        val left = leftFor(option.minutes)
+                        val quota = if (option.perWeek == null) "Endet von selbst"
+                        else "Noch ${left}× diese Woche"
+                        SheetRow(
+                            icon = Icons.Filled.HourglassBottom,
+                            title = option.label,
+                            subtitle = listOfNotNull(quota, reward(option.minutes))
+                                .joinToString(" · "),
+                            onClick = { onLockFor(option.minutes) }
+                        )
+                    }
+                    SheetDivider()
+                    SheetRow(
+                        icon = Icons.Filled.Lock,
+                        title = "Für heute sperren",
+                        subtitle = "Bis Mitternacht — nicht mehr aufhebbar",
+                        tint = Nova.Danger,
+                        onClick = { confirmDay = true }
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -267,6 +328,7 @@ private fun OverviewTab(
     disabled: Boolean,
     topApps: List<Map.Entry<String, Int>>,
     lockedFor: Int,
+    lockSealed: Boolean,
     onOpenLockSheet: () -> Unit,
     onExtendTime: () -> Unit
 ) {
@@ -292,6 +354,7 @@ private fun OverviewTab(
         Spacer(Modifier.height(12.dp))
         LockActionRow(
             lockedUntil = lockedFor,
+            sealed = lockSealed,
             bedtime = bedtime,
             onLock = onOpenLockSheet,
             onAddTime = onExtendTime
@@ -446,16 +509,18 @@ private fun DeviceCard(
 @Composable
 private fun LockActionRow(
     lockedUntil: Int,
+    sealed: Boolean,
     bedtime: Boolean,
     onLock: () -> Unit,
     onAddTime: () -> Unit
 ) {
     val label = when {
+        sealed -> "Für heute gesperrt"
         lockedUntil > 0 -> "Gesperrt — ${TimeFmt.hm(lockedUntil)}"
         bedtime -> "Ruhezeit"
         else -> "Sperren"
     }
-    val tint = if (lockedUntil > 0) Nova.Danger else Nova.Ink
+    val tint = if (sealed || lockedUntil > 0) Nova.Danger else Nova.Ink
     Row(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -663,9 +728,36 @@ private fun SettingsTab(
             Spacer(Modifier.height(10.dp))
             Text(
                 "15 und 30 Minuten kannst du so oft sperren, wie du willst. " +
-                    "Das Kontingent füllt sich jeden Montag wieder auf.",
+                    "Das Kontingent füllt sich jeden Montag wieder auf. " +
+                    "Bis Mitternacht sperren geht immer.",
                 fontSize = 12.sp, color = Nova.InkFaint
             )
+            if (prefs.ownLockRewardEnabled && prefs.ownLockRewardPerHour > 0) {
+                val earned = prefs.ownLockEarnedToday()
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .background(Nova.Success.copy(alpha = 0.12f))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Bonus fürs Weglegen",
+                            fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Nova.Success
+                        )
+                        Text(
+                            "${prefs.ownLockRewardPerHour} Min. pro Stunde, die du durchhältst " +
+                                "(max. ${Prefs.OWN_LOCK_REWARD_MAX_PER_DAY} Min. am Tag)",
+                            fontSize = 12.sp, color = Nova.InkMuted
+                        )
+                    }
+                    Text(
+                        "heute +$earned", fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium, color = Nova.Success
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))

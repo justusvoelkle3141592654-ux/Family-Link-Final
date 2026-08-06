@@ -898,6 +898,28 @@ fun ParentPortalScreen(
                     }
                 }
             }
+            // The child's side of locking: they can lock their own phone from their portal, and
+            // time served that way buys screen time back. This is the knob for how generous it
+            // is — and the switch that turns the whole idea off.
+            NovaRow(
+                title = "Bonus fürs Weglegen",
+                subtitle = "Sperrt das Kind sein Handy selbst, bekommt es Bildschirmzeit " +
+                    "zurück — nur für Zeit, die es wirklich durchhält, und höchstens " +
+                    "${Prefs.OWN_LOCK_REWARD_MAX_PER_DAY} Min. am Tag."
+            ) {
+                NovaSwitch(checked = prefs.ownLockRewardEnabled) {
+                    prefs.ownLockRewardEnabled = it; v++
+                }
+            }
+            if (prefs.ownLockRewardEnabled) {
+                NovaRow(title = "Pro durchgehaltener Stunde") {
+                    Stepper(
+                        value = "${prefs.ownLockRewardPerHour} Min",
+                        onMinus = { prefs.ownLockRewardPerHour = prefs.ownLockRewardPerHour - 5; v++ },
+                        onPlus = { prefs.ownLockRewardPerHour = prefs.ownLockRewardPerHour + 5; v++ }
+                    )
+                }
+            }
             // Without the accessibility service (or, on Android 8, the device admin) the OS
             // gives no app any way to switch the display off — say so instead of offering a
             // button that quietly does nothing.

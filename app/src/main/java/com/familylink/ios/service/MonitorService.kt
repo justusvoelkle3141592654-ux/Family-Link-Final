@@ -176,6 +176,10 @@ class MonitorService : Service() {
             prefs.networkAvailable = hasWorkingInternet()
         }
 
+        // Pay out what a self-started lock has earned so far. Cheap, and doing it on every tick
+        // means the bonus is already credited by the time the lock ends.
+        runCatching { prefs.settleOwnLockReward() }
+
         // A running screen lock outranks everything: the display itself goes off and every
         // unlock puts it straight back, until the timer expires on its own.
         if (prefs.screenLockActive()) {
