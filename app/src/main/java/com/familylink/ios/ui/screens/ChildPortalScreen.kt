@@ -111,18 +111,13 @@ fun ChildPortalScreen(
     var lockSheet by remember { mutableStateOf(false) }
     if (lockSheet) {
         ChildLockSheet(
+            leftFor = { prefs.ownLocksLeft(it) },
             onDismiss = { lockSheet = false },
             onLockFor = { minutes ->
-                prefs.startOwnLock(minutes)
-                ScreenLock.lockNow(context)
-                com.familylink.ios.service.MonitorService.recheck(context)
-                lockSheet = false
-            },
-            onLockRestOfDay = {
-                // Sealed: from here the clock is the only way out, for everyone.
-                prefs.startOwnLock(prefs.minutesUntilMidnight(), sealed = true)
-                ScreenLock.lockNow(context)
-                com.familylink.ios.service.MonitorService.recheck(context)
+                if (prefs.startOwnLock(minutes)) {
+                    ScreenLock.lockNow(context)
+                    com.familylink.ios.service.MonitorService.recheck(context)
+                }
                 lockSheet = false
             }
         )
@@ -146,7 +141,6 @@ fun ChildPortalScreen(
                     // Read here, where the one-second tick lands, so the countdown on the
                     // button actually ticks down.
                     lockedFor = prefs.screenLockRemainingSeconds(),
-                    lockSealed = prefs.ownLockSealed,
                     onOpenLockSheet = { lockSheet = true },
                     onExtendTime = onExtendTime
                 )
@@ -168,16 +162,18 @@ fun ChildPortalScreen(
 
 /**
  * The child's own lock menu. Deliberately not the parent's sheet: there is no "unlock" here —
- * lifting a lock is the parent's job — and it carries one option the parent's does not, the
- * lock for the rest of the day that nothing but midnight ends.
+ * lifting a lock stays the parent's job.
+ *
+ * The two long options are rationed by the week, and a spent one is not shown greyed out but
+ * simply gone, so the menu only ever offers what is actually available.
  */
 @Composable
 private fun ChildLockSheet(
+    leftFor: (Int) -> Int,
     onDismiss: () -> Unit,
-    onLockFor: (Int) -> Unit,
-    onLockRestOfDay: () -> Unit
+    onLockFor: (Int) -> Unit
 ) {
-    var confirmDay by remember { mutableStateOf(false) }
+    val available = LOCK_DURATIONS.filter { leftFor(it.minutes) > 0 }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Box(
             Modifier.fillMaxWidth()
@@ -186,48 +182,19 @@ private fun ChildLockSheet(
         ) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(
-                    if (confirmDay) "Wirklich für heute?" else "Handy sperren",
+                    "Handy sperren",
                     fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
                     modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp)
                 )
-                if (confirmDay) {
-                    Text(
-                        "Das Handy bleibt bis Mitternacht gesperrt. Das kannst weder du noch " +
-                            "deine Eltern vorher aufheben. Notrufe gehen weiter.",
-                        fontSize = 13.sp, color = Nova.InkMuted,
-                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)
-                    )
+                available.forEachIndexed { i, option ->
+                    if (i > 0) SheetDivider()
+                    val left = leftFor(option.minutes)
                     SheetRow(
-                        icon = Icons.Filled.Lock,
-                        title = "Ja, für heute sperren",
-                        subtitle = "Endet erst um Mitternacht",
-                        tint = Nova.Danger,
-                        onClick = onLockRestOfDay
-                    )
-                    SheetDivider()
-                    SheetRow(
-                        icon = Icons.Filled.ChevronRight,
-                        title = "Doch nicht",
-                        subtitle = "Zurück zur Auswahl",
-                        onClick = { confirmDay = false }
-                    )
-                } else {
-                    LOCK_DURATIONS.forEachIndexed { i, (label, minutes) ->
-                        if (i > 0) SheetDivider()
-                        SheetRow(
-                            icon = Icons.Filled.HourglassBottom,
-                            title = label,
-                            subtitle = "Endet von selbst",
-                            onClick = { onLockFor(minutes) }
-                        )
-                    }
-                    SheetDivider()
-                    SheetRow(
-                        icon = Icons.Filled.Lock,
-                        title = "Für heute sperren",
-                        subtitle = "Bis Mitternacht — nicht mehr aufhebbar",
-                        tint = Nova.Danger,
-                        onClick = { confirmDay = true }
+                        icon = Icons.Filled.HourglassBottom,
+                        title = option.label,
+                        subtitle = if (option.perWeek == null) "Endet von selbst"
+                        else "Noch ${left}× diese Woche",
+                        onClick = { onLockFor(option.minutes) }
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -236,11 +203,14 @@ private fun ChildLockSheet(
     }
 }
 
+/** One entry in the child's lock menu. [perWeek] is null for the ones with no weekly limit. */
+private data class LockOption(val label: String, val minutes: Int, val perWeek: Int?)
+
 private val LOCK_DURATIONS = listOf(
-    "15 Minuten" to 15,
-    "30 Minuten" to 30,
-    "1 Stunde" to 60,
-    "6 Stunden" to 360
+    LockOption("15 Minuten", 15, null),
+    LockOption("30 Minuten", 30, null),
+    LockOption("1 Stunde", 60, Prefs.OWN_LOCK_60_PER_WEEK),
+    LockOption("6 Stunden", 360, Prefs.OWN_LOCK_360_PER_WEEK)
 )
 
 @Composable
@@ -297,7 +267,6 @@ private fun OverviewTab(
     disabled: Boolean,
     topApps: List<Map.Entry<String, Int>>,
     lockedFor: Int,
-    lockSealed: Boolean,
     onOpenLockSheet: () -> Unit,
     onExtendTime: () -> Unit
 ) {
@@ -323,7 +292,6 @@ private fun OverviewTab(
         Spacer(Modifier.height(12.dp))
         LockActionRow(
             lockedUntil = lockedFor,
-            sealed = lockSealed,
             bedtime = bedtime,
             onLock = onOpenLockSheet,
             onAddTime = onExtendTime
@@ -478,18 +446,16 @@ private fun DeviceCard(
 @Composable
 private fun LockActionRow(
     lockedUntil: Int,
-    sealed: Boolean,
     bedtime: Boolean,
     onLock: () -> Unit,
     onAddTime: () -> Unit
 ) {
     val label = when {
-        sealed -> "Für heute gesperrt"
         lockedUntil > 0 -> "Gesperrt — ${TimeFmt.hm(lockedUntil)}"
         bedtime -> "Ruhezeit"
         else -> "Sperren"
     }
-    val tint = if (sealed || lockedUntil > 0) Nova.Danger else Nova.Ink
+    val tint = if (lockedUntil > 0) Nova.Danger else Nova.Ink
     Row(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -660,6 +626,46 @@ private fun SettingsTab(
                     )
                 }
             }
+        }
+
+        // What is left of the rationed locks. The sheet on the overview hides a spent option
+        // rather than greying it out, so this is where the child can see why one is missing and
+        // when it comes back.
+        Spacer(Modifier.height(20.dp))
+        SectionTitle("Sperren")
+        Column(
+            Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+                .background(Nova.Surface)
+                .padding(16.dp)
+        ) {
+            LOCK_DURATIONS.filter { it.perWeek != null }.forEachIndexed { i, option ->
+                if (i > 0) Spacer(Modifier.height(10.dp))
+                val left = prefs.ownLocksLeft(option.minutes)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            option.label, fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = Nova.Ink
+                        )
+                        Text(
+                            "${option.perWeek}× pro Woche",
+                            fontSize = 13.sp, color = Nova.InkMuted
+                        )
+                    }
+                    Text(
+                        if (left > 0) "noch ${left}×" else "aufgebraucht",
+                        fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                        color = if (left > 0) Nova.Success else Nova.InkFaint
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "15 und 30 Minuten kannst du so oft sperren, wie du willst. " +
+                    "Das Kontingent füllt sich jeden Montag wieder auf.",
+                fontSize = 12.sp, color = Nova.InkFaint
+            )
         }
 
         Spacer(Modifier.height(20.dp))

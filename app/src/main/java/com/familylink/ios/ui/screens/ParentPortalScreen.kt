@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreTime
@@ -629,45 +628,6 @@ fun ParentPortalScreen(
 
         }
 
-        // ---- streak: its own area, reached from its own row in the menu ----
-        if (showGroup("streak")) {
-        SectionHeader("Serie im Limit")
-        NovaCard {
-            NovaRow(
-                title = "Serie zählen",
-                subtitle = "Jeder Tag im Tageslimit zählt weiter. Bei den Stufen " +
-                    com.familylink.ios.data.StreakLogic.MILESTONES.joinToString(", ") {
-                        "${it.first} Tage +${it.second} Min"
-                    } + " gibt es die Zeit einmalig für diesen Tag dazu."
-            ) {
-                NovaSwitch(checked = prefs.streakEnabled) { prefs.streakEnabled = it; v++ }
-            }
-            if (prefs.streakEnabled) {
-                NovaRow(
-                    title = "Abzug nach einem Fehltag",
-                    subtitle = "Wird nur am Tag nach dem überschrittenen Limit abgezogen. " +
-                        "Ein Tag mit Aus-Knopf zählt nicht als Fehltag."
-                ) {
-                    Stepper(
-                        value = "${prefs.streakPenaltyMinutes} Min",
-                        onMinus = { prefs.streakPenaltyMinutes = prefs.streakPenaltyMinutes - 5; v++ },
-                        onPlus = { prefs.streakPenaltyMinutes = prefs.streakPenaltyMinutes + 5; v++ }
-                    )
-                }
-                if (!prefs.isParentDevice) {
-                    val st = prefs.streakState()
-                    NovaRow(title = "Aktuell", subtitle = "Bestwert ${st.longest} Tage") {
-                        NovaPill(
-                            "${st.current} Tage",
-                            if (st.current > 0) Nova.Success else Nova.InkMuted
-                        )
-                    }
-                }
-            }
-        }
-
-        }
-
         // ---- schedules: the reference keeps them apart from the limits ----
         if (showGroup("plaene")) {
         // ---- school time, the reference's second schedule ----
@@ -908,16 +868,10 @@ fun ParentPortalScreen(
             NovaRow(
                 title = if (screenLeft > 0) "Display gesperrt — noch ${TimeFmt.hm(screenLeft)}"
                 else "Display sperren",
-                subtitle = when {
-                    prefs.ownLockSealed ->
-                        "Vollsperre — läuft von selbst ab, vorher nicht aufhebbar"
-                    screenLeft > 0 -> "Tippe zum Aufheben"
-                    else -> "Bildschirm aus, 15 Min · 30 Min · 1 Std"
-                }
+                subtitle = if (screenLeft > 0) "Tippe zum Aufheben"
+                else "Bildschirm aus, 15 Min · 30 Min · 1 Std"
             ) {
-                if (prefs.ownLockSealed) {
-                    NovaPill("Vollsperre", Nova.Danger)
-                } else if (screenLeft > 0) {
+                if (screenLeft > 0) {
                     Box(
                         Modifier.clip(RoundedCornerShape(10.dp))
                             .background(Nova.Success.copy(alpha = 0.15f))
@@ -1425,7 +1379,6 @@ private fun ScopePicker(current: LimitScope, onPick: (LimitScope) -> Unit) {
 private val GROUP_TITLES = mapOf(
     "zeit" to "Zeitlimits",
     "plaene" to "Zeitpläne",
-    "streak" to "Serie im Limit",
     "apps" to "Apps",
     "sperren" to "Sperren & Fokus",
     "verwaltung" to "Verwaltung",
@@ -1541,7 +1494,6 @@ private data class MenuEntry(
 private val MENU_ENTRIES = listOf(
     MenuEntry("zeit", "Zeitlimits", "Tageslimit, Wochenlimit und Gesamtlimit", Icons.Filled.HourglassBottom),
     MenuEntry("plaene", "Zeitpläne", "Ruhezeit und Schulzeit", Icons.Filled.CalendarMonth),
-    MenuEntry("streak", "Serie im Limit", "Tage in Folge, Stufen und Abzug", Icons.Filled.LocalFireDepartment),
     MenuEntry("apps", "Apps", "Gesperrte Apps und Freigaben für heute", Icons.Filled.Apps),
     MenuEntry("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus", Icons.Filled.Lock),
     MenuEntry("verwaltung", "Verwaltung", "Kategorien, Aufgaben, Bericht, Geräte", Icons.Filled.Tune),
@@ -2134,12 +2086,18 @@ private fun LockSheet(
                         onClick = onReleaseScreen
                     )
                 } else {
-                    NovaRow(
-                        title = "Display sperren",
-                        subtitle = "Bildschirm aus, 15 Minuten",
-                        icon = Icons.Filled.PhoneAndroid,
-                        onClick = { onLockScreen(15) }
-                    )
+                    // Three lengths, like the child's own menu — 15 minutes alone was never
+                    // enough for anything but getting someone's attention.
+                    listOf(15 to "15 Minuten", 30 to "30 Minuten", 60 to "1 Stunde")
+                        .forEachIndexed { i, (minutes, label) ->
+                            if (i > 0) NovaDivider()
+                            NovaRow(
+                                title = "Display sperren — $label",
+                                subtitle = "Bildschirm aus, endet von selbst",
+                                icon = Icons.Filled.PhoneAndroid,
+                                onClick = { onLockScreen(minutes) }
+                            )
+                        }
                 }
                 Spacer(Modifier.height(8.dp))
             }
