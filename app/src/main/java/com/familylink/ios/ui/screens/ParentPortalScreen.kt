@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreTime
@@ -189,7 +190,7 @@ fun ParentPortalScreen(
      * a settings area returns to the settings list, the detail page to the overview, and any
      * tab to the first one. Only from the overview does back close the portal.
      */
-    androidx.activity.compose.BackHandler(enabled = prefs.isParentDevice) {
+    androidx.activity.compose.BackHandler {
         when {
             showEvents -> showEvents = false
             settingsGroup != null -> { settingsGroup = null; showSettings = false; tab = groupCameFrom }
@@ -227,6 +228,21 @@ fun ParentPortalScreen(
                 runCatching { sync.pushConfig() }
             }
         }
+    }
+
+    // ---- the supervised phone's parent area ----
+    //
+    // Reached with the PIN from the child portal. It has no dashboard — the numbers are on the
+    // child's own overview — but it gets the same menu the parent app has, so it is a list of
+    // areas to step into rather than one page carrying every setting the app owns.
+    if (!prefs.isParentDevice && settingsGroup == null) {
+        SettingsList(
+            title = "Eltern-Bereich",
+            entries = MENU_ENTRIES.filter { it.key !in PARENT_DEVICE_ONLY_GROUPS },
+            onPick = { settingsGroup = it },
+            onClose = onExit
+        )
+        return
     }
 
     // ---- the parent app's shell: three tabs along the bottom, as in the reference ----
@@ -301,11 +317,11 @@ fun ParentPortalScreen(
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Both devices arrive here with one area picked from the menu, so the heading is
+            // that area — never the whole word "Einstellungen" over an endless page.
             Text(
-                if (prefs.isParentDevice) settingsGroup?.let { GROUP_TITLES[it] } ?: "Einstellungen"
-                else "Eltern-Portal",
-                fontSize = if (prefs.isParentDevice) 26.sp else 34.sp,
-                fontWeight = FontWeight.Bold, color = Nova.Ink
+                settingsGroup?.let { GROUP_TITLES[it] } ?: "Einstellungen",
+                fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
             )
             Spacer(Modifier.weight(1f))
             if (prefs.syncConfigured) {
@@ -1530,7 +1546,12 @@ private val MENU_ENTRIES = listOf(
  * single endless settings list, and neither do we.
  */
 @Composable
-private fun SettingsList(onPick: (String) -> Unit) {
+private fun SettingsList(
+    onPick: (String) -> Unit,
+    title: String = "Einstellungen",
+    entries: List<MenuEntry> = MENU_ENTRIES,
+    onClose: (() -> Unit)? = null
+) {
     Column(
         Modifier.fillMaxSize()
             .background(Nova.Canvas)
@@ -1538,10 +1559,10 @@ private fun SettingsList(onPick: (String) -> Unit) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("Einstellungen", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Text(title, fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Spacer(Modifier.height(16.dp))
         NovaCard {
-            MENU_ENTRIES.forEachIndexed { i, e ->
+            entries.forEachIndexed { i, e ->
                 if (i > 0) NovaDivider()
                 // No chevron: the reference's lists carry the glyph, the title and the line
                 // beneath it, and nothing on the right at all.
@@ -1553,9 +1574,23 @@ private fun SettingsList(onPick: (String) -> Unit) {
                 )
             }
         }
+        // The supervised phone has no bottom bar to leave by, so the way out is a row.
+        if (onClose != null) {
+            Spacer(Modifier.height(16.dp))
+            NovaCard {
+                NovaRow(
+                    title = "Zurück zum Kinder-Portal",
+                    icon = Icons.Filled.ChevronRight,
+                    onClick = onClose
+                )
+            }
+        }
         Spacer(Modifier.height(100.dp))
     }
 }
+
+/** Areas that only make sense on the parent's own phone. */
+private val PARENT_DEVICE_ONLY_GROUPS = setOf("meldungen")
 /**
  * The parent's start page.
  *

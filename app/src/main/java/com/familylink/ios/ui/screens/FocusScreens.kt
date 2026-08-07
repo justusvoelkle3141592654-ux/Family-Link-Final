@@ -148,15 +148,23 @@ fun FocusScreen(onBack: () -> Unit) {
             // --- presets ---
             Text("Vorlage", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.InkMuted)
             Spacer(Modifier.height(8.dp))
+            // The long sessions are rationed by the week. A focus the parent pushes takes the
+            // phone away and only they can end it early, so it stays a decision rather than a
+            // reflex. A spent one is left visible and says why it cannot be picked.
+            val left = { m: Int -> prefs.focusSessionsLeft(m) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 FocusSession.PRESETS.take(2).forEach { (name, mins) ->
-                    PresetChip(name, mins, label == name, Modifier.weight(1f)) { label = name; minutes = mins }
+                    PresetChip(name, mins, label == name, Modifier.weight(1f), left(mins)) {
+                        label = name; minutes = mins
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 FocusSession.PRESETS.drop(2).forEach { (name, mins) ->
-                    PresetChip(name, mins, label == name, Modifier.weight(1f)) { label = name; minutes = mins }
+                    PresetChip(name, mins, label == name, Modifier.weight(1f), left(mins)) {
+                        label = name; minutes = mins
+                    }
                 }
             }
 
@@ -225,7 +233,14 @@ fun FocusScreen(onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(20.dp))
-            NovaButton(text = "Fokus starten ($minutes Min)", color = Nova.Focus) {
+            NovaButton(
+                text = "Fokus starten ($minutes Min)",
+                color = Nova.Focus,
+                enabled = prefs.focusSessionsLeft(minutes) > 0
+            ) {
+                // Book it against the week before starting, so a spent allowance cannot be
+                // sidestepped by tapping fast.
+                if (!prefs.useFocusSession(minutes)) return@NovaButton
                 sync.startFocus(label, minutes, allowed.toList())
                 SyncService.pushNow(context)
                 session = prefs.focusSession()
@@ -341,19 +356,18 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                 "Eine Stunde" to 60,
                 "Zwei Stunden" to 120
             )
-            // The long sessions are rationed by the week: they hide apps and only the parent
-            // PIN ends them early, so they are a decision rather than something to reach for
-            // every afternoon. A spent one stays visible but says why it cannot be picked.
-            val left = { m: Int -> prefs.focusSessionsLeft(m) }
+            // Unrationed on purpose: a child choosing to put their own phone away should never
+            // be told they have used that up. The weekly allowance belongs to the parent's
+            // focus, which takes the phone away rather than being handed it.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 choices.take(2).forEach { (name, m) ->
-                    PresetChip(name, m, minutes == m, Modifier.weight(1f), left(m)) { minutes = m }
+                    PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 choices.drop(2).forEach { (name, m) ->
-                    PresetChip(name, m, minutes == m, Modifier.weight(1f), left(m)) { minutes = m }
+                    PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
                 }
             }
 
@@ -376,14 +390,7 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
             }
 
             Spacer(Modifier.height(20.dp))
-            NovaButton(
-                text = "Jetzt weglegen ($minutes Min)",
-                color = Nova.Focus,
-                enabled = prefs.focusSessionsLeft(minutes) > 0
-            ) {
-                // Book it against the week before starting, so a spent allowance cannot be
-                // sidestepped by tapping fast.
-                if (!prefs.useFocusSession(minutes)) return@NovaButton
+            NovaButton(text = "Jetzt weglegen ($minutes Min)", color = Nova.Focus) {
                 val now = System.currentTimeMillis()
                 val allowed =
                     if (allowPlus) apps.map { it.packageName }

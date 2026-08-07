@@ -63,7 +63,9 @@ fun LockOverlayContent(
     bedtime: Boolean,
     onOpenPortal: () -> Unit,
     /** The offline lock adds a way out that the child can use themselves. */
-    offline: Boolean = false
+    offline: Boolean = false,
+    /** A guard was switched off: the way out is granting it again, and nothing else. */
+    repair: Boolean = false
 ) {
     val context = LocalContext.current
     val prefs = remember { com.familylink.ios.data.Prefs.get(context) }
@@ -122,6 +124,56 @@ fun LockOverlayContent(
             }
 
             Spacer(Modifier.weight(1f))
+
+            // ---- a switched-off guard: the button that repairs it ----
+            //
+            // The settings page it opens is exactly the one that grants the missing permission,
+            // and the window it opens is scoped to the settings app alone. Leaving that page for
+            // anything else cancels the window on the spot and this screen is back — so the trip
+            // into Settings is only usable for the one thing it was opened for.
+            if (repair) {
+                val missing = remember(clock) {
+                    com.familylink.ios.util.Permissions.firstMissing(context)
+                }
+                if (missing != null) {
+                    Text(
+                        "Fehlt: ${missing.label}",
+                        fontSize = 14.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        missing.hint, fontSize = 13.sp, color = Nova.InkFaint,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(accent)
+                            .clickable {
+                                prefs.openLockEscape(
+                                    com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES.toSet(),
+                                    seconds = 180
+                                )
+                                runCatching {
+                                    context.startActivity(
+                                        missing.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            }
+                            .padding(horizontal = 26.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Berechtigung erteilen", fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = Color.White
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
 
             // ---- offline: the way out the child can take themselves ----
             //

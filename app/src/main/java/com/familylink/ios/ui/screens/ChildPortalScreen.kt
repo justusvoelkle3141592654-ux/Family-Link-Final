@@ -718,15 +718,11 @@ private fun SettingsTab(
                 else "Nur erlaubte Apps, für eine feste Zeit",
                 onClick = onOpenFocus
             )
-            RowDivider()
-            QuotaRow("1 Stunde", Prefs.FOCUS_60_PER_WEEK, prefs.focusSessionsLeft(60))
-            RowDivider()
-            QuotaRow("2 Stunden", Prefs.FOCUS_120_PER_WEEK, prefs.focusSessionsLeft(120))
             Text(
-                "Kürzere Fokus-Zeiten kannst du so oft starten, wie du willst. " +
-                    "Das Kontingent füllt sich jeden Montag wieder auf.",
+                "So oft und so lange du willst — und Zeit, die du durchhältst, bringt dir " +
+                    "Bildschirmzeit zurück.",
                 fontSize = 12.sp, color = Nova.InkFaint,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
             )
         }
 
@@ -862,26 +858,6 @@ private fun SettingsRow(
             Text(subtitle, color = Nova.InkMuted, fontSize = 13.sp)
         }
         Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint, modifier = Modifier.size(20.dp))
-    }
-}
-
-/** "1 Stunde — 3× pro Woche — noch 2×". */
-@Composable
-private fun QuotaRow(label: String, perWeek: Int, left: Int) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Spacer(Modifier.width(54.dp))
-        Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 15.sp, color = Nova.Ink)
-            Text("${perWeek}× pro Woche", fontSize = 12.sp, color = Nova.InkFaint)
-        }
-        Text(
-            if (left > 0) "noch ${left}×" else "aufgebraucht",
-            fontSize = 13.sp, fontWeight = FontWeight.Medium,
-            color = if (left > 0) Nova.Success else Nova.InkFaint
-        )
     }
 }
 

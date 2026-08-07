@@ -52,4 +52,32 @@ object Permissions {
     }
 
     fun accessibilityIntent(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+
+    /** A permission that has been taken away, with the page that grants it back. */
+    data class Missing(val label: String, val hint: String, val intent: Intent)
+
+    /**
+     * The first permission the enforcement is missing, or null while everything is granted.
+     *
+     * Order matters: the accessibility service comes first because it is the one that makes the
+     * others repairable — without it the app cannot even see that Settings was opened.
+     */
+    fun firstMissing(context: Context): Missing? = when {
+        !accessibilityEnabled(context) -> Missing(
+            "Bedienungshilfe",
+            "Unter „Installierte Apps“ die Kindersicherung wieder einschalten.",
+            accessibilityIntent()
+        )
+        !hasUsageAccess(context) -> Missing(
+            "Nutzungszugriff",
+            "Der Kindersicherung den Zugriff auf die Nutzungsdaten wieder erlauben.",
+            usageAccessIntent()
+        )
+        !hasOverlay(context) -> Missing(
+            "Über anderen Apps anzeigen",
+            "Der Kindersicherung erlauben, sich über andere Apps zu legen.",
+            overlayIntent(context)
+        )
+        else -> null
+    }
 }

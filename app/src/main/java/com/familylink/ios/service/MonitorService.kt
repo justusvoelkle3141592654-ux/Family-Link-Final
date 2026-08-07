@@ -170,11 +170,14 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
-        // Someone switched a guard off. Turning off the accessibility service used to be the
-        // way to make the locks stop working; now it is the one thing that makes the phone
-        // useless until it is switched back on, so there is nothing to gain by it.
+        // Someone switched a guard off. Turning off the accessibility service — or "display over
+        // other apps", which used to take the overlay away with it — used to be the way to make
+        // the locks stop working; now it is the one thing that makes the phone useless until it
+        // is switched back on, so there is nothing to gain by it.
         if (!guardsIntact()) {
-            enforceGuardLoss()
+            enforceGuardLoss(
+                UsageStatsTracker.currentForegroundPackage(this) ?: ForegroundTracker.currentPackage
+            )
             return
         }
 
@@ -400,34 +403,57 @@ class MonitorService : Service() {
      * Are the permissions the enforcement rests on still granted?
      *
      * The device admin is not in here: it only blocks uninstalling, and it is legitimately
-     * optional. The accessibility service and usage access are what the limits are built on.
+     * optional. Everything else the locks are built on is — including the overlay permission,
+     * because revoking that used to take the lock screen away and leave the phone free.
      */
     private fun guardsIntact(): Boolean =
-        com.familylink.ios.util.Permissions.accessibilityEnabled(this) &&
-            com.familylink.ios.util.Permissions.hasUsageAccess(this)
+        com.familylink.ios.util.Permissions.firstMissing(this) == null
 
     /**
      * React to a guard being switched off: seal the phone until it is granted again.
      *
      * Deliberately the same treatment as a hard lock rather than a warning — a warning would be
-     * the reward for switching it off. Settings stays reachable on purpose, because that is
-     * where it has to be switched back on, and the block screen says so.
+     * the reward for switching it off. The one way forward is the button on the lock screen,
+     * which opens the page that grants the missing permission and nothing else: the window it
+     * opens covers the settings app alone, and leaving it for anything else cancels the window
+     * on the spot and puts this screen straight back.
      */
-    private fun enforceGuardLoss() {
+    private fun enforceGuardLoss(pkg: String?) {
         LockState.update(lockActive = true, hardLock = true, bedtime = false)
-        runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, false) }
-        lastSettingsHidden = false
+        // Settings has to be reachable — it is where the repair happens — but only while the
+        // lock screen's own button is holding the window open.
+        val repairing = prefs.lockEscapeAllows(pkg)
+        if (lastSettingsHidden != !repairing) {
+            lastSettingsHidden = !repairing
+            runCatching {
+                com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, !repairing)
+            }
+        }
+        if (repairing) {
+            com.familylink.ios.util.LockOverlay.hide(this)
+            return
+        }
+        prefs.clearLockEscape()
+
+        val missing = com.familylink.ios.util.Permissions.firstMissing(this)
         val title = "Schutz ausgeschaltet"
-        val detail = "Die Kindersicherung braucht die Bedienungshilfe und den Nutzungszugriff. " +
-            "Bitte in den Einstellungen wieder erteilen — vorher bleibt das Handy gesperrt."
+        val detail = "Die Kindersicherung braucht ${missing?.label ?: "ihre Berechtigungen"}. " +
+            "Tippe unten auf „Berechtigung erteilen“ — vorher bleibt das Handy gesperrt."
         if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
-            showSealedOverlay(title, detail, bedtime = false)
+            showSealedOverlay(title, detail, bedtime = false, repair = true)
         } else {
+            // The overlay itself is what was revoked, so the block screen has to carry the
+            // repair button instead. Not pinned: pinning it would make Settings unreachable and
+            // the phone genuinely unrecoverable.
             val now = SystemClock.uptimeMillis()
             if (now - lastBlockLaunchAt >= RELAUNCH_COOLDOWN_MS) {
                 lastBlockLaunchAt = now
-                // Not pinned: the child has to be able to reach Settings to repair it.
-                main.post { BlockActivity.launch(this, title, detail, false, true, false) }
+                main.post {
+                    BlockActivity.launch(
+                        this, title, detail,
+                        bedtime = false, hardLock = true, sealed = false, repair = true
+                    )
+                }
             }
         }
     }
@@ -437,18 +463,21 @@ class MonitorService : Service() {
         title: String,
         detail: String,
         bedtime: Boolean,
-        offline: Boolean = false
+        offline: Boolean = false,
+        repair: Boolean = false
     ) {
         // The shade would otherwise slide down over the overlay and hand the child quick
         // settings. Only possible as device owner; without it the overlay still covers the
         // screen, the shade just remains reachable.
         setStatusBarBlocked(true)
-        com.familylink.ios.util.LockOverlay.show(this, key = "$title|$detail|$bedtime|$offline") {
+        val key = "$title|$detail|$bedtime|$offline|$repair"
+        com.familylink.ios.util.LockOverlay.show(this, key = key) {
             com.familylink.ios.ui.screens.LockOverlayContent(
                 title = title,
                 detail = detail,
                 bedtime = bedtime,
                 offline = offline,
+                repair = repair,
                 onOpenPortal = { com.familylink.ios.ui.screens.openParentPortal(this) }
             )
         }
