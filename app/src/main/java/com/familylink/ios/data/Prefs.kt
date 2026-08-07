@@ -109,6 +109,16 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         /** Bounds for the duration the child types in themselves. */
         const val MIN_OWN_LOCK_MIN = 1
 
+        /**
+         * How long the phone is sealed after every boot and every unlock that follows one.
+         *
+         * The gap right after a restart was the way around everything: the guard needs a moment
+         * to come up, and in that moment Settings was reachable and the permissions could be
+         * switched off one by one. Nothing works during this window — not the launcher, not an
+         * app, not Settings — so there is no moment to use.
+         */
+        const val BOOT_LOCK_MS = 30_000L
+
         /** Bonus minutes earned per full hour the child keeps their own lock running. */
         const val DEFAULT_OWN_LOCK_REWARD_PER_HOUR = 10
         const val MAX_OWN_LOCK_REWARD_PER_HOUR = 60
@@ -615,6 +625,36 @@ class Prefs private constructor(private val sp: SharedPreferences) {
             set(Calendar.MILLISECOND, 0)
         }
         return ((c.timeInMillis - System.currentTimeMillis()) / 60_000L).toInt().coerceAtLeast(1)
+    }
+
+    // ---- The window right after a restart ---------------------------------
+
+    var bootLockUntil: Long
+        get() = sp.getLong("boot_lock_until", 0)
+        set(v) = sp.edit().putLong("boot_lock_until", v).apply()
+
+    /** Start (or extend) the seal that covers the moments after a boot or an unlock. */
+    fun startBootLock() {
+        val until = System.currentTimeMillis() + BOOT_LOCK_MS
+        if (until > bootLockUntil) bootLockUntil = until
+    }
+
+    /**
+     * True while the phone is still inside the post-restart seal.
+     *
+     * Two clocks, because either alone can be fooled: [bootLockUntil] is written when the boot
+     * broadcast arrives, and the time since boot covers the case where that broadcast never
+     * reached us — a killed app, a denied receiver — and the process only came up later.
+     */
+    fun bootLockActive(): Boolean =
+        System.currentTimeMillis() < bootLockUntil ||
+            android.os.SystemClock.elapsedRealtime() < BOOT_LOCK_MS
+
+    /** Seconds left on the post-restart seal, for the countdown on the lock screen. */
+    fun bootLockRemainingSeconds(): Int {
+        val byClock = bootLockUntil - System.currentTimeMillis()
+        val sinceBoot = BOOT_LOCK_MS - android.os.SystemClock.elapsedRealtime()
+        return (maxOf(byClock, sinceBoot) / 1000L).toInt().coerceAtLeast(0)
     }
 
     /** Lock the display for [minutes] on the parent's behalf, clamped to the maximum. */

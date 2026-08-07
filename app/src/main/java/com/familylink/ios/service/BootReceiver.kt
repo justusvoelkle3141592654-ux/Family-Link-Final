@@ -25,6 +25,12 @@ class BootReceiver : BroadcastReceiver() {
                 runCatching { com.familylink.ios.admin.DeviceOwner.applyPolicies(context) }
                 runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(context, true) }
 
+                // Seal the phone for the first half-minute. Preferences are only readable once
+                // the user has unlocked, so this is attempted on every action and simply does
+                // nothing on the direct-boot pass — the time-since-boot half of the check in
+                // [Prefs.bootLockActive] covers that pass on its own.
+                runCatching { com.familylink.ios.data.Prefs.get(context).startBootLock() }
+
                 // MonitorService.start() already refuses to run on a parent device.
                 MonitorService.start(context)
                 com.familylink.ios.sync.SyncService.start(context)

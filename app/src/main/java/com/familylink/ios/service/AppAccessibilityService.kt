@@ -117,6 +117,10 @@ class AppAccessibilityService : AccessibilityService() {
         if (!isSettingsPackage(pkg)) return false
         // Never interfere during setup or while the parent authorised settings access.
         if (!prefs.setupDone || prefs.settingsUnlocked()) return false
+        // Nor while the lock screen's own button is holding a window open — that window exists
+        // precisely so a revoked permission can be granted again, and bouncing the child out of
+        // the page they were sent to would make the repair impossible.
+        if (prefs.lockEscapeAllowsAny(SETTINGS_ESCAPE_PACKAGES)) return false
 
         val now = android.os.SystemClock.uptimeMillis()
         // Short debounce only — we want to react on essentially every settings event so the
@@ -198,6 +202,10 @@ class AppAccessibilityService : AccessibilityService() {
     companion object {
         /** Screen locking is the last resort — only after this many rapid Settings attempts. */
         private const val LOCK_AFTER_ATTEMPTS = 3
+
+        /** The packages a repair window covers — the settings apps the lock screen sends to. */
+        private val SETTINGS_ESCAPE_PACKAGES =
+            com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES
 
         /**
          * The connected service, or null while the permission is off. [ScreenLock] needs it to

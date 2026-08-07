@@ -170,6 +170,15 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
+        // The half-minute after a restart outranks everything, including a guard that is
+        // missing: this is the window someone used to reboot into, and it is now simply dead
+        // time. No launcher, no app, no Settings — nothing to do but wait it out, by which
+        // point every guard is back up and watching.
+        if (prefs.bootLockActive()) {
+            enforceBootLock()
+            return
+        }
+
         // Someone switched a guard off. Turning off the accessibility service — or "display over
         // other apps", which used to take the overlay away with it — used to be the way to make
         // the locks stop working; now it is the one thing that makes the phone useless until it
@@ -400,6 +409,41 @@ class MonitorService : Service() {
     }
 
     /**
+     * Seal the phone for the first moments after a restart.
+     *
+     * Nothing is exempt here on purpose — not Settings, not the launcher. The point of the
+     * window is that there is no window: by the time it lifts, the services are up, the
+     * policies are re-applied and a missing permission has already been noticed.
+     */
+    private fun enforceBootLock() {
+        LockState.update(lockActive = true, hardLock = true, bedtime = false)
+        setStatusBarBlocked(true)
+        if (lastSettingsHidden != true) {
+            lastSettingsHidden = true
+            runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, true) }
+        }
+        val left = prefs.bootLockRemainingSeconds()
+        val title = "Kindersicherung startet"
+        val detail = "Das Handy ist noch $left Sekunden gesperrt, während der Schutz hochfährt."
+        if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
+            showSealedOverlay(title, detail, bedtime = false)
+        } else {
+            // The overlay permission is exactly what someone would have revoked before
+            // rebooting, so this path has to hold the window on its own.
+            val now = SystemClock.uptimeMillis()
+            if (now - lastBlockLaunchAt >= BOOT_LOCK_RELAUNCH_MS) {
+                lastBlockLaunchAt = now
+                main.post {
+                    BlockActivity.launch(
+                        this, title, detail,
+                        bedtime = false, hardLock = true, sealed = true
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Are the permissions the enforcement rests on still granted?
      *
      * The device admin is not in here: it only blocks uninstalling, and it is legitimately
@@ -446,7 +490,7 @@ class MonitorService : Service() {
             // repair button instead. Not pinned: pinning it would make Settings unreachable and
             // the phone genuinely unrecoverable.
             val now = SystemClock.uptimeMillis()
-            if (now - lastBlockLaunchAt >= RELAUNCH_COOLDOWN_MS) {
+            if (now - lastBlockLaunchAt >= BOOT_LOCK_RELAUNCH_MS) {
                 lastBlockLaunchAt = now
                 main.post {
                     BlockActivity.launch(
@@ -662,6 +706,12 @@ class MonitorService : Service() {
     companion object {
         private const val TICK_MS = 1500L
         private const val RELAUNCH_COOLDOWN_MS = 2500L
+        /**
+         * How fast the block screen is put back while the phone is sealed and the overlay is
+         * unavailable. Far tighter than the normal cooldown: this is the only thing holding the
+         * lock, so a leisurely relaunch would be the gap itself.
+         */
+        private const val BOOT_LOCK_RELAUNCH_MS = 700L
         /** One counted attempt per this window, so ticks do not inflate the counter. */
         private const val HARDCAP_ATTEMPT_MS = 15_000L
         /** Grace between screen locks while the child is still under the attempt threshold. */
