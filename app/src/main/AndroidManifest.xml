@@ -111,12 +111,19 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!--
+          directBootAware: without it this receiver only wakes once the user has unlocked, which
+          is exactly the gap someone used to slip into Settings through. Direct boot delivers
+          LOCKED_BOOT_COMPLETED before the lock screen is even answered.
+        -->
         <receiver
             android:name=".service.BootReceiver"
+            android:directBootAware="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.USER_UNLOCKED" />
             </intent-filter>
         </receiver>
 

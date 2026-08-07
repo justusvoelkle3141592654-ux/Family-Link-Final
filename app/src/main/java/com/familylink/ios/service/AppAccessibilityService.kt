@@ -75,6 +75,16 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Leave whatever is on screen for the home screen.
+     *
+     * Without device owner a blocked app cannot be suspended, so this is the only way to
+     * actually get it off the screen instead of merely covering it.
+     */
+    fun goHome() {
+        runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+    }
+
     /** Fast path: read the shared in-memory state instead of parsing preferences. */
     private fun isGuarding(): Boolean = LockState.lockActive || prefs.isBedtime()
 

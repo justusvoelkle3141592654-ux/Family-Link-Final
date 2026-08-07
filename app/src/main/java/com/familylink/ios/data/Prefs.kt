@@ -51,10 +51,10 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         // streak: days in a row inside the daily budget
         private const val K_STREAK_ON = "streak_enabled"
 
-        // The child's own lock allowance, counted per calendar week.
+        // The child's allowance for long self-started focus sessions, per calendar week.
         private const val K_OWN_LOCK_WEEK = "own_lock_week"
-        private const val K_OWN_LOCK_USED_60 = "own_lock_used_60"
-        private const val K_OWN_LOCK_USED_360 = "own_lock_used_360"
+        private const val K_FOCUS_USED_60 = "focus_used_60"
+        private const val K_FOCUS_USED_120 = "focus_used_120"
 
         // The reward for keeping a self-started lock running: what is owed, and what has
         // already been paid out today.
@@ -98,12 +98,16 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val MAX_SCREEN_LOCK_MIN = 24 * 60
 
         /**
-         * How often per week the child may reach for the long locks. The short ones are free —
-         * putting the phone down for half an hour needs no budget — but a lock that swallows an
-         * afternoon is rationed, so it stays a decision rather than a habit.
+         * How often per week the child may start a long focus session. Locking the display is
+         * free and unrationed — it costs them screen time, so there is nothing to guard against
+         * — but a focus session hides apps and is the one the parent PIN has to end, so the
+         * long ones stay a decision rather than a habit.
          */
-        const val OWN_LOCK_60_PER_WEEK = 3
-        const val OWN_LOCK_360_PER_WEEK = 1
+        const val FOCUS_60_PER_WEEK = 3
+        const val FOCUS_120_PER_WEEK = 1
+
+        /** Bounds for the duration the child types in themselves. */
+        const val MIN_OWN_LOCK_MIN = 1
 
         /** Bonus minutes earned per full hour the child keeps their own lock running. */
         const val DEFAULT_OWN_LOCK_REWARD_PER_HOUR = 10
@@ -620,51 +624,56 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     }
 
     /** Start a fresh week's allowance the moment the calendar week turns over. */
-    private fun ensureOwnLockWeek() {
+    private fun ensureFocusWeek() {
         val week = weekMarker()
         if (sp.getInt(K_OWN_LOCK_WEEK, 0) == week) return
         sp.edit()
             .putInt(K_OWN_LOCK_WEEK, week)
-            .putInt(K_OWN_LOCK_USED_60, 0)
-            .putInt(K_OWN_LOCK_USED_360, 0)
+            .putInt(K_FOCUS_USED_60, 0)
+            .putInt(K_FOCUS_USED_120, 0)
             .apply()
     }
 
-    private fun ownLockQuotaKey(minutes: Int): String? = when (minutes) {
-        60 -> K_OWN_LOCK_USED_60
-        360 -> K_OWN_LOCK_USED_360
+    private fun focusQuotaKey(minutes: Int): String? = when {
+        minutes >= 120 -> K_FOCUS_USED_120
+        minutes >= 60 -> K_FOCUS_USED_60
         else -> null
     }
 
     /**
-     * How many locks of this length are left this week. The short ones are not rationed, so they
-     * always report [Int.MAX_VALUE].
+     * How many self-started focus sessions of this length are left this week. The short ones are
+     * not rationed, so they always report [Int.MAX_VALUE].
      */
-    fun ownLocksLeft(minutes: Int): Int {
-        val key = ownLockQuotaKey(minutes) ?: return Int.MAX_VALUE
-        ensureOwnLockWeek()
-        val cap = if (minutes == 60) OWN_LOCK_60_PER_WEEK else OWN_LOCK_360_PER_WEEK
+    fun focusSessionsLeft(minutes: Int): Int {
+        val key = focusQuotaKey(minutes) ?: return Int.MAX_VALUE
+        ensureFocusWeek()
+        val cap = if (key == K_FOCUS_USED_120) FOCUS_120_PER_WEEK else FOCUS_60_PER_WEEK
         return (cap - sp.getInt(key, 0)).coerceAtLeast(0)
     }
 
+    /** Book one long focus session against this week's allowance. */
+    fun useFocusSession(minutes: Int): Boolean {
+        if (focusSessionsLeft(minutes) <= 0) return false
+        focusQuotaKey(minutes)?.let { key ->
+            sp.edit().putInt(key, sp.getInt(key, 0) + 1).apply()
+        }
+        return true
+    }
+
     /**
-     * The child locking their own phone.
+     * The child locking their own phone. Any length between [MIN_OWN_LOCK_MIN] and the maximum,
+     * as often as they like — the lock costs them screen time, so nothing needs rationing here.
      *
      * A sealed lock can only be extended, never cut short — not even by starting a shorter one.
      *
-     * @return false when this week's allowance for that length is already spent, in which case
-     *         nothing is locked and nothing is counted.
+     * @return false when a sealed lock is already running longer than the one asked for.
      */
     fun startOwnLock(minutes: Int, sealed: Boolean = false): Boolean {
-        if (ownLocksLeft(minutes) <= 0) return false
-        val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
+        val m = minutes.coerceIn(MIN_OWN_LOCK_MIN, MAX_SCREEN_LOCK_MIN)
         val now = System.currentTimeMillis()
         val until = now + m * 60_000L
         if (ownLockSealed && until <= ownLockUntil) return false
 
-        ownLockQuotaKey(minutes)?.let { key ->
-            sp.edit().putInt(key, sp.getInt(key, 0) + 1).apply()
-        }
         // Settle whatever an earlier lock already earned before this one overwrites the window.
         settleOwnLockReward()
         ownLockUntil = until

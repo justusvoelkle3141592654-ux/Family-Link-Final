@@ -170,6 +170,14 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
+        // Someone switched a guard off. Turning off the accessibility service used to be the
+        // way to make the locks stop working; now it is the one thing that makes the phone
+        // useless until it is switched back on, so there is nothing to gain by it.
+        if (!guardsIntact()) {
+            enforceGuardLoss()
+            return
+        }
+
         if (ticksSincePkgRefresh++ >= 10) {
             ticksSincePkgRefresh = 0
             refreshManagedPackages()
@@ -335,8 +343,16 @@ class MonitorService : Service() {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
                 is LockDecision.SettingsBlocked -> { /* fall through to block */ }
+                // Once the day's budget is gone, "we have never seen this package" is not a
+                // reason to let it run. A cloned app arrives under a name no category knows and
+                // its minutes never reach the counter, so the only honest answer is to block it
+                // with everything else. Home screen and the exempt list are still spared.
+                is LockDecision.GlobalLimitReached -> {
+                    if (engine.isForegroundExempt(pkg)) return
+                    if (pkg in homePackages) return
+                }
                 else -> {
-                    // Daytime limit blocks: launcher stays free and only real launchable apps
+                    // Other daytime blocks: launcher stays free and only real launchable apps
                     // count. "Launchable" is checked live as well as from the cached list —
                     // a cloned app appears under a package we have never seen, and skipping
                     // everything unknown let exactly those through.
@@ -380,6 +396,42 @@ class MonitorService : Service() {
         main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false) }
     }
 
+    /**
+     * Are the permissions the enforcement rests on still granted?
+     *
+     * The device admin is not in here: it only blocks uninstalling, and it is legitimately
+     * optional. The accessibility service and usage access are what the limits are built on.
+     */
+    private fun guardsIntact(): Boolean =
+        com.familylink.ios.util.Permissions.accessibilityEnabled(this) &&
+            com.familylink.ios.util.Permissions.hasUsageAccess(this)
+
+    /**
+     * React to a guard being switched off: seal the phone until it is granted again.
+     *
+     * Deliberately the same treatment as a hard lock rather than a warning — a warning would be
+     * the reward for switching it off. Settings stays reachable on purpose, because that is
+     * where it has to be switched back on, and the block screen says so.
+     */
+    private fun enforceGuardLoss() {
+        LockState.update(lockActive = true, hardLock = true, bedtime = false)
+        runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, false) }
+        lastSettingsHidden = false
+        val title = "Schutz ausgeschaltet"
+        val detail = "Die Kindersicherung braucht die Bedienungshilfe und den Nutzungszugriff. " +
+            "Bitte in den Einstellungen wieder erteilen — vorher bleibt das Handy gesperrt."
+        if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
+            showSealedOverlay(title, detail, bedtime = false)
+        } else {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastBlockLaunchAt >= RELAUNCH_COOLDOWN_MS) {
+                lastBlockLaunchAt = now
+                // Not pinned: the child has to be able to reach Settings to repair it.
+                main.post { BlockActivity.launch(this, title, detail, false, true, false) }
+            }
+        }
+    }
+
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
     private fun showSealedOverlay(
         title: String,
@@ -409,15 +461,27 @@ class MonitorService : Service() {
     private fun suspendBlocked(pkg: String, decision: LockDecision) {
         if (decision is LockDecision.SettingsBlocked) return   // settings is hidden, not suspended
         if (engine.isForegroundExempt(pkg)) return
+        if (pkg in homePackages) return
         // Live check, not just the cached list: a cloned app carries a package name we have
         // never categorised, and testing against the cache alone let exactly those keep running.
-        if (!isBlockableApp(pkg)) return
+        // Once the budget itself is gone that check is dropped entirely — an app nobody can
+        // identify is exactly the one that must not survive the limit.
+        val budgetGone = decision is LockDecision.GlobalLimitReached ||
+            decision is LockDecision.HardCapReached
+        if (!budgetGone && !isBlockableApp(pkg)) return
         if (pkg in prefs.suspendedPackages) return
 
         val done = runCatching {
             com.familylink.ios.admin.DeviceOwner.setPackagesSuspended(this, listOf(pkg), true)
         }.getOrDefault(emptySet())
-        if (done.isNotEmpty()) prefs.suspendedPackages = prefs.suspendedPackages + done
+        if (done.isNotEmpty()) {
+            prefs.suspendedPackages = prefs.suspendedPackages + done
+            return
+        }
+        // Not device owner, so the app cannot be suspended — but it must still stop being on
+        // screen right now. Going Home leaves it immediately; the overlay or block screen then
+        // lands on the launcher instead of on top of a still-running app.
+        runCatching { AppAccessibilityService.instance?.goHome() }
     }
 
     /** Un-suspend every package the engine would now allow again. */

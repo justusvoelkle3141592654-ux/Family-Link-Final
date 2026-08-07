@@ -341,15 +341,19 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                 "Eine Stunde" to 60,
                 "Zwei Stunden" to 120
             )
+            // The long sessions are rationed by the week: they hide apps and only the parent
+            // PIN ends them early, so they are a decision rather than something to reach for
+            // every afternoon. A spent one stays visible but says why it cannot be picked.
+            val left = { m: Int -> prefs.focusSessionsLeft(m) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 choices.take(2).forEach { (name, m) ->
-                    PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
+                    PresetChip(name, m, minutes == m, Modifier.weight(1f), left(m)) { minutes = m }
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 choices.drop(2).forEach { (name, m) ->
-                    PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
+                    PresetChip(name, m, minutes == m, Modifier.weight(1f), left(m)) { minutes = m }
                 }
             }
 
@@ -372,7 +376,14 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
             }
 
             Spacer(Modifier.height(20.dp))
-            NovaButton(text = "Jetzt weglegen ($minutes Min)", color = Nova.Focus) {
+            NovaButton(
+                text = "Jetzt weglegen ($minutes Min)",
+                color = Nova.Focus,
+                enabled = prefs.focusSessionsLeft(minutes) > 0
+            ) {
+                // Book it against the week before starting, so a spent allowance cannot be
+                // sidestepped by tapping fast.
+                if (!prefs.useFocusSession(minutes)) return@NovaButton
                 val now = System.currentTimeMillis()
                 val allowed =
                     if (allowPlus) apps.map { it.packageName }
@@ -425,20 +436,45 @@ private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClic
     }
 }
 
+/**
+ * @param left how many sessions of this length are left this week; [Int.MAX_VALUE] means the
+ *        length is not rationed at all.
+ */
 @Composable
-private fun PresetChip(name: String, mins: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun PresetChip(
+    name: String,
+    mins: Int,
+    selected: Boolean,
+    modifier: Modifier,
+    left: Int = Int.MAX_VALUE,
+    onClick: () -> Unit
+) {
+    val spent = left <= 0
     Box(
         modifier
             .clip(RoundedCornerShape(Nova.RadiusControl.dp))
             .background(if (selected) Nova.Focus.copy(alpha = 0.15f) else Nova.Surface)
-            .clickable { onClick() }
+            .clickable(enabled = !spent) { onClick() }
             .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                color = if (selected) Nova.Focus else Nova.Ink)
-            Text("$mins Min", fontSize = 11.sp, color = Nova.InkMuted)
+            Text(
+                name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = when {
+                    spent -> Nova.InkFaint
+                    selected -> Nova.Focus
+                    else -> Nova.Ink
+                }
+            )
+            Text(
+                when {
+                    spent -> "diese Woche aufgebraucht"
+                    left != Int.MAX_VALUE -> "$mins Min · noch ${left}×"
+                    else -> "$mins Min"
+                },
+                fontSize = 11.sp, color = Nova.InkMuted
+            )
         }
     }
 }

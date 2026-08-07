@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -42,10 +46,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familylink.ios.data.AppCategory
@@ -122,7 +129,6 @@ fun ChildPortalScreen(
     }
     if (lockSheet) {
         ChildLockSheet(
-            leftFor = { prefs.ownLocksLeft(it) },
             rewardPerHour = if (prefs.ownLockRewardEnabled) prefs.ownLockRewardPerHour else 0,
             onDismiss = { lockSheet = false },
             onLockFor = { minutes -> lock(minutes, sealed = false) },
@@ -172,20 +178,20 @@ fun ChildPortalScreen(
  * The child's own lock menu. Deliberately not the parent's sheet: there is no "unlock" here —
  * lifting a lock stays the parent's job.
  *
- * The two long options are rationed by the week, and a spent one is not shown greyed out but
- * simply gone, so the menu only ever offers what is actually available. Each row says what the
- * lock is worth in bonus time, because that is the reason to pick a longer one.
+ * Nothing is rationed. Locking the display costs the child screen time rather than buying them
+ * anything, so there is nothing to guard against — and the free field at the bottom means a
+ * two-minute lock is as easy to reach as an hour. Each row says what it is worth in bonus time,
+ * because that is the reason to pick a longer one.
  */
 @Composable
 private fun ChildLockSheet(
-    leftFor: (Int) -> Int,
     rewardPerHour: Int,
     onDismiss: () -> Unit,
     onLockFor: (Int) -> Unit,
     onLockRestOfDay: () -> Unit
 ) {
     var confirmDay by remember { mutableStateOf(false) }
-    val available = LOCK_DURATIONS.filter { leftFor(it.minutes) > 0 }
+    var custom by remember { mutableStateOf("") }
 
     /** What this length is worth, phrased for the row it sits on. */
     fun reward(minutes: Int): String? {
@@ -236,19 +242,25 @@ private fun ChildLockSheet(
                             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp)
                         )
                     }
-                    available.forEachIndexed { i, option ->
+                    LOCK_DURATIONS.forEachIndexed { i, option ->
                         if (i > 0) SheetDivider()
-                        val left = leftFor(option.minutes)
-                        val quota = if (option.perWeek == null) "Endet von selbst"
-                        else "Noch ${left}× diese Woche"
                         SheetRow(
                             icon = Icons.Filled.HourglassBottom,
                             title = option.label,
-                            subtitle = listOfNotNull(quota, reward(option.minutes))
+                            subtitle = listOfNotNull("Endet von selbst", reward(option.minutes))
                                 .joinToString(" · "),
                             onClick = { onLockFor(option.minutes) }
                         )
                     }
+                    SheetDivider()
+                    CustomDurationRow(
+                        value = custom,
+                        onValueChange = { custom = it.filter { c -> c.isDigit() }.take(4) },
+                        onStart = {
+                            val m = custom.toIntOrNull() ?: 0
+                            if (m >= Prefs.MIN_OWN_LOCK_MIN) onLockFor(m)
+                        }
+                    )
                     SheetDivider()
                     SheetRow(
                         icon = Icons.Filled.Lock,
@@ -264,14 +276,73 @@ private fun ChildLockSheet(
     }
 }
 
-/** One entry in the child's lock menu. [perWeek] is null for the ones with no weekly limit. */
-private data class LockOption(val label: String, val minutes: Int, val perWeek: Int?)
+/** Type any number of minutes — two is as valid as sixty. */
+@Composable
+private fun CustomDurationRow(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onStart: () -> Unit
+) {
+    val minutes = value.toIntOrNull() ?: 0
+    val valid = minutes >= Prefs.MIN_OWN_LOCK_MIN && minutes <= Prefs.MAX_SCREEN_LOCK_MIN
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(CircleShape).background(Nova.Primary.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Edit, null, tint = Nova.Primary, modifier = Modifier.size(19.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Eigene Dauer", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.width(64.dp).clip(RoundedCornerShape(10.dp))
+                        .background(Nova.Fill).padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    if (value.isEmpty()) {
+                        Text("z. B. 2", fontSize = 14.sp, color = Nova.InkFaint)
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 14.sp, color = Nova.Ink),
+                        cursorBrush = SolidColor(Nova.Primary),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("Minuten", fontSize = 13.sp, color = Nova.InkMuted)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier.clip(RoundedCornerShape(50))
+                .background(if (valid) Nova.Primary else Nova.Fill)
+                .clickable(enabled = valid) { onStart() }
+                .padding(horizontal = 16.dp, vertical = 9.dp)
+        ) {
+            Text(
+                "Sperren", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                color = if (valid) Color.White else Nova.InkFaint
+            )
+        }
+    }
+}
+
+/** One entry in the child's lock menu. */
+private data class LockOption(val label: String, val minutes: Int)
 
 private val LOCK_DURATIONS = listOf(
-    LockOption("15 Minuten", 15, null),
-    LockOption("30 Minuten", 30, null),
-    LockOption("1 Stunde", 60, Prefs.OWN_LOCK_60_PER_WEEK),
-    LockOption("6 Stunden", 360, Prefs.OWN_LOCK_360_PER_WEEK)
+    LockOption("15 Minuten", 15),
+    LockOption("30 Minuten", 30),
+    LockOption("1 Stunde", 60),
+    LockOption("6 Stunden", 360)
 )
 
 @Composable
@@ -614,32 +685,20 @@ private fun SettingsTab(
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp)
         )
 
-        Spacer(Modifier.height(16.dp))
-
-        Column(Modifier.padding(horizontal = 16.dp)) {
+        // ---- what the child can actually do ------------------------------
+        SectionTitle("Zeit verdienen")
+        Card {
             val chores = prefs.getChores()
             val openChores = chores.count { it.isOpen }
-            ActionRow(
+            SettingsRow(
                 icon = Icons.Filled.CheckCircle,
                 title = "Aufgaben erledigen",
                 subtitle = if (openChores > 0) "$openChores offen · verdiene Extra-Zeit"
                 else "Keine offenen Aufgaben",
                 onClick = onOpenChores
             )
-            Spacer(Modifier.height(10.dp))
-
-            val ownFocus = prefs.effectiveFocusSession()
-            ActionRow(
-                icon = Icons.Filled.Lock,
-                title = "Handy weglegen",
-                subtitle = if (ownFocus.isRunning())
-                    "Läuft — noch ${TimeFmt.hm(ownFocus.remainingSeconds())}"
-                else "Fokus-Zeit selbst starten",
-                onClick = onOpenFocus
-            )
-            Spacer(Modifier.height(10.dp))
-
-            ActionRow(
+            RowDivider()
+            SettingsRow(
                 icon = Icons.Filled.AddAlarm,
                 title = "Mehr Zeit anfragen",
                 subtitle = "Deine Eltern entscheiden",
@@ -647,150 +706,193 @@ private fun SettingsTab(
             )
         }
 
-        // The weekly figures are detail, not headline — they belong on the page that scrolls.
-        Spacer(Modifier.height(20.dp))
-        SectionTitle("Zahlen")
-        Column(Modifier.padding(horizontal = 20.dp)) {
-            SubText("Handynutzung gesamt: ${TimeFmt.hm(totalDevice)}", Nova.InkMuted)
-            if (prefs.limitScope != com.familylink.ios.data.LimitScope.DAY) {
-                val weekUsed = prefs.weekCountedSeconds()
-                val weekPot = prefs.weeklyLimitMinutes * 60
-                SubText(
-                    "Diese Woche: ${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
-                    if (weekUsed >= weekPot) Nova.Danger else Nova.InkMuted
-                )
-            }
-            if (prefs.hardCapEnabled && prefs.hardCapScope != com.familylink.ios.data.LimitScope.DAY) {
-                SubText(
-                    "Gesamt diese Woche: ${TimeFmt.hm(prefs.weekTotalSeconds())} von " +
-                        TimeFmt.hm(prefs.weeklyHardCapMinutes * 60),
-                    Nova.InkMuted
-                )
-            }
+        // ---- focus, with what is left of this week's long sessions -------
+        SectionTitle("Handy weglegen")
+        Card {
+            val ownFocus = prefs.effectiveFocusSession()
+            SettingsRow(
+                icon = Icons.Filled.Lock,
+                title = "Fokus-Zeit starten",
+                subtitle = if (ownFocus.isRunning())
+                    "Läuft — noch ${TimeFmt.hm(ownFocus.remainingSeconds())}"
+                else "Nur erlaubte Apps, für eine feste Zeit",
+                onClick = onOpenFocus
+            )
+            RowDivider()
+            QuotaRow("1 Stunde", Prefs.FOCUS_60_PER_WEEK, prefs.focusSessionsLeft(60))
+            RowDivider()
+            QuotaRow("2 Stunden", Prefs.FOCUS_120_PER_WEEK, prefs.focusSessionsLeft(120))
+            Text(
+                "Kürzere Fokus-Zeiten kannst du so oft starten, wie du willst. " +
+                    "Das Kontingent füllt sich jeden Montag wieder auf.",
+                fontSize = 12.sp, color = Nova.InkFaint,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
         }
 
-        // The full per-app list — the overview only has room for the top few.
-        Spacer(Modifier.height(20.dp))
-        SectionTitle("Heute genutzt")
-        if (perApp.isEmpty()) {
-            Text(
-                "Heute noch keine App genutzt.",
-                fontSize = 14.sp, color = Nova.InkMuted,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-            )
-        } else {
-            val maxSec = perApp.first().value.coerceAtLeast(1)
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                perApp.take(20).forEach { (pkg, secs) ->
-                    UsageRow(
-                        pkg = pkg,
-                        label = InstalledApps.labelFor(context, pkg),
-                        seconds = secs,
-                        fraction = secs.toFloat() / maxSec,
-                        category = prefs.categoryOf(pkg)
-                    )
-                }
-            }
-        }
-
-        // What is left of the rationed locks. The sheet on the overview hides a spent option
-        // rather than greying it out, so this is where the child can see why one is missing and
-        // when it comes back.
-        Spacer(Modifier.height(20.dp))
-        SectionTitle("Sperren")
-        Column(
-            Modifier.padding(horizontal = 16.dp).fillMaxWidth()
-                .clip(RoundedCornerShape(Nova.RadiusCard.dp))
-                .background(Nova.Surface)
-                .padding(16.dp)
-        ) {
-            LOCK_DURATIONS.filter { it.perWeek != null }.forEachIndexed { i, option ->
-                if (i > 0) Spacer(Modifier.height(10.dp))
-                val left = prefs.ownLocksLeft(option.minutes)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            option.label, fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium, color = Nova.Ink
-                        )
-                        Text(
-                            "${option.perWeek}× pro Woche",
-                            fontSize = 13.sp, color = Nova.InkMuted
-                        )
-                    }
-                    Text(
-                        if (left > 0) "noch ${left}×" else "aufgebraucht",
-                        fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                        color = if (left > 0) Nova.Success else Nova.InkFaint
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "15 und 30 Minuten kannst du so oft sperren, wie du willst. " +
-                    "Das Kontingent füllt sich jeden Montag wieder auf. " +
-                    "Bis Mitternacht sperren geht immer.",
-                fontSize = 12.sp, color = Nova.InkFaint
-            )
-            if (prefs.ownLockRewardEnabled && prefs.ownLockRewardPerHour > 0) {
-                val earned = prefs.ownLockEarnedToday()
-                Spacer(Modifier.height(12.dp))
+        // ---- the reward, where it is earned ------------------------------
+        if (prefs.ownLockRewardEnabled && prefs.ownLockRewardPerHour > 0) {
+            SectionTitle("Bonus fürs Sperren")
+            Card {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(Nova.Success.copy(alpha = 0.12f))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Bonus fürs Weglegen",
-                            fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Nova.Success
+                            "${prefs.ownLockRewardPerHour} Min. pro Stunde",
+                            fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
                         )
                         Text(
-                            "${prefs.ownLockRewardPerHour} Min. pro Stunde, die du durchhältst " +
-                                "(max. ${Prefs.OWN_LOCK_REWARD_MAX_PER_DAY} Min. am Tag)",
-                            fontSize = 12.sp, color = Nova.InkMuted
+                            "Für jede Stunde, die du dein Handy selbst gesperrt lässt — " +
+                                "höchstens ${Prefs.OWN_LOCK_REWARD_MAX_PER_DAY} Min. am Tag.",
+                            fontSize = 13.sp, color = Nova.InkMuted
                         )
                     }
+                    Spacer(Modifier.width(12.dp))
                     Text(
-                        "heute +$earned", fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium, color = Nova.Success
+                        "heute +${prefs.ownLockEarnedToday()}",
+                        fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Nova.Success
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Eltern-Bereich",
-            fontSize = 14.sp, color = Nova.InkFaint,
-            modifier = Modifier.fillMaxWidth().clickable { onOpenParentArea() }
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-        )
-        Spacer(Modifier.height(24.dp))
+        // ---- the numbers -------------------------------------------------
+        SectionTitle("Zahlen")
+        Card {
+            NumberRow("Handynutzung gesamt", TimeFmt.hm(totalDevice), Nova.Ink)
+            if (prefs.limitScope != com.familylink.ios.data.LimitScope.DAY) {
+                val weekUsed = prefs.weekCountedSeconds()
+                val weekPot = prefs.weeklyLimitMinutes * 60
+                RowDivider()
+                NumberRow(
+                    "Diese Woche",
+                    "${TimeFmt.hm(weekUsed)} von ${TimeFmt.hm(weekPot)}",
+                    if (weekUsed >= weekPot) Nova.Danger else Nova.Ink
+                )
+            }
+            if (prefs.hardCapEnabled && prefs.hardCapScope != com.familylink.ios.data.LimitScope.DAY) {
+                RowDivider()
+                NumberRow(
+                    "Gesamt diese Woche",
+                    "${TimeFmt.hm(prefs.weekTotalSeconds())} von " +
+                        TimeFmt.hm(prefs.weeklyHardCapMinutes * 60),
+                    Nova.Ink
+                )
+            }
+        }
+
+        // ---- the full per-app list; the overview only has room for the top few
+        SectionTitle("Heute genutzt")
+        Card {
+            if (perApp.isEmpty()) {
+                Text(
+                    "Heute noch keine App genutzt.",
+                    fontSize = 14.sp, color = Nova.InkMuted,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                val maxSec = perApp.first().value.coerceAtLeast(1)
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    perApp.take(20).forEach { (pkg, secs) ->
+                        UsageRow(
+                            pkg = pkg,
+                            label = InstalledApps.labelFor(context, pkg),
+                            seconds = secs,
+                            fraction = secs.toFloat() / maxSec,
+                            category = prefs.categoryOf(pkg)
+                        )
+                    }
+                }
+            }
+        }
+
+        SectionTitle("Für Eltern")
+        Card {
+            SettingsRow(
+                icon = Icons.Filled.Shield,
+                title = "Eltern-Bereich",
+                subtitle = "Regeln ändern — mit PIN",
+                onClick = onOpenParentArea
+            )
+        }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+/** The one card shape the settings page uses, so every group looks the same. */
+@Composable
+private fun Card(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+            .background(Nova.Surface),
+        content = content
+    )
+}
+
+@Composable
+private fun RowDivider() {
+    Box(Modifier.fillMaxWidth().padding(start = 70.dp, end = 16.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
     }
 }
 
 @Composable
-private fun ActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+private fun SettingsRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Nova.RadiusCard.dp))
-            .background(Nova.Surface)
-            .clickable { onClick() }.padding(16.dp),
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
+            Modifier.size(38.dp).clip(CircleShape).background(Nova.SurfaceAlt),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(21.dp))
+            Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = Nova.Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = Nova.InkMuted, fontSize = 13.sp)
         }
         Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** "1 Stunde — 3× pro Woche — noch 2×". */
+@Composable
+private fun QuotaRow(label: String, perWeek: Int, left: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Spacer(Modifier.width(54.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 15.sp, color = Nova.Ink)
+            Text("${perWeek}× pro Woche", fontSize = 12.sp, color = Nova.InkFaint)
+        }
+        Text(
+            if (left > 0) "noch ${left}×" else "aufgebraucht",
+            fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            color = if (left > 0) Nova.Success else Nova.InkFaint
+        )
+    }
+}
+
+@Composable
+private fun NumberRow(label: String, value: String, valueColor: Color) {
+    Row(
+        Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 15.sp, color = Nova.InkMuted, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = valueColor)
     }
 }
 
@@ -843,15 +945,10 @@ private fun readBattery(context: android.content.Context): Int = runCatching {
 }.getOrDefault(-1)
 
 @Composable
-private fun SubText(text: String, color: Color) {
-    Text(text, fontSize = 13.sp, color = color, modifier = Modifier.padding(vertical = 2.dp))
-}
-
-@Composable
 private fun SectionTitle(text: String) {
     Text(
-        text.uppercase(), fontSize = 12.sp, color = Nova.InkMuted,
-        modifier = Modifier.padding(start = 20.dp, bottom = 6.dp)
+        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Nova.InkMuted,
+        modifier = Modifier.padding(start = 22.dp, end = 20.dp, top = 22.dp, bottom = 8.dp)
     )
 }
 
