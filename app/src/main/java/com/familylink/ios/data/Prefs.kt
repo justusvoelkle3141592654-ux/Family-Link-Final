@@ -628,34 +628,20 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     }
 
     // ---- The window right after a restart ---------------------------------
+    //
+    // Measured against the time since boot and nothing else. An earlier version also armed this
+    // from a broadcast, including ACTION_USER_UNLOCKED — which fires on every single unlock, so
+    // the phone sealed itself for half a minute every time it was picked up. The clock below
+    // cannot be re-armed by anything the child does, needs no storage, and survives the app
+    // being killed, which is everything the seal actually needed.
 
-    var bootLockUntil: Long
-        get() = sp.getLong("boot_lock_until", 0)
-        set(v) = sp.edit().putLong("boot_lock_until", v).apply()
-
-    /** Start (or extend) the seal that covers the moments after a boot or an unlock. */
-    fun startBootLock() {
-        val until = System.currentTimeMillis() + BOOT_LOCK_MS
-        if (until > bootLockUntil) bootLockUntil = until
-    }
-
-    /**
-     * True while the phone is still inside the post-restart seal.
-     *
-     * Two clocks, because either alone can be fooled: [bootLockUntil] is written when the boot
-     * broadcast arrives, and the time since boot covers the case where that broadcast never
-     * reached us — a killed app, a denied receiver — and the process only came up later.
-     */
     fun bootLockActive(): Boolean =
-        System.currentTimeMillis() < bootLockUntil ||
-            android.os.SystemClock.elapsedRealtime() < BOOT_LOCK_MS
+        android.os.SystemClock.elapsedRealtime() < BOOT_LOCK_MS
 
     /** Seconds left on the post-restart seal, for the countdown on the lock screen. */
-    fun bootLockRemainingSeconds(): Int {
-        val byClock = bootLockUntil - System.currentTimeMillis()
-        val sinceBoot = BOOT_LOCK_MS - android.os.SystemClock.elapsedRealtime()
-        return (maxOf(byClock, sinceBoot) / 1000L).toInt().coerceAtLeast(0)
-    }
+    fun bootLockRemainingSeconds(): Int =
+        ((BOOT_LOCK_MS - android.os.SystemClock.elapsedRealtime()) / 1000L)
+            .toInt().coerceAtLeast(0)
 
     /** Lock the display for [minutes] on the parent's behalf, clamped to the maximum. */
     fun startScreenLock(minutes: Int) {

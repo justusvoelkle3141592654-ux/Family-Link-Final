@@ -391,21 +391,38 @@ class MonitorService : Service() {
             else -> {}
         }
 
-        // Actually CLOSE the offending app. Raising the block screen only puts a window on
-        // top; the app behind keeps running, and YouTube in particular drops into
-        // picture-in-picture and carries on playing over everything — including over the block
-        // screen. Suspending the package terminates it and takes the PiP window with it.
-        suspendBlocked(pkg, decision)
-
-        // Debounce so we never relaunch in a tight loop (no flicker).
-        val now = SystemClock.uptimeMillis()
-        if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
-        lastBlockLaunchAt = now
-
-        // Anything reaching here is a per-app block, never a sealed state: the day limit, a
-        // single app's limit, a blocked app or the settings. Those stay dismissible screens.
+        // Say why FIRST, close afterwards.
+        //
+        // The other way round is what made the app look broken: the app was closed, the screen
+        // meant to explain it was refused in the background, and all the child saw was their app
+        // vanishing for no stated reason. Nothing is closed now unless the reason is on screen —
+        // suspending is exempt because a suspended app shows Android's own "app is paused"
+        // dialogue, which is an explanation in itself.
         val (title, detail) = messageFor(decision)
-        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false) }
+        val shown = if (hardLock) {
+            // A hard lock — the day's budget gone, the ceiling hit — goes on the overlay like
+            // every other one. It used to be the single exception, shown through the block
+            // activity alone, and that is why "the limit is reached" was the one case where
+            // nothing appeared: from Android 10 a service may not start an activity in the
+            // background, so the screen meant to explain it was refused without a word.
+            raiseLock(title, detail, bedtime, sealedLock = false)
+        } else {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
+            lastBlockLaunchAt = now
+            // A single app's limit stays a dismissible screen: the rest of the phone still works
+            // and an overlay would say otherwise.
+            main.post {
+                BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false)
+            }
+            if (com.familylink.ios.util.Permissions.hasOverlay(this)) true
+            else BlockNotifier.show(this, title, detail, bedtime, hardLock)
+        }
+
+        // Raising the block screen only puts a window on top; the app behind keeps running, and
+        // YouTube in particular drops into picture-in-picture and carries on playing over
+        // everything. Suspending the package terminates it and takes the PiP window with it.
+        suspendBlocked(pkg, decision, mayGoHome = shown)
     }
 
     /**
@@ -425,33 +442,64 @@ class MonitorService : Service() {
         val left = prefs.bootLockRemainingSeconds()
         val title = "Kindersicherung startet"
         val detail = "Das Handy ist noch $left Sekunden gesperrt, während der Schutz hochfährt."
-        if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
-            showSealedOverlay(title, detail, bedtime = false)
-        } else {
-            // The overlay permission is exactly what someone would have revoked before
-            // rebooting, so this path has to hold the window on its own.
-            val now = SystemClock.uptimeMillis()
-            if (now - lastBlockLaunchAt >= BOOT_LOCK_RELAUNCH_MS) {
-                lastBlockLaunchAt = now
-                main.post {
-                    BlockActivity.launch(
-                        this, title, detail,
-                        bedtime = false, hardLock = true, sealed = true
-                    )
-                }
-            }
+        raiseLock(title, detail, bedtime = false, sealedLock = true)
+    }
+
+    /**
+     * Put a lock on screen by whichever route this phone actually allows.
+     *
+     * With the overlay permission the overlay is both the strongest and the quietest option.
+     * Without it, `startActivity` from here is refused without a word from Android 10 on, so the
+     * only thing that still reaches the child is a notification — marked full-screen, which asks
+     * the system to bring the block screen up on our behalf.
+     *
+     * @return true if something was actually shown.
+     */
+    private fun raiseLock(
+        title: String,
+        detail: String,
+        bedtime: Boolean,
+        sealedLock: Boolean,
+        repair: Boolean = false
+    ): Boolean {
+        // The permission check alone is not proof: building the window can still be refused,
+        // and when it is, this lock has to travel by another route or nobody sees it at all.
+        if (com.familylink.ios.util.Permissions.hasOverlay(this) &&
+            !com.familylink.ios.util.LockOverlay.lastShowFailed
+        ) {
+            showSealedOverlay(title, detail, bedtime, repair = repair)
+            return true
         }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastBlockLaunchAt < BOOT_LOCK_RELAUNCH_MS) return true
+        lastBlockLaunchAt = now
+        // Both: the activity start works whenever the app happens to be allowed to make it, and
+        // the notification is what carries the reason when it is not.
+        main.post {
+            BlockActivity.launch(
+                this, title, detail,
+                bedtime = bedtime, hardLock = true, sealed = sealedLock, repair = repair
+            )
+        }
+        return BlockNotifier.show(
+            this, title, detail, bedtime = bedtime, hardLock = true, repair = repair
+        )
     }
 
     /**
      * Are the permissions the enforcement rests on still granted?
      *
      * The device admin is not in here: it only blocks uninstalling, and it is legitimately
-     * optional. Everything else the locks are built on is — including the overlay permission,
-     * because revoking that used to take the lock screen away and leave the phone free.
+     * optional. Neither is the overlay permission, and that one is a lesson rather than an
+     * oversight — sealing the phone over a missing overlay meant sealing it with no way left to
+     * say so, because from Android 10 an activity cannot be started from the background without
+     * exactly that permission. The phone simply went dead and silent. A missing overlay is now
+     * handled where it belongs: the lock still happens, it just arrives as a full-screen
+     * notification instead.
      */
     private fun guardsIntact(): Boolean =
-        com.familylink.ios.util.Permissions.firstMissing(this) == null
+        com.familylink.ios.util.Permissions.accessibilityEnabled(this) &&
+            com.familylink.ios.util.Permissions.hasUsageAccess(this)
 
     /**
      * React to a guard being switched off: seal the phone until it is granted again.
@@ -483,23 +531,8 @@ class MonitorService : Service() {
         val title = "Schutz ausgeschaltet"
         val detail = "Die Kindersicherung braucht ${missing?.label ?: "ihre Berechtigungen"}. " +
             "Tippe unten auf „Berechtigung erteilen“ — vorher bleibt das Handy gesperrt."
-        if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
-            showSealedOverlay(title, detail, bedtime = false, repair = true)
-        } else {
-            // The overlay itself is what was revoked, so the block screen has to carry the
-            // repair button instead. Not pinned: pinning it would make Settings unreachable and
-            // the phone genuinely unrecoverable.
-            val now = SystemClock.uptimeMillis()
-            if (now - lastBlockLaunchAt >= BOOT_LOCK_RELAUNCH_MS) {
-                lastBlockLaunchAt = now
-                main.post {
-                    BlockActivity.launch(
-                        this, title, detail,
-                        bedtime = false, hardLock = true, sealed = false, repair = true
-                    )
-                }
-            }
-        }
+        // Not pinned: pinning would make Settings unreachable and the phone unrecoverable.
+        raiseLock(title, detail, bedtime = false, sealedLock = false, repair = true)
     }
 
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
@@ -531,7 +564,7 @@ class MonitorService : Service() {
      * Suspend the package that just got blocked, so it stops running rather than merely being
      * covered. Only real, launchable apps — never the launcher, the phone or our own screens.
      */
-    private fun suspendBlocked(pkg: String, decision: LockDecision) {
+    private fun suspendBlocked(pkg: String, decision: LockDecision, mayGoHome: Boolean = true) {
         if (decision is LockDecision.SettingsBlocked) return   // settings is hidden, not suspended
         if (engine.isForegroundExempt(pkg)) return
         if (pkg in homePackages) return
@@ -554,7 +587,10 @@ class MonitorService : Service() {
         // Not device owner, so the app cannot be suspended — but it must still stop being on
         // screen right now. Going Home leaves it immediately; the overlay or block screen then
         // lands on the launcher instead of on top of a still-running app.
-        runCatching { AppAccessibilityService.instance?.goHome() }
+        //
+        // Only when the reason is actually on screen. Sending the child Home out of an app with
+        // nothing to explain it is worse than letting the app run one more tick.
+        if (mayGoHome) runCatching { AppAccessibilityService.instance?.goHome() }
     }
 
     /** Un-suspend every package the engine would now allow again. */

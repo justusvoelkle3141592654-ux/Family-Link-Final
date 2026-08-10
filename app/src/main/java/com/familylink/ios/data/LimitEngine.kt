@@ -115,6 +115,11 @@ class LimitEngine(private val prefs: Prefs) {
      */
     fun sealsDevice(decision: LockDecision): Boolean =
         decision is LockDecision.Bedtime ||
+            // The day's budget being gone belongs here as much as the ceiling does. It used to
+            // be left out, which meant the overlay was taken down again on the very tick that
+            // wanted to raise it — the one lock that mattered most was also the only one the
+            // child never saw.
+            decision is LockDecision.GlobalLimitReached ||
             decision is LockDecision.HardCapReached ||
             decision is LockDecision.ManualLock ||
             decision is LockDecision.OfflineLock ||

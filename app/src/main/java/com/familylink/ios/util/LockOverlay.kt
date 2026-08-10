@@ -46,8 +46,22 @@ object LockOverlay {
     val isShowing: Boolean get() = view != null
 
     /**
+     * True when the last attempt to build the window failed. Adding a window can be refused for
+     * reasons the permission check cannot see — an OEM that gates overlays separately, a
+     * revocation between the check and the call. That used to be swallowed silently, which left
+     * the phone enforcing a lock nobody could see; the caller now gets to fall back to something
+     * that does reach the screen.
+     */
+    @Volatile
+    var lastShowFailed: Boolean = false
+        private set
+
+    /**
      * Show (or update) the overlay. Rebuilding only happens when [key] changes, so the window is
      * created once per distinct lock state and simply stays there.
+     *
+     * Posts to the main thread, so the result is reported through [lastShowFailed] rather than
+     * returned — the caller sees it on its next tick, about a second later.
      */
     fun show(
         context: Context,
@@ -55,9 +69,11 @@ object LockOverlay {
         content: @androidx.compose.runtime.Composable () -> Unit
     ) {
         main.post {
-            if (shownKey == key && stillAttached()) return@post
+            if (shownKey == key && stillAttached()) { lastShowFailed = false; return@post }
             if (view != null) removeNow(context)
-            runCatching { addNow(context, content) }.onSuccess { shownKey = key }
+            runCatching { addNow(context, content) }
+                .onSuccess { shownKey = key; lastShowFailed = false }
+                .onFailure { shownKey = null; lastShowFailed = true }
         }
     }
 

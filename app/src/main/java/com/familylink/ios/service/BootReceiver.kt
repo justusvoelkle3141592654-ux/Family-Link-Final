@@ -18,18 +18,11 @@ class BootReceiver : BroadcastReceiver() {
         when (intent?.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
-            Intent.ACTION_USER_UNLOCKED,
             ACTION_RESTART -> {
                 // First, and before anything that touches preferences: close the boot gap.
                 // Both calls are device-owner policy and available in direct boot.
                 runCatching { com.familylink.ios.admin.DeviceOwner.applyPolicies(context) }
                 runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(context, true) }
-
-                // Seal the phone for the first half-minute. Preferences are only readable once
-                // the user has unlocked, so this is attempted on every action and simply does
-                // nothing on the direct-boot pass — the time-since-boot half of the check in
-                // [Prefs.bootLockActive] covers that pass on its own.
-                runCatching { com.familylink.ios.data.Prefs.get(context).startBootLock() }
 
                 // MonitorService.start() already refuses to run on a parent device.
                 MonitorService.start(context)
