@@ -10,6 +10,9 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -23,6 +26,15 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
+/** Everything the lock screen needs to draw itself. */
+data class LockUi(
+    val title: String,
+    val detail: String,
+    val bedtime: Boolean = false,
+    val offline: Boolean = false,
+    val repair: Boolean = false
+)
+
 /**
  * The lock as a real system overlay instead of an Activity.
  *
@@ -31,8 +43,15 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
  * included, and there is no gesture that removes it. The device itself is NOT locked: the screen
  * stays on and the phone remains reachable, the overlay simply covers what is underneath.
  *
+ * ## The window outlives its content
+ *
+ * The first version rebuilt the whole window whenever the text changed. With a countdown in that
+ * text it therefore tore the window down and built it again **every second** — which is why the
+ * lock flickered, arrived late, or never appeared at all. The window is now created once and
+ * kept; only [state] changes, and Compose redraws inside the window that is already there.
+ *
  * Requires the "display over other apps" permission. Without it the caller falls back to the
- * Activity, which is better than showing nothing.
+ * notification, which is better than showing nothing.
  */
 object LockOverlay {
 
@@ -40,48 +59,73 @@ object LockOverlay {
     private var owner: OverlayOwner? = null
     private val main = Handler(Looper.getMainLooper())
 
-    /** What is currently on screen, so an unchanged state never rebuilds the window (no flicker). */
-    private var shownKey: String? = null
+    /** What the window draws. Changing this never touches the window itself. */
+    private val state: MutableState<LockUi?> = mutableStateOf(null)
+
+    /** What the caller last asked for, so the watchdog knows whether a window is owed at all. */
+    @Volatile
+    private var wanted: LockUi? = null
 
     val isShowing: Boolean get() = view != null
 
     /**
      * True when the last attempt to build the window failed. Adding a window can be refused for
      * reasons the permission check cannot see — an OEM that gates overlays separately, a
-     * revocation between the check and the call. That used to be swallowed silently, which left
-     * the phone enforcing a lock nobody could see; the caller now gets to fall back to something
-     * that does reach the screen.
+     * revocation between the check and the call. Silently swallowed, that left the phone
+     * enforcing a lock nobody could see; the caller now gets to fall back to something that does
+     * reach the screen.
      */
     @Volatile
     var lastShowFailed: Boolean = false
         private set
 
     /**
-     * Show (or update) the overlay. Rebuilding only happens when [key] changes, so the window is
-     * created once per distinct lock state and simply stays there.
+     * Put [ui] on screen, creating the window only if there is not one already.
      *
-     * Posts to the main thread, so the result is reported through [lastShowFailed] rather than
-     * returned — the caller sees it on its next tick, about a second later.
+     * Safe to call as often as anything likes — on every tick, on every foreground change. When
+     * nothing changed it does nothing at all, which is what makes it cheap enough to call from
+     * the accessibility service's event handler.
      */
-    fun show(
-        context: Context,
-        key: String,
-        content: @androidx.compose.runtime.Composable () -> Unit
-    ) {
+    fun update(context: Context, ui: LockUi, content: @androidx.compose.runtime.Composable () -> Unit) {
+        wanted = ui
         main.post {
-            if (shownKey == key && stillAttached()) { lastShowFailed = false; return@post }
+            state.value = ui
+            if (view != null && view?.isAttachedToWindow == true) {
+                lastShowFailed = false
+                return@post
+            }
+            // Either nothing was ever built, or the system tore it down under us.
             if (view != null) removeNow(context)
             runCatching { addNow(context, content) }
-                .onSuccess { shownKey = key; lastShowFailed = false }
-                .onFailure { shownKey = null; lastShowFailed = true }
+                .onSuccess { lastShowFailed = false }
+                .onFailure { lastShowFailed = true }
         }
     }
 
+    /**
+     * Re-assert the window if it should be up but is not. The system can remove an overlay on a
+     * configuration change or after the process was killed, and without this the lock would
+     * quietly be gone until the reason itself changed.
+     */
+    fun ensureAttached(context: Context, content: @androidx.compose.runtime.Composable () -> Unit) {
+        val ui = wanted ?: return
+        if (view?.isAttachedToWindow == true) return
+        update(context, ui, content)
+    }
+
     fun hide(context: Context) {
+        wanted = null
         main.post {
-            shownKey = null
+            state.value = null
             removeNow(context)
         }
+    }
+
+    /** The state the window's content reads. Public so the content composable can observe it. */
+    @androidx.compose.runtime.Composable
+    fun currentUi(): LockUi? {
+        val ui by state
+        return ui
     }
 
     @SuppressLint("InflateParams")
@@ -136,13 +180,6 @@ object LockOverlay {
         wm.addView(host, params)
         view = host
     }
-
-    /**
-     * True when the window really is on screen. The service re-asserts the overlay from this,
-     * so a window the system tore down (process death, configuration change) comes straight
-     * back instead of leaving the lock silently gone.
-     */
-    private fun stillAttached(): Boolean = view?.isAttachedToWindow == true
 
     private fun removeNow(context: Context) {
         val cv = view ?: return

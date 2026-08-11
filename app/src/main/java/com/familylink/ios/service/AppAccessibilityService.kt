@@ -71,6 +71,12 @@ class AppAccessibilityService : AccessibilityService() {
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             ForegroundTracker.update(pkg)
+            // Raise the lock here, not by asking the monitor to look on its next tick. This
+            // event is the same one Android switches screens on, so deciding now puts the lock
+            // up before the app underneath has finished drawing — instead of a second and a half
+            // later, which was long enough to open something, use it and wonder why nothing
+            // happened. The monitor is still nudged, because measuring usage is its job.
+            LockEnforcer.onForeground(this, pkg)
             MonitorService.recheck(this)
         }
     }
