@@ -220,6 +220,30 @@ fun NovaDivider() {
     Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
 }
 
+/**
+ * A short standing note — a warning, a hint, a waiting-for-data message.
+ *
+ * These used to be written as a bare paragraph wherever one was needed, which is why they read
+ * as leftover text rather than part of the screen. Giving them one tinted, rounded shape means
+ * a notice looks the same everywhere and is told apart from ordinary content at a glance.
+ */
+@Composable
+fun NovaNote(
+    text: String,
+    color: Color = Nova.Warning,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Nova.RadiusCard.dp))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(text, fontSize = 13.sp, color = color, lineHeight = 18.sp)
+    }
+}
+
 @Composable
 fun SectionHeader(text: String) {
     Text(

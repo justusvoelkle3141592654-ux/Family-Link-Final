@@ -108,11 +108,10 @@ fun AppsScreen() {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
         if (prefs.isParentDevice && !managingRemote) {
-            Text(
+            com.familylink.ios.ui.components.NovaNote(
                 "Noch keine App-Daten vom Kinder-Gerät empfangen. Sobald es verbunden ist und " +
                     "Apps genutzt wurden, erscheinen sie hier.",
-                fontSize = 12.sp, color = Nova.Warning,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
         Legend()

@@ -202,9 +202,8 @@ fun FocusScreen(onBack: () -> Unit) {
                 )
             }
             if (prefs.isParentDevice && apps.isEmpty()) {
-                Text(
-                    "Noch keine App-Liste vom Kinder-Gerät empfangen.",
-                    fontSize = 12.sp, color = Nova.Warning
+                com.familylink.ios.ui.components.NovaNote(
+                    "Noch keine App-Liste vom Kinder-Gerät empfangen."
                 )
             }
             Spacer(Modifier.height(8.dp))

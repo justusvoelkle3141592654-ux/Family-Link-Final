@@ -940,10 +940,9 @@ fun ParentPortalScreen(
             // gives no app any way to switch the display off — say so instead of offering a
             // button that quietly does nothing.
             if (!prefs.isParentDevice && !com.familylink.ios.util.ScreenLock.available(context)) {
-                Text(
+                com.familylink.ios.ui.components.NovaNote(
                     "Zum Sperren des Displays wird die Bedienungshilfe (oder auf Android 8 der " +
                         "Geräteadministrator) benötigt. Bitte unter Berechtigungen erteilen.",
-                    fontSize = 12.sp, color = Nova.Warning,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
@@ -1125,10 +1124,9 @@ fun ParentPortalScreen(
                     NovaSwitch(checked = prefs.notifyOffline) { prefs.notifyOffline = it; v++ }
                 }
                 if (!notificationsAllowed) {
-                    Text(
+                    com.familylink.ios.ui.components.NovaNote(
                         "Android erlaubt der App noch keine Benachrichtigungen. Bitte in den " +
                             "Systemeinstellungen für Völkle Link freigeben.",
-                        fontSize = 12.sp, color = Nova.Warning,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                     )
                 }
