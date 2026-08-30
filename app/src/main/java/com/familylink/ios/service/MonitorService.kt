@@ -210,7 +210,7 @@ class MonitorService : Service() {
             }
             prefs.guardMissingSince = System.currentTimeMillis()
             // Straight out over the wire, rather than waiting for the next scheduled push.
-            runCatching { SyncService.pushNow(this) }
+            runCatching { com.familylink.ios.sync.SyncService.pushNow(this) }
         }
 
         // Lock, and keep locking. Rate-limited only enough to avoid fighting the unlock
@@ -262,7 +262,7 @@ class MonitorService : Service() {
             guardMissingReported = false
             prefs.guardMissingSince = 0L
             runCatching { prefs.addEvent("guard", "Schutz wieder aktiv", "Der Schutz läuft wieder.") }
-            runCatching { SyncService.pushNow(this) }
+            runCatching { com.familylink.ios.sync.SyncService.pushNow(this) }
         }
 
         if (ticksSincePkgRefresh++ >= 10) {
