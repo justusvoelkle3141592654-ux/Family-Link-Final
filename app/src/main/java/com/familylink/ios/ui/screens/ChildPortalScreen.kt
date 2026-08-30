@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AddAlarm
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HourglassBottom
@@ -679,6 +680,25 @@ private fun SettingsTab(
     onOpenParentArea: () -> Unit
 ) {
     val context = LocalContext.current
+
+    // Turning the launcher off is the one thing on this page that is not the child's to do.
+    var askPinThenHome by remember { mutableStateOf(false) }
+    if (askPinThenHome) {
+        PinScreen(
+            mode = PinMode.VERIFY,
+            onSuccess = {
+                askPinThenHome = false
+                // Android has no API to set a launcher; both directions go through its own
+                // chooser. Settings is released for a few minutes so the PIN gate in front of
+                // it does not ask a second time on the way there.
+                prefs.unlockSettings(3)
+                com.familylink.ios.util.LauncherGuard.openHomeChooser(context)
+            },
+            onCancel = { askPinThenHome = false }
+        )
+        return
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Text(
             "Einstellungen", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink,
@@ -812,6 +832,18 @@ private fun SettingsTab(
                 subtitle = "Regeln ändern — mit PIN",
                 onClick = onOpenParentArea
             )
+            // The way back to the phone's own launcher. Behind the PIN, because a home screen
+            // the child can swap out is not a home screen — this row would otherwise be the
+            // first thing they tapped.
+            if (com.familylink.ios.util.LauncherGuard.isLauncherActive(context)) {
+                RowDivider()
+                SettingsRow(
+                    icon = Icons.Filled.Home,
+                    title = "Startbildschirm zurücksetzen",
+                    subtitle = "Zurück zum normalen Startbildschirm — mit PIN",
+                    onClick = { askPinThenHome = true }
+                )
+            }
         }
         Spacer(Modifier.height(28.dp))
     }

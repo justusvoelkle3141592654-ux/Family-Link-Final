@@ -27,6 +27,15 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!--
+      The channel to the separate launcher app. Signature level: only an app signed with the
+      same key may read it, which is why both modules share one keystore. No other app on the
+      phone can see what this one is enforcing.
+    -->
+    <permission
+        android:name="com.familylink.ios.permission.LAUNCHER_BRIDGE"
+        android:protectionLevel="signature" />
+
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -37,24 +46,17 @@
         tools:targetApi="34">
 
         <!--
-          MainActivity can serve as the phone's home screen. As the home app it is started
-          before anything else after a restart and restarted at once if it dies, which closes
-          the gap a boot broadcast can only race: there is no moment where the launcher is up
-          and the guard is not. Offering the category does nothing on its own — the parent
-          still picks it in Android's own "home app" screen, so a parent phone is unaffected.
+          Not a home screen. Making this activity the launcher was the first attempt at closing
+          the restart gap, and it worked in the wrong way: pressing home opened the parent
+          portal, which is a settings screen, not somewhere to live. The home screen is now the
+          separate launcher app, which also survives this one being force-stopped.
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-            android:theme="@style/Theme.FamilyLinkIOS">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.FamilyLinkIOS" />
 
         <!--
           The launcher icon lives on an alias rather than on the activity itself, so it can be
@@ -167,8 +169,32 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <!--
+                  The launcher's revive call. This is what brings the guard back after a force
+                  stop: a stopped app receives nothing on its own, but the launcher is a running
+                  process and can wake it.
+
+                  Deliberately NOT behind the signature permission, unlike the bridge: a
+                  permission here would apply to every action in this filter, and the system
+                  sends BOOT_COMPLETED under the platform signature, not ours — it would be
+                  turned away and the guard would never start after a restart. Leaving the
+                  action open costs nothing, because the only thing it can do is start the
+                  protection, which is the opposite of a bypass.
+                -->
+                <action android:name="com.familylink.ios.RESTART" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Read-only state for the launcher: which packages are locked right now, and whether
+          everything is sealed. The launcher runs in its own process precisely so that force
+          stopping this app cannot take the home screen with it.
+        -->
+        <provider
+            android:name=".sync.LauncherBridge"
+            android:authorities="com.familylink.ios.launcherbridge"
+            android:exported="true"
+            android:readPermission="com.familylink.ios.permission.LAUNCHER_BRIDGE" />
 
     </application>
 </manifest>

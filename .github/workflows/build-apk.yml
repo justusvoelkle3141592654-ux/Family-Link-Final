@@ -44,12 +44,14 @@ jobs:
 
       # Convenience copy for the Actions UI. The artifact host occasionally times out on a
       # 55 MB upload, which must not cost us the build — the branch below is the real delivery.
-      - name: Upload APK artifact
+      - name: Upload APK artifacts
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: family-link-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            launcher/build/outputs/apk/debug/launcher-debug.apk
           if-no-files-found: warn
 
       # Primary delivery: publish the APK to a dedicated orphan branch so it is always
@@ -58,13 +60,17 @@ jobs:
         if: success() || failure()
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/family-link-debug.apk
+          cp launcher/build/outputs/apk/debug/launcher-debug.apk /tmp/family-link-launcher.apk
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout --orphan apk-output
           git reset --hard
           mkdir -p apk
           cp /tmp/family-link-debug.apk apk/family-link-debug.apk
-          echo "Prebuilt debug APK for commit ${GITHUB_SHA}." > apk/README.txt
-          git add apk/family-link-debug.apk apk/README.txt
+          cp /tmp/family-link-launcher.apk apk/family-link-launcher.apk
+          echo "Prebuilt debug APKs for commit ${GITHUB_SHA}." > apk/README.txt
+          echo "family-link-debug.apk    = the parental control app (install first)." >> apk/README.txt
+          echo "family-link-launcher.apk = the home screen for the child's phone." >> apk/README.txt
+          git add apk/family-link-debug.apk apk/family-link-launcher.apk apk/README.txt
           git commit -m "APK build for ${GITHUB_SHA}"
           git push -f origin apk-output

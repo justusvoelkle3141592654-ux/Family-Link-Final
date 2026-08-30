@@ -7,42 +7,57 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 
 /**
- * Two protections that need no device owner, and that between them close the two fastest
- * routes around the guard on a stock phone.
+ * The separate launcher app, seen from this one.
  *
- * ## Being the home screen
+ * ## Why a second app
  *
- * A restart used to be the way in: the launcher came up, and Settings was two taps away before
- * the guard had finished starting. As the home app there is no such moment — the phone boots
- * into this app, and every press of the home button comes back to it. Android starts the home
- * app before anything else and restarts it immediately if it dies, which is a far stronger
- * guarantee than a boot broadcast racing a child's thumb.
+ * A restart used to be the way in: the phone's own launcher came up, and Settings was two taps
+ * away before the guard had finished starting. Making this app the home screen closed that, but
+ * badly — pressing home opened the parent portal, which is a settings page, not somewhere to
+ * live. Worse, both halves were one process: force-stopping the guard took the home screen with
+ * it and handed the phone straight back.
+ *
+ * The home screen is now its own app in its own process. Android keeps the home app alive by
+ * definition — it is what every press of home falls back to — so it is still running when the
+ * guard is stopped, notices within a second, and starts it again. Force stop stops being an
+ * escape and becomes a pause.
  *
  * ## Hiding the icon
  *
- * The app's own icon is the shortcut to "App-Info", and from there to "Beenden erzwingen",
- * which kills the guard outright — nothing an app can prevent. Removing the icon removes that
- * shortcut. The page is still reachable the long way through Settings, so this is a speed bump
- * rather than a wall, but it is the difference between a long-press and a hunt.
+ * This app's own icon is the shortcut to "App-Info", and from there to "Beenden erzwingen".
+ * Removing the icon removes that shortcut. The page is still reachable the long way through
+ * Settings, so it is a speed bump rather than a wall — but Settings is behind the PIN, and the
+ * launcher undoes the stop anyway.
  *
- * Hiding is refused unless this app is actually the home screen, because otherwise it would
- * strand the parent: no icon and no home screen means no way back in.
+ * Hiding is refused while the paired launcher is not the home screen, because then this icon
+ * would be the only way back into the app.
  */
 object LauncherGuard {
 
-    /** The alias carrying the launcher icon. Separate from the activity so it can be disabled. */
+    /** The launcher app's package. Separate APK, same signing key. */
+    const val LAUNCHER_PACKAGE = "com.familylink.launcher"
+
+    /** The alias carrying this app's launcher icon, separate so it can be disabled alone. */
     private const val ALIAS = "com.familylink.ios.Launcher"
 
     private fun alias(context: Context) = ComponentName(context.packageName, ALIAS)
 
-    /** True when this app is the phone's current home screen. */
-    fun isDefaultHome(context: Context): Boolean = runCatching {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val res = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        res?.activityInfo?.packageName == context.packageName
+    /** Is the companion launcher installed at all? */
+    fun isLauncherInstalled(context: Context): Boolean = runCatching {
+        context.packageManager.getPackageInfo(LAUNCHER_PACKAGE, 0); true
     }.getOrDefault(false)
 
-    /** Android's own "choose a home app" screen; there is no way to set it programmatically. */
+    /** Is the companion launcher the phone's current home screen? */
+    fun isLauncherActive(context: Context): Boolean = runCatching {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val res = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        res?.activityInfo?.packageName == LAUNCHER_PACKAGE
+    }.getOrDefault(false)
+
+    /**
+     * Android's own "home app" screen. There is no way to set a launcher programmatically —
+     * deliberately, on Android's part — so both switching to it and away from it end here.
+     */
     fun openHomeChooser(context: Context) {
         runCatching {
             context.startActivity(
@@ -57,13 +72,13 @@ object LauncherGuard {
     }.getOrDefault(false)
 
     /**
-     * Show or hide the launcher icon.
+     * Show or hide this app's launcher icon.
      *
-     * @return false when hiding was refused because this app is not the home screen — taking
-     *         the icon away then would leave no way to open the app at all.
+     * @return false when hiding was refused because the companion launcher is not the home
+     *         screen — taking the icon away then would leave no way to open the app at all.
      */
     fun setIconHidden(context: Context, hidden: Boolean): Boolean {
-        if (hidden && !isDefaultHome(context)) return false
+        if (hidden && !isLauncherActive(context)) return false
         return runCatching {
             context.packageManager.setComponentEnabledSetting(
                 alias(context),

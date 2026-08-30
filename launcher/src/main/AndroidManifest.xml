@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The grid needs to see what is installed, and to read their icons and labels. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Reading which apps the guard has locked. Granted only because both APKs share a key. -->
+    <uses-permission android:name="com.familylink.ios.permission.LAUNCHER_BRIDGE" />
+
+    <application
+        android:name=".LauncherApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Launcher">
+
+        <!--
+          The home screen.
+          - stateNotNeeded + clearTaskOnLaunch: a launcher must be able to start with no saved
+            state and must always come back to its top screen, never to whatever was open.
+          - excludeFromRecents: the home screen is not a card to swipe back to.
+          - The theme is translucent so the system wallpaper shows through, which is what makes
+            this look like the phone's own launcher rather than an app pretending to be one.
+        -->
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:clearTaskOnLaunch="true"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout"
+            android:theme="@style/Theme.Launcher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
