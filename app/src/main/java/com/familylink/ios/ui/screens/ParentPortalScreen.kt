@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -832,9 +833,76 @@ fun ParentPortalScreen(
         SectionHeader("Sperren")
         NovaCard {
             val focus = prefs.focusSession()
-            // Manual lock: no end time, stays until it is lifted.
+            val timedRunning = focus.isRunning() && focus.allowed.isEmpty()
+            val screenLeft = prefs.screenLockRemainingSeconds()
+            val canLock = !prefs.isParentDevice || prefs.syncConfigured
+
+            // Timed device lock: everything sealed but the phone, for a fixed stretch. Short
+            // lengths only and no ration — this is the everyday reaction.
+            if (timedRunning) {
+                NovaRow(
+                    title = "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}",
+                    subtitle = "Tippe zum Freigeben"
+                ) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(Nova.Success.copy(alpha = 0.15f))
+                            .clickable { sync.stopFocus(); v++ }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text("Freigeben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
+                    }
+                }
+            } else {
+                // Full width, not a trailing slot: four chips do not fit beside a title.
+                LockChipRow("Gerät sperren", "Nur Telefon und Notruf, endet von selbst") {
+                    Prefs.PARENT_LOCK_MINUTES.forEach { m ->
+                        LockChip("$m Min", null, Nova.Danger, enabled = true) {
+                            sync.lockForMinutes(m); v++
+                        }
+                    }
+                }
+            }
+            NovaDivider()
+
+            // Display lock: the screen itself goes dark and re-locks on every unlock. This is
+            // where the rationed lengths live, because it is the one that runs longest.
+            if (screenLeft > 0) {
+                NovaRow(
+                    title = "Display gesperrt — noch ${TimeFmt.hm(screenLeft)}",
+                    subtitle = "Tippe zum Aufheben"
+                ) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(Nova.Success.copy(alpha = 0.15f))
+                            .clickable { releaseScreenLock(context, sync); v++ }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text("Aufheben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
+                    }
+                }
+            } else {
+                LockChipRow("Display sperren", "Bildschirm aus, endet von selbst") {
+                    Prefs.SCREEN_LOCK_MINUTES.forEach { m ->
+                        val left = prefs.screenLocksLeft(m)
+                        val period = prefs.screenLockPeriodLabel(m)
+                        LockChip(
+                            label = if (m >= 60) "${m / 60} Std" else "$m Min",
+                            note = period?.let { if (left > 0) it else "aufgebraucht" },
+                            tint = Nova.Primary,
+                            enabled = canLock && left > 0
+                        ) {
+                            // Book it first: a refused booking must not lock.
+                            if (prefs.useScreenLock(m)) { startScreenLock(context, sync, m); v++ }
+                        }
+                    }
+                }
+            }
+            NovaDivider()
+
+            // Last, and deliberately open-ended: stays sealed until it is lifted again.
             NovaRow(
-                title = "Gerät komplett sperren",
+                title = "Sperren",
                 subtitle = if (prefs.manualLockEnabled) "Gesperrt — tippe zum Aufheben"
                 else "Ohne Zeitende. Telefon und Notruf bleiben erreichbar."
             ) {
@@ -844,80 +912,8 @@ fun ParentPortalScreen(
                     v++
                 }
             }
-            // Timed lock: nothing but phone and emergency for a fixed stretch.
-            NovaRow(
-                title = if (focus.isRunning() && focus.allowed.isEmpty())
-                    "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}"
-                else "Sperren auf Zeit",
-                subtitle = "15 Min frei · 1 Std 1×/Tag · 6 Std 1×/Woche"
-            ) {
-                if (focus.isRunning() && focus.allowed.isEmpty()) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(10.dp))
-                            .background(Nova.Success.copy(alpha = 0.15f))
-                            .clickable { sync.stopFocus(); v++ }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Text("Freigeben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
-                    }
-                } else {
-                    // Same chips as the overview's sheet, so the two places that can start a
-                    // lock read identically and a spent allowance looks the same in both.
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Prefs.PARENT_LOCK_MINUTES.forEach { m ->
-                            val left = prefs.parentLocksLeft(m)
-                            val period = prefs.parentLockPeriodLabel(m)
-                            LockChip(
-                                label = if (m >= 60) "${m / 60} Std" else "$m Min",
-                                note = period?.let { if (left > 0) it else "aufgebraucht" },
-                                tint = Nova.Danger,
-                                enabled = left > 0
-                            ) {
-                                // Book it first: a refused booking must not lock.
-                                if (prefs.useParentLock(m)) { sync.lockForMinutes(m); v++ }
-                            }
-                        }
-                    }
-                }
-            }
-            // Display lock: the screen itself goes dark and re-locks on every unlock. Reachable
-            // here as well as from the dashboard sheet, because the supervised phone's portal
-            // has no dashboard at all.
-            val screenLeft = prefs.screenLockRemainingSeconds()
-            val canLock = !prefs.isParentDevice || prefs.syncConfigured
-            NovaRow(
-                title = if (screenLeft > 0) "Display gesperrt — noch ${TimeFmt.hm(screenLeft)}"
-                else "Display sperren",
-                subtitle = if (screenLeft > 0) "Tippe zum Aufheben"
-                else "Bildschirm aus, 15 Min · 30 Min · 1 Std"
-            ) {
-                if (screenLeft > 0) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(10.dp))
-                            .background(Nova.Success.copy(alpha = 0.15f))
-                            .clickable { releaseScreenLock(context, sync); v++ }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Text("Aufheben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
-                    }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(15, 30, 60).forEach { m ->
-                            Box(
-                                Modifier.clip(RoundedCornerShape(9.dp))
-                                    .background(Nova.Danger.copy(alpha = 0.13f))
-                                    .clickable(enabled = canLock) { startScreenLock(context, sync, m); v++ }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    if (m >= 60) "${m / 60}h" else "${m}m",
-                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            NovaDivider()
+
             // The child's side of locking: they can lock their own phone from their portal, and
             // time served that way buys screen time back. This is the knob for how generous it
             // is — and the switch that turns the whole idea off.
@@ -2118,15 +2114,34 @@ private fun LockChip(
     }
 }
 
-/** A labelled row of chips, used for both the focus lengths and the rationed locks. */
+/**
+ * A labelled row of chips, used for the focus lengths and both kinds of lock.
+ *
+ * The chip row scrolls sideways rather than squeezing: four chips that each carry a counter do
+ * not fit across a narrow phone, and a clipped last option is worse than one the parent swipes
+ * to. The label keeps its padding while the row itself runs to the card's edge, so a scrollable
+ * row visibly continues instead of ending in whitespace.
+ */
 @Composable
 private fun LockChipRow(title: String, subtitle: String, content: @Composable RowScope.() -> Unit) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+    Column(Modifier.padding(vertical = 12.dp)) {
+        Text(
+            title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
         Spacer(Modifier.height(2.dp))
-        Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
+        Text(
+            subtitle, fontSize = 13.sp, color = Nova.InkMuted,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        Row(
+            Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = content
+        )
     }
 }
 
@@ -2154,7 +2169,7 @@ private fun LockSheet(
         ) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(
-                    "Gerät sperren",
+                    "Sperren & Fokus",
                     fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
                     modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp)
                 )
@@ -2167,15 +2182,7 @@ private fun LockSheet(
                     )
                     NovaDivider()
                 }
-                if (!lockedNow) {
-                    NovaRow(
-                        title = "Jetzt sperren",
-                        subtitle = "Bleibt gesperrt, bis du es aufhebst",
-                        icon = Icons.Filled.Lock,
-                        onClick = onLockNow
-                    )
-                    NovaDivider()
-                }
+
                 // Focus: the allowed apps stay usable, so these are free to reach for.
                 LockChipRow("Fokus", "Nur zugelassene Apps, endet von selbst") {
                     listOf(15 to "15 Min", 30 to "30 Min", 60 to "1 Std").forEach { (m, label) ->
@@ -2183,23 +2190,18 @@ private fun LockSheet(
                     }
                 }
                 NovaDivider()
-                // The full lock. The quarter hour is free; the long ones are counted, and the
-                // booking happens here so a refused one never reaches the child's phone.
-                LockChipRow("Sperren", "Alles außer Telefon und Notruf") {
+
+                // Timed device lock: everything sealed but the phone. Short lengths, no ration —
+                // this is the everyday reaction, and the open-ended lock below covers the rest.
+                LockChipRow("Gerät sperren", "Nur Telefon und Notruf, endet von selbst") {
                     Prefs.PARENT_LOCK_MINUTES.forEach { m ->
-                        val left = prefs.parentLocksLeft(m)
-                        val period = prefs.parentLockPeriodLabel(m)
-                        LockChip(
-                            label = if (m >= 60) "${m / 60} Std" else "$m Min",
-                            note = period?.let { if (left > 0) it else "aufgebraucht" },
-                            tint = Nova.Danger,
-                            enabled = left > 0
-                        ) {
-                            if (prefs.useParentLock(m)) onLockFor(m)
-                        }
+                        LockChip("$m Min", null, Nova.Danger, enabled = true) { onLockFor(m) }
                     }
                 }
                 NovaDivider()
+
+                // Display lock: the screen itself goes dark. Runs longest, so this is where the
+                // rationed lengths live; the booking happens here so a refused one never starts.
                 if (screenLockLeft > 0) {
                     NovaRow(
                         title = "Display-Sperre aufheben",
@@ -2207,14 +2209,34 @@ private fun LockSheet(
                         icon = Icons.Filled.PhoneAndroid,
                         onClick = onReleaseScreen
                     )
+                    NovaDivider()
                 } else {
-                    // Same chip row as above: three lengths, because 15 minutes alone was never
-                    // enough for anything but getting someone's attention.
                     LockChipRow("Display sperren", "Bildschirm aus, endet von selbst") {
-                        listOf(15 to "15 Min", 30 to "30 Min", 60 to "1 Std").forEach { (m, label) ->
-                            LockChip(label, null, Nova.Primary, enabled = true) { onLockScreen(m) }
+                        Prefs.SCREEN_LOCK_MINUTES.forEach { m ->
+                            val left = prefs.screenLocksLeft(m)
+                            val period = prefs.screenLockPeriodLabel(m)
+                            LockChip(
+                                label = if (m >= 60) "${m / 60} Std" else "$m Min",
+                                note = period?.let { if (left > 0) it else "aufgebraucht" },
+                                tint = Nova.Primary,
+                                enabled = left > 0
+                            ) {
+                                if (prefs.useScreenLock(m)) onLockScreen(m)
+                            }
                         }
                     }
+                    NovaDivider()
+                }
+
+                // Last, and deliberately open-ended: press it and the phone stays sealed until
+                // the parent lifts it again. No length, no allowance.
+                if (!lockedNow) {
+                    NovaRow(
+                        title = "Sperren",
+                        subtitle = "Bleibt gesperrt, bis du es aufhebst",
+                        icon = Icons.Filled.Lock,
+                        onClick = onLockNow
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
             }

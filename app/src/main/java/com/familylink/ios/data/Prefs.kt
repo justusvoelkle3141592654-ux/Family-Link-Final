@@ -56,13 +56,13 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_FOCUS_USED_60 = "focus_used_60"
         private const val K_FOCUS_USED_120 = "focus_used_120"
 
-        // The parent's allowance for the timed lock. Short locks are free; the long ones are
+        // The allowance for the long display locks. Short ones are free; the long ones are
         // rationed so reaching for them stays a decision. The hour rolls over daily, the
         // six-hour lock weekly, so each is counted against the stretch it is meant to shape.
-        private const val K_PARENT_LOCK_DAY = "parent_lock_day"
-        private const val K_PARENT_LOCK_WEEK = "parent_lock_week"
-        private const val K_PARENT_LOCK_USED_60 = "parent_lock_used_60"
-        private const val K_PARENT_LOCK_USED_360 = "parent_lock_used_360"
+        private const val K_SCREEN_LOCK_DAY = "screen_lock_day"
+        private const val K_SCREEN_LOCK_WEEK = "screen_lock_week"
+        private const val K_SCREEN_LOCK_USED_60 = "screen_lock_used_60"
+        private const val K_SCREEN_LOCK_USED_360 = "screen_lock_used_360"
 
         // The reward for keeping a self-started lock running: what is owed, and what has
         // already been paid out today.
@@ -115,17 +115,21 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val FOCUS_120_PER_WEEK = 1
 
         /**
-         * The lengths the parent can lock the phone for, and how often each is allowed.
-         *
-         * Locking used to be a single fixed half hour, which made it the answer to everything.
-         * Graduating it — with the long ones rationed — keeps the quarter hour the ordinary
-         * reaction and a long lock a deliberate, countable step.
+         * Timed device lock: everything is sealed but the phone and the emergency call. Short
+         * lengths only and no ration at all — this is the ordinary reaction, and the parent can
+         * always reach for the open-ended lock instead.
          */
-        val PARENT_LOCK_MINUTES = listOf(15, 60, 360)
+        val PARENT_LOCK_MINUTES = listOf(5, 10, 15, 30)
 
-        /** The quarter hour is deliberately unlimited; the hour is daily, the long lock weekly. */
-        const val PARENT_LOCK_60_PER_DAY = 1
-        const val PARENT_LOCK_360_PER_WEEK = 1
+        /**
+         * Display lock: the screen itself goes dark. Runs longer than the device lock, so the
+         * long lengths are the ones that carry a ration.
+         */
+        val SCREEN_LOCK_MINUTES = listOf(15, 30, 60, 360)
+
+        /** Short display locks are unlimited; the hour is daily, the six-hour lock weekly. */
+        const val SCREEN_LOCK_60_PER_DAY = 1
+        const val SCREEN_LOCK_360_PER_WEEK = 1
 
         /** Bounds for the duration the child types in themselves. */
         const val MIN_OWN_LOCK_MIN = 1
@@ -707,65 +711,64 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         return true
     }
 
-    // ---- The parent's timed lock, and what it costs -----------------------
+    // ---- The display lock, and what it costs ------------------------------
     //
-    // Only the long locks are counted. The quarter hour stays unlimited, because that is the
-    // one meant to be reached for; the hour is allowed once a day and the six-hour lock once a
-    // week, so neither can quietly become the default answer.
+    // Only the long display locks are counted. A quarter or half hour stays unlimited, because
+    // those are the ones meant to be reached for; an hour is allowed once a day and six hours
+    // once a week, so neither can quietly become the default answer. The plain device lock and
+    // the open-ended one are deliberately free: they are the ordinary reaction.
 
-    private fun parentLockQuotaKey(minutes: Int): String? = when {
-        minutes >= 360 -> K_PARENT_LOCK_USED_360
-        minutes >= 60 -> K_PARENT_LOCK_USED_60
+    private fun screenLockQuotaKey(minutes: Int): String? = when {
+        minutes >= 360 -> K_SCREEN_LOCK_USED_360
+        minutes >= 60 -> K_SCREEN_LOCK_USED_60
         else -> null
     }
 
-    private fun parentLockCap(key: String): Int =
-        if (key == K_PARENT_LOCK_USED_360) PARENT_LOCK_360_PER_WEEK else PARENT_LOCK_60_PER_DAY
+    private fun screenLockCap(key: String): Int =
+        if (key == K_SCREEN_LOCK_USED_360) SCREEN_LOCK_360_PER_WEEK else SCREEN_LOCK_60_PER_DAY
 
     /**
      * Roll each allowance over on its own schedule: the hour with the day, the six-hour lock
      * with the calendar week. Kept in one call so every read of a counter refreshes both.
      */
-    private fun ensureParentLockPeriod() {
+    private fun ensureScreenLockPeriod() {
         val day = dayMarker()
-        if (sp.getInt(K_PARENT_LOCK_DAY, 0) != day) {
-            sp.edit().putInt(K_PARENT_LOCK_DAY, day).putInt(K_PARENT_LOCK_USED_60, 0).apply()
+        if (sp.getInt(K_SCREEN_LOCK_DAY, 0) != day) {
+            sp.edit().putInt(K_SCREEN_LOCK_DAY, day).putInt(K_SCREEN_LOCK_USED_60, 0).apply()
         }
         val week = weekMarker()
-        if (sp.getInt(K_PARENT_LOCK_WEEK, 0) != week) {
-            sp.edit().putInt(K_PARENT_LOCK_WEEK, week).putInt(K_PARENT_LOCK_USED_360, 0).apply()
+        if (sp.getInt(K_SCREEN_LOCK_WEEK, 0) != week) {
+            sp.edit().putInt(K_SCREEN_LOCK_WEEK, week).putInt(K_SCREEN_LOCK_USED_360, 0).apply()
         }
     }
 
     /**
-     * How many locks of this length are left in the current period — today for the hour, this
-     * week for the six-hour lock. The quarter hour is not rationed and reports [Int.MAX_VALUE].
+     * How many display locks of this length are left in the current period — today for the
+     * hour, this week for the six-hour one. Short lengths are not rationed and report
+     * [Int.MAX_VALUE].
      */
-    fun parentLocksLeft(minutes: Int): Int {
-        val key = parentLockQuotaKey(minutes) ?: return Int.MAX_VALUE
-        ensureParentLockPeriod()
-        return (parentLockCap(key) - sp.getInt(key, 0)).coerceAtLeast(0)
+    fun screenLocksLeft(minutes: Int): Int {
+        val key = screenLockQuotaKey(minutes) ?: return Int.MAX_VALUE
+        ensureScreenLockPeriod()
+        return (screenLockCap(key) - sp.getInt(key, 0)).coerceAtLeast(0)
     }
 
-    /** How the counter reads under a chip: "1×/Tag" or "1×/Woche". */
-    fun parentLockPeriodLabel(minutes: Int): String? = when (parentLockQuotaKey(minutes)) {
-        K_PARENT_LOCK_USED_360 -> "1×/Woche"
-        K_PARENT_LOCK_USED_60 -> "1×/Tag"
+    /** How the counter reads under a chip: "1×/Tag" or "1×/Woche"; null when unlimited. */
+    fun screenLockPeriodLabel(minutes: Int): String? = when (screenLockQuotaKey(minutes)) {
+        K_SCREEN_LOCK_USED_360 -> "1×/Woche"
+        K_SCREEN_LOCK_USED_60 -> "1×/Tag"
         else -> null
     }
 
-    /** True when this length is rationed at all (and so should show a counter). */
-    fun parentLockIsRationed(minutes: Int): Boolean = parentLockQuotaKey(minutes) != null
-
     /**
-     * Book one lock against the allowance for its length.
+     * Book one display lock against the allowance for its length.
      *
      * @return false when the allowance for this length is used up — the caller must then not
      *         start the lock.
      */
-    fun useParentLock(minutes: Int): Boolean {
-        if (parentLocksLeft(minutes) <= 0) return false
-        parentLockQuotaKey(minutes)?.let { key ->
+    fun useScreenLock(minutes: Int): Boolean {
+        if (screenLocksLeft(minutes) <= 0) return false
+        screenLockQuotaKey(minutes)?.let { key ->
             sp.edit().putInt(key, sp.getInt(key, 0) + 1).apply()
         }
         return true
