@@ -11,8 +11,8 @@ android {
         applicationId = "com.familylink.ios"
         minSdk = 26
         targetSdk = 34
-        versionCode = 40
-        versionName = "4.0"
+        versionCode = 41
+        versionName = "4.1"
 
         vectorDrawables { useSupportLibrary = true }
     }

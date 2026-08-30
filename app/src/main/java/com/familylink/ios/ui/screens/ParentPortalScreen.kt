@@ -847,7 +847,7 @@ fun ParentPortalScreen(
                 title = if (focus.isRunning() && focus.allowed.isEmpty())
                     "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}"
                 else "Sperren auf Zeit",
-                subtitle = "30 Min · 1 Std · 2 Std"
+                subtitle = "15 · 30 Min frei · 1 Std 3×/Wo · 6 Std 1×/Wo"
             ) {
                 if (focus.isRunning() && focus.allowed.isEmpty()) {
                     Box(
@@ -860,16 +860,28 @@ fun ParentPortalScreen(
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(30, 60, 120).forEach { m ->
+                        Prefs.PARENT_LOCK_MINUTES.forEach { m ->
+                            // Rationed lengths grey out once the week's allowance is gone, and
+                            // carry the remaining count so the parent sees the cost before the tap.
+                            val rationed = prefs.parentLockIsRationed(m)
+                            val left = prefs.parentLocksLeft(m)
+                            val enabled = left > 0
+                            val tint = if (enabled) Nova.Danger else Nova.InkMuted
                             Box(
                                 Modifier.clip(RoundedCornerShape(9.dp))
-                                    .background(Nova.Danger.copy(alpha = 0.13f))
-                                    .clickable { sync.lockForMinutes(m); v++ }
+                                    .background(tint.copy(alpha = if (enabled) 0.13f else 0.08f))
+                                    .then(
+                                        if (enabled) Modifier.clickable {
+                                            // Book it first: a refused booking must not lock.
+                                            if (prefs.useParentLock(m)) { sync.lockForMinutes(m); v++ }
+                                        } else Modifier
+                                    )
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    if (m >= 60) "${m / 60}h" else "${m}m",
-                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger
+                                    (if (m >= 60) "${m / 60}h" else "${m}m") +
+                                        if (rationed) "  ·$left" else "",
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = tint
                                 )
                             }
                         }

@@ -61,6 +61,23 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:theme="@style/Theme.FamilyLinkIOS" />
 
+        <!--
+          The PIN in front of the system settings, raised by the accessibility service.
+          Its own task and kept out of Recents: it must not become a card the child can swipe
+          back to, and it must not drag the portal up behind it.
+        -->
+        <activity
+            android:name=".PinVerificationActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:taskAffinity=".pinguard"
+            android:resizeableActivity="false"
+            android:supportsPictureInPicture="false"
+            android:showOnLockScreen="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:theme="@style/Theme.FamilyLinkIOS" />
+
         <!-- Device Administrator: blocks uninstall. Activation must NOT force-lock the device. -->
         <receiver
             android:name=".admin.DeviceAdmin"
