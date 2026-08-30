@@ -83,7 +83,7 @@ fun SecurePinPad(
                     when (key) {
                         "" -> Spacer(Modifier.size(70.dp))
                         "⌫" -> Key(key, Color.Transparent) { onDelete() }
-                        else -> Key(key, Color(0x11000000)) { onDigit(key[0]) }
+                        else -> Key(key, Nova.Fill) { onDigit(key[0]) }
                     }
                 }
             }

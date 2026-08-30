@@ -2279,7 +2279,7 @@ private fun ProgressBar(fraction: Float) {
             .fillMaxWidth()
             .height(8.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(Color(0x22000000))
+            .background(Nova.InkFaint.copy(alpha = 0.25f))
     ) {
         Box(
             Modifier
@@ -2305,7 +2305,7 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0x11000000))
+            .background(Nova.Fill)
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center

@@ -973,7 +973,7 @@ private fun UsageRow(
             Spacer(Modifier.height(5.dp))
             Box(
                 Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp))
-                    .background(Color(0x11000000))
+                    .background(Nova.Fill)
             ) {
                 Box(
                     Modifier.fillMaxWidth(fraction.coerceIn(0.02f, 1f)).height(5.dp)

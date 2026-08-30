@@ -248,7 +248,7 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
         Modifier
             .padding(start = 6.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0x11000000))
+            .background(Nova.Fill)
             .clickable { onClick() }
             .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {

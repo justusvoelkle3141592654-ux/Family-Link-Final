@@ -237,7 +237,7 @@ fun NovaSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    val bg = if (checked) Nova.Success else Color(0xFFD9D9E3)
+    val bg = if (checked) Nova.Success else Nova.InkFaint.copy(alpha = 0.35f)
     val offset by animateFloatAsState(if (checked) 22f else 2f, label = "switch")
     Box(
         modifier = Modifier

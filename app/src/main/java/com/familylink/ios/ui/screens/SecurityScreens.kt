@@ -159,7 +159,7 @@ private fun InfoCard(title: String, text: String, onClose: () -> Unit) {
 @Composable
 private fun StepBtn(label: String, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x11000000)).clickable { onClick() }
+        Modifier.clip(RoundedCornerShape(10.dp)).background(Nova.Fill).clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {

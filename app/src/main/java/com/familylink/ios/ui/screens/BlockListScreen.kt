@@ -142,7 +142,7 @@ fun BlockListScreen(
 
         // Phone is always available.
         Box(
-            Modifier.size(60.dp).clip(CircleShape).background(Color(0x1A34C759))
+            Modifier.size(60.dp).clip(CircleShape).background(Nova.Success.copy(alpha = 0.15f))
                 .clickable {
                     val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     runCatching { context.startActivity(dial) }
