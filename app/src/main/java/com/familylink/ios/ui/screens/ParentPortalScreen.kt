@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxSize
@@ -271,6 +272,7 @@ fun ParentPortalScreen(
                         v++
                     },
                     onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
+                    onFocusFor = { minutes -> sync.startFocus("Fokus", minutes, prefs.plusPackages()); v++ },
                     onLockNow = { sync.lockDevice(); v++ },
                     onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
                     onLockScreen = { minutes -> startScreenLock(context, sync, minutes); v++ },
@@ -847,7 +849,7 @@ fun ParentPortalScreen(
                 title = if (focus.isRunning() && focus.allowed.isEmpty())
                     "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}"
                 else "Sperren auf Zeit",
-                subtitle = "15 · 30 Min frei · 1 Std 3×/Wo · 6 Std 1×/Wo"
+                subtitle = "15 Min frei · 1 Std 1×/Tag · 6 Std 1×/Woche"
             ) {
                 if (focus.isRunning() && focus.allowed.isEmpty()) {
                     Box(
@@ -859,30 +861,20 @@ fun ParentPortalScreen(
                         Text("Freigeben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
                     }
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Same chips as the overview's sheet, so the two places that can start a
+                    // lock read identically and a spent allowance looks the same in both.
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Prefs.PARENT_LOCK_MINUTES.forEach { m ->
-                            // Rationed lengths grey out once the week's allowance is gone, and
-                            // carry the remaining count so the parent sees the cost before the tap.
-                            val rationed = prefs.parentLockIsRationed(m)
                             val left = prefs.parentLocksLeft(m)
-                            val enabled = left > 0
-                            val tint = if (enabled) Nova.Danger else Nova.InkMuted
-                            Box(
-                                Modifier.clip(RoundedCornerShape(9.dp))
-                                    .background(tint.copy(alpha = if (enabled) 0.13f else 0.08f))
-                                    .then(
-                                        if (enabled) Modifier.clickable {
-                                            // Book it first: a refused booking must not lock.
-                                            if (prefs.useParentLock(m)) { sync.lockForMinutes(m); v++ }
-                                        } else Modifier
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            val period = prefs.parentLockPeriodLabel(m)
+                            LockChip(
+                                label = if (m >= 60) "${m / 60} Std" else "$m Min",
+                                note = period?.let { if (left > 0) it else "aufgebraucht" },
+                                tint = Nova.Danger,
+                                enabled = left > 0
                             ) {
-                                Text(
-                                    (if (m >= 60) "${m / 60}h" else "${m}m") +
-                                        if (rationed) "  ·$left" else "",
-                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = tint
-                                )
+                                // Book it first: a refused booking must not lock.
+                                if (prefs.useParentLock(m)) { sync.lockForMinutes(m); v++ }
                             }
                         }
                     }
@@ -1627,6 +1619,8 @@ private fun ParentDashboard(
     onGrant: (Int, Boolean) -> Unit,
     onDecideRequest: (TimeRequest, Boolean) -> Unit,
     onLockFor: (Int) -> Unit,
+    /** Start a focus session of this length: the allowed apps stay usable. */
+    onFocusFor: (Int) -> Unit,
     onLockNow: () -> Unit,
     onUnlock: () -> Unit,
     onLockScreen: (Int) -> Unit,
@@ -1950,6 +1944,7 @@ private fun ParentDashboard(
             onDismiss = { lockSheet = false },
             onLockNow = { onLockNow(); lockSheet = false },
             onLockFor = { onLockFor(it); lockSheet = false },
+            onFocusFor = { onFocusFor(it); lockSheet = false },
             onLockScreen = { onLockScreen(it); lockSheet = false },
             onUnlock = { onUnlock(); lockSheet = false },
             onReleaseScreen = { onReleaseScreen(); lockSheet = false }
@@ -2090,6 +2085,51 @@ private fun releaseScreenLock(context: android.content.Context, sync: SyncManage
     }
 }
 
+/**
+ * One chip in the sheet's two option rows.
+ *
+ * [note] carries what the choice costs — the remaining allowance for a rationed lock — so the
+ * price is visible before the tap rather than in a refusal afterwards. A spent chip stays on
+ * screen, greyed and inert, because a row that loses buttons as the week goes on is harder to
+ * read than one whose counters simply reach nought.
+ */
+@Composable
+private fun LockChip(
+    label: String,
+    note: String?,
+    tint: Color,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val shade = if (enabled) tint else Nova.InkFaint
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(shade.copy(alpha = if (enabled) 0.12f else 0.07f))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = shade)
+        if (note != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(note, fontSize = 11.sp, color = shade.copy(alpha = 0.85f))
+        }
+    }
+}
+
+/** A labelled row of chips, used for both the focus lengths and the rationed locks. */
+@Composable
+private fun LockChipRow(title: String, subtitle: String, content: @Composable RowScope.() -> Unit) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+        Spacer(Modifier.height(2.dp))
+        Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
 /** Everything about locking, in one sheet, so the card itself stays a single button. */
 @Composable
 private fun LockSheet(
@@ -2099,10 +2139,13 @@ private fun LockSheet(
     onDismiss: () -> Unit,
     onLockNow: () -> Unit,
     onLockFor: (Int) -> Unit,
+    onFocusFor: (Int) -> Unit,
     onLockScreen: (Int) -> Unit,
     onUnlock: () -> Unit,
     onReleaseScreen: () -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = remember { Prefs.get(context) }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Box(
             Modifier.fillMaxWidth()
@@ -2133,19 +2176,29 @@ private fun LockSheet(
                     )
                     NovaDivider()
                 }
-                NovaRow(
-                    title = "Für 30 Minuten",
-                    subtitle = "Endet von selbst",
-                    icon = Icons.Filled.HourglassBottom,
-                    onClick = { onLockFor(30) }
-                )
+                // Focus: the allowed apps stay usable, so these are free to reach for.
+                LockChipRow("Fokus", "Nur zugelassene Apps, endet von selbst") {
+                    listOf(15 to "15 Min", 30 to "30 Min", 60 to "1 Std").forEach { (m, label) ->
+                        LockChip(label, null, Nova.Focus, enabled = true) { onFocusFor(m) }
+                    }
+                }
                 NovaDivider()
-                NovaRow(
-                    title = "Für 60 Minuten",
-                    subtitle = "Endet von selbst",
-                    icon = Icons.Filled.HourglassBottom,
-                    onClick = { onLockFor(60) }
-                )
+                // The full lock. The quarter hour is free; the long ones are counted, and the
+                // booking happens here so a refused one never reaches the child's phone.
+                LockChipRow("Sperren", "Alles außer Telefon und Notruf") {
+                    Prefs.PARENT_LOCK_MINUTES.forEach { m ->
+                        val left = prefs.parentLocksLeft(m)
+                        val period = prefs.parentLockPeriodLabel(m)
+                        LockChip(
+                            label = if (m >= 60) "${m / 60} Std" else "$m Min",
+                            note = period?.let { if (left > 0) it else "aufgebraucht" },
+                            tint = Nova.Danger,
+                            enabled = left > 0
+                        ) {
+                            if (prefs.useParentLock(m)) onLockFor(m)
+                        }
+                    }
+                }
                 NovaDivider()
                 if (screenLockLeft > 0) {
                     NovaRow(
@@ -2155,18 +2208,13 @@ private fun LockSheet(
                         onClick = onReleaseScreen
                     )
                 } else {
-                    // Three lengths, like the child's own menu — 15 minutes alone was never
+                    // Same chip row as above: three lengths, because 15 minutes alone was never
                     // enough for anything but getting someone's attention.
-                    listOf(15 to "15 Minuten", 30 to "30 Minuten", 60 to "1 Stunde")
-                        .forEachIndexed { i, (minutes, label) ->
-                            if (i > 0) NovaDivider()
-                            NovaRow(
-                                title = "Display sperren — $label",
-                                subtitle = "Bildschirm aus, endet von selbst",
-                                icon = Icons.Filled.PhoneAndroid,
-                                onClick = { onLockScreen(minutes) }
-                            )
+                    LockChipRow("Display sperren", "Bildschirm aus, endet von selbst") {
+                        listOf(15 to "15 Min", 30 to "30 Min", 60 to "1 Std").forEach { (m, label) ->
+                            LockChip(label, null, Nova.Primary, enabled = true) { onLockScreen(m) }
                         }
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
             }

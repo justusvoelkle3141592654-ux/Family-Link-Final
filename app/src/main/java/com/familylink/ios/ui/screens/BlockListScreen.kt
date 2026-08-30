@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
@@ -215,14 +216,36 @@ private fun PlusAppsView(
             fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.padding(start = 16.dp, bottom = 12.dp)
         )
 
+        // Both states sit on a card, like every other list in the app — an empty screen with
+        // one floating paragraph was the odd one out.
         if (plusApps.isEmpty()) {
-            Text(
-                "Es sind keine Apps freigegeben. Im Eltern-Portal können Apps auf Plus gestellt " +
-                    "oder für den Fokus freigegeben werden.",
-                fontSize = 14.sp, color = Nova.InkMuted, modifier = Modifier.padding(horizontal = 16.dp)
-            )
+            com.familylink.ios.ui.components.NovaCard {
+                Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier.size(48.dp).clip(CircleShape).background(Nova.Fill),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Apps, contentDescription = null,
+                            tint = Nova.InkFaint, modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Noch keine Apps freigegeben",
+                        fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Im Eltern-Portal lassen sich Apps auf Plus stellen oder für den Fokus " +
+                            "freigeben. Sie erscheinen dann hier.",
+                        fontSize = 13.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
+                    )
+                }
+            }
         } else {
-            Column(Modifier.padding(horizontal = 16.dp)) {
+            com.familylink.ios.ui.components.NovaCard {
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                 plusApps.chunked(4).forEach { rowApps ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         rowApps.forEach { app ->
@@ -232,7 +255,7 @@ private fun PlusAppsView(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
-                                    Modifier.size(60.dp).clip(RoundedCornerShape(15.dp)).background(Color(0x11000000)),
+                                    Modifier.size(60.dp).clip(RoundedCornerShape(15.dp)).background(Nova.Fill),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (bmp != null) {
@@ -245,7 +268,8 @@ private fun PlusAppsView(
                                 Text(app.label, fontSize = 11.sp, color = Nova.Ink, maxLines = 1, textAlign = TextAlign.Center)
                             }
                         }
-                        repeat(4 - rowApps.size) { Spacer(Modifier.weight(1f)) }
+                            repeat(4 - rowApps.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }

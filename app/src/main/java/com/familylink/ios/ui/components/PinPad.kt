@@ -20,8 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.familylink.ios.ui.theme.Nova
 
 /**
  * iOS passcode UI: a row of filled/empty dots above a 3x4 number pad.
@@ -38,8 +40,11 @@ fun PinPad(
     onDigit: (Char) -> Unit,
     onDelete: () -> Unit
 ) {
-    val fg = if (dark) Color.White else Color(0xFF000000)
-    val faint = if (dark) Color(0x33FFFFFF) else Color(0x22000000)
+    // On the dark lock overlay the pad keeps its own light-on-dark palette; everywhere else
+    // it takes the app's tokens, so the PIN screen matches the rest of the product.
+    val fg = if (dark) Color.White else Nova.Ink
+    val faint = if (dark) Color(0x33FFFFFF) else Nova.Fill
+    val bad = if (dark) Color(0xFFFF453A) else Nova.Danger
 
     Column(
         Modifier.fillMaxWidth().padding(24.dp),
@@ -48,7 +53,10 @@ fun PinPad(
         Text(title, color = fg, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         if (subtitle != null) {
             Spacer(Modifier.height(6.dp))
-            Text(subtitle, color = fg.copy(alpha = 0.6f), fontSize = 14.sp)
+            Text(
+                subtitle, fontSize = 14.sp, textAlign = TextAlign.Center,
+                color = if (dark) fg.copy(alpha = 0.6f) else Nova.InkMuted
+            )
         }
         Spacer(Modifier.height(28.dp))
 
@@ -61,7 +69,7 @@ fun PinPad(
                         .size(16.dp)
                         .clip(CircleShape)
                         .then(
-                            if (filled) Modifier.background(if (error) Color(0xFFFF3B30) else fg)
+                            if (filled) Modifier.background(if (error) bad else fg)
                             else Modifier.border(1.5.dp, fg.copy(alpha = 0.5f), CircleShape)
                         )
                 )
