@@ -79,6 +79,34 @@ fun LockOverlayContent(
         var clock by remember { mutableStateOf(TimeFmt.now()) }
         LaunchedEffect(Unit) { while (true) { clock = TimeFmt.now(); delay(1000) } }
 
+        // The repair button used to open a three-minute window into Settings on a single tap —
+        // by anyone holding the phone. That made the screen announcing a switched-off guard the
+        // fastest way to reach the page that switches the rest of it off, so it is behind the
+        // family PIN now. The watchdog reads the same window and holds its screen lock while it
+        // is open, which is what makes granting the permission back possible at all.
+        var askPinThenRepair by remember { mutableStateOf(false) }
+        if (askPinThenRepair) {
+            val missingNow = com.familylink.ios.util.Permissions.firstMissing(context)
+            PinScreen(
+                mode = PinMode.VERIFY,
+                onSuccess = {
+                    askPinThenRepair = false
+                    prefs.openLockEscape(
+                        com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES.toSet(),
+                        seconds = 180
+                    )
+                    prefs.unlockSettings(3)
+                    runCatching {
+                        missingNow?.let {
+                            context.startActivity(it.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    }
+                },
+                onCancel = { askPinThenRepair = false }
+            )
+            return@FamilyLinkTheme
+        }
+
         val accent = if (bedtime) Nova.Night else Nova.Primary
 
         Column(
@@ -150,17 +178,7 @@ fun LockOverlayContent(
                         Modifier
                             .clip(RoundedCornerShape(50))
                             .background(accent)
-                            .clickable {
-                                prefs.openLockEscape(
-                                    com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES.toSet(),
-                                    seconds = 180
-                                )
-                                runCatching {
-                                    context.startActivity(
-                                        missing.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    )
-                                }
-                            }
+                            .clickable { askPinThenRepair = true }
                             .padding(horizontal = 26.dp, vertical = 15.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -171,6 +189,11 @@ fun LockOverlayContent(
                             fontWeight = FontWeight.Medium, color = Color.White
                         )
                     }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Nur mit Eltern-PIN",
+                        fontSize = 12.sp, color = Nova.InkFaint, textAlign = TextAlign.Center
+                    )
                     Spacer(Modifier.height(12.dp))
                 }
             }

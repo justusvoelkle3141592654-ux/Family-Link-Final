@@ -64,6 +64,11 @@ class MonitorService : Service() {
     private var lastHardCapCountAt = 0L
     private var lastHardCapLockAt = 0L
     private var lastScreenLockAt = 0L
+
+    // Guard watchdog: when the last lock fired, and whether this outage was already reported.
+    private var lastGuardLockAt = 0L
+    private val startedAt = android.os.SystemClock.uptimeMillis()
+    private var guardMissingReported = false
     private var statusBarBlocked: Boolean? = null
 
     /** Toggle the status bar only when the state actually changes — it is a policy call. */
@@ -156,6 +161,66 @@ class MonitorService : Service() {
         return launchable
     }
 
+    /**
+     * The answer to switching the guard off.
+     *
+     * Until now the only response was the overlay, and that response is invisible exactly where
+     * it matters: from Android 12 the system hides every overlay window while the accessibility
+     * and device-admin settings pages are open, as a defence against malware. So the child saw
+     * nothing at all, and had all the time in the world to carry on to the admin page and the
+     * uninstall button.
+     *
+     * A screen lock is not a window and cannot be hidden. Locking on every tick means the child
+     * is thrown back to the phone's own lock screen a second and a half after switching the
+     * guard off, and again each time they get back in — which is not enough time to walk to
+     * "Geräteadministratoren" and confirm a deactivation dialog.
+     *
+     * Two ways out, both deliberate:
+     *  - the repair window the parent opens with the PIN (see the lock screen's own button),
+     *    during which nothing is locked so the permission can actually be granted again,
+     *  - the device admin being gone as well, in which case lockNow() no longer works and the
+     *    only thing left is to tell the parent.
+     */
+    private fun enforceGuardMissing() {
+        // The parent's repair window: never lock while it is open, otherwise granting the
+        // permission back would be impossible — the lock would fire between every tap.
+        if (prefs.settingsUnlocked() ||
+            prefs.lockEscapeAllowsAny(com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES)
+        ) return
+
+        // Installing an update can drop the accessibility service on some Android versions, and
+        // the service comes straight back up afterwards. Without a moment's grace the parent who
+        // just installed the update would be met by a phone locking itself every second, with
+        // the repair window not yet open. Far too short to be useful to a child, who would have
+        // to already be standing in the settings page when the service starts.
+        if (android.os.SystemClock.uptimeMillis() - startedAt < GUARD_GRACE_MS) return
+
+        val now = android.os.SystemClock.uptimeMillis()
+
+        // Tell the parent once per outage, not once per tick.
+        if (!guardMissingReported) {
+            guardMissingReported = true
+            runCatching {
+                prefs.addEvent(
+                    "guard",
+                    "Schutz wurde abgeschaltet",
+                    "Die Bedienungshilfe oder die Nutzungsdaten wurden deaktiviert. " +
+                        "Das Handy ist gesperrt, bis der Schutz wieder an ist."
+                )
+            }
+            prefs.guardMissingSince = System.currentTimeMillis()
+            // Straight out over the wire, rather than waiting for the next scheduled push.
+            runCatching { SyncService.pushNow(this) }
+        }
+
+        // Lock, and keep locking. Rate-limited only enough to avoid fighting the unlock
+        // animation; anything slower gives room to reach the deactivation dialog.
+        if (now - lastGuardLockAt >= GUARD_LOCK_MS) {
+            lastGuardLockAt = now
+            runCatching { com.familylink.ios.util.ScreenLock.lockNow(this) }
+        }
+    }
+
     private fun tick() {
         // The guard only ever runs on the supervised (child) device. A parent phone must never
         // lock itself, no matter how the service got started (boot, accessibility, self-heal).
@@ -187,7 +252,17 @@ class MonitorService : Service() {
                 lastSettingsHidden = hide
                 runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, hide) }
             }
+            if (sealing is LockEnforcer.Reason.GuardMissing) enforceGuardMissing()
             return
+        }
+
+        // The guard is evidently back (we got past the block above): arm the report again and
+        // note the recovery, so a second outage is announced like the first.
+        if (guardMissingReported) {
+            guardMissingReported = false
+            prefs.guardMissingSince = 0L
+            runCatching { prefs.addEvent("guard", "Schutz wieder aktiv", "Der Schutz läuft wieder.") }
+            runCatching { SyncService.pushNow(this) }
         }
 
         if (ticksSincePkgRefresh++ >= 10) {
@@ -581,6 +656,12 @@ class MonitorService : Service() {
 
     companion object {
         private const val TICK_MS = 1500L
+
+        /** How often the screen is re-locked while the guard is off. */
+        private const val GUARD_LOCK_MS = 1200L
+
+        /** Grace after the service starts, so an app update is not met by a locking loop. */
+        private const val GUARD_GRACE_MS = 20_000L
         private const val RELAUNCH_COOLDOWN_MS = 2500L
         /** One counted attempt per this window, so ticks do not inflate the counter. */
         private const val HARDCAP_ATTEMPT_MS = 15_000L

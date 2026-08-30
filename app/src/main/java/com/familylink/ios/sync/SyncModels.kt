@@ -265,6 +265,12 @@ data class ChildStatus(
     val focusLabel: String = "",
     val deviceName: String,
     val batteryPercent: Int = -1,
+    /**
+     * When the child's phone found its own guard switched off, or 0 while it is running.
+     * Carried in the status so the parent is told even though the child's phone is, by then,
+     * the one that cannot be trusted to report anything else.
+     */
+    val guardMissingSince: Long = 0L,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     /** How old this snapshot is, in seconds. */
@@ -291,6 +297,7 @@ data class ChildStatus(
         put("streakBonusMinutes", streakBonusMinutes)
         put("streakPenaltyMinutes", streakPenaltyMinutes)
         put("deviceName", deviceName)
+        put("guardMissingSince", guardMissingSince)
         put("updatedAt", updatedAt)
         put("blockedToday", JSONArray(blockedToday))
         // One array carrying package, seconds and label together — no dotted keys.
@@ -358,6 +365,7 @@ data class ChildStatus(
                 streakPenaltyMinutes = o.optInt("streakPenaltyMinutes", 0),
                 focusLabel = o.optString("focusLabel", ""),
                 deviceName = o.optString("deviceName", "Kindergerät"),
+                guardMissingSince = o.optLong("guardMissingSince", 0L),
                 batteryPercent = o.optInt("batteryPercent", -1),
                 updatedAt = o.optLong("updatedAt", 0)
             )

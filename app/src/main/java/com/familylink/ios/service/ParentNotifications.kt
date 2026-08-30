@@ -104,6 +104,17 @@ object ParentNotifications {
         "$deviceName hat das Gesamtlimit erreicht. Das Handy ist für heute gesperrt."
     )
 
+    /**
+     * The one alert that is never silenced by a preference: the child's phone reporting that
+     * its own protection was switched off. Everything else this app notifies about is a
+     * detail of a working system; this says the system stopped working.
+     */
+    fun guardOff(context: Context, deviceName: String) = show(
+        context, 6, "Schutz wurde abgeschaltet",
+        "Auf $deviceName wurden die Bedienungshilfen oder die Nutzungsdaten deaktiviert. " +
+            "Das Handy sperrt sich, bis der Schutz wieder an ist."
+    )
+
     fun childOffline(context: Context, minutes: Int) = show(
         context, ID_OFFLINE,
         "Keine Verbindung",

@@ -572,6 +572,19 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getStringSet("suspended_pkgs", emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet("suspended_pkgs", HashSet(v)).apply()
 
+    /** Parent side: the outage already announced, so one outage rings once. */
+    var notifiedGuardAt: Long
+        get() = sp.getLong("notified_guard_at", 0L)
+        set(value) = sp.edit().putLong("notified_guard_at", value).apply()
+
+    /**
+     * When the guard was found switched off, or 0 while it is running. Persisted so the parent
+     * still learns about an outage that started while the two phones could not reach each other.
+     */
+    var guardMissingSince: Long
+        get() = sp.getLong("guard_missing_since", 0L)
+        set(value) = sp.edit().putLong("guard_missing_since", value).apply()
+
     // ---- Escape window from a sealed lock ----------------------------------
     //
     // The lock covers everything, but the phone and the parent entry have to stay usable. Rather

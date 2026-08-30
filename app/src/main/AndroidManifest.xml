@@ -36,6 +36,13 @@
         android:theme="@style/Theme.FamilyLinkIOS"
         tools:targetApi="34">
 
+        <!--
+          MainActivity can serve as the phone's home screen. As the home app it is started
+          before anything else after a restart and restarted at once if it dies, which closes
+          the gap a boot broadcast can only race: there is no moment where the launcher is up
+          and the guard is not. Offering the category does nothing on its own — the parent
+          still picks it in Android's own "home app" screen, so a parent phone is unaffected.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -44,9 +51,29 @@
             android:theme="@style/Theme.FamilyLinkIOS">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!--
+          The launcher icon lives on an alias rather than on the activity itself, so it can be
+          switched off without disabling the activity every other entry point needs. Removing
+          the icon removes the long-press route to "App-Info" and its "Beenden erzwingen",
+          which is the one action that stops the guard outright. Only offered once the app is
+          the home screen, so it can never leave the parent without a way in.
+        -->
+        <activity-alias
+            android:name=".Launcher"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Block list screen (Listen-Ansicht). Not a screen lock: leavable, single task. -->
         <activity

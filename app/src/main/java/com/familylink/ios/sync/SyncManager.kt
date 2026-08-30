@@ -358,7 +358,8 @@ class SyncManager(private val context: Context) {
             bedtimeActive = prefs.isBedtime(),
             focusLabel = if (focus.isRunning()) focus.label else "",
             deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
-            batteryPercent = readBattery()
+            batteryPercent = readBattery(),
+            guardMissingSince = prefs.guardMissingSince
         )
         val ok = c.put(SyncClient.statusPath(prefs.familyId), status.toJson())
         if (ok) {

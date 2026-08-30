@@ -82,6 +82,7 @@ import com.familylink.ios.ui.components.NovaSwitch
 import com.familylink.ios.ui.components.SectionHeader
 import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.ui.theme.ThemeMode
+import com.familylink.ios.util.LauncherGuard
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 import kotlin.concurrent.thread
@@ -994,6 +995,43 @@ fun ParentPortalScreen(
         if (!prefs.isParentDevice) {
         }
         if (showGroup("schutz")) {
+        // Only meaningful on the phone being supervised: these two are about that device's own
+        // home screen and icon, which a parent phone has no business changing.
+        if (!prefs.isParentDevice) {
+            SectionHeader("Manipulationsschutz")
+            NovaCard {
+                val isHome = LauncherGuard.isDefaultHome(context)
+                NovaRow(
+                    title = if (isHome) "App ist der Startbildschirm" else "App als Startbildschirm",
+                    subtitle = if (isHome)
+                        "Nach jedem Neustart ist die App sofort da \u2014 es gibt kein Zeitfenster " +
+                            "mehr, in dem der Schutz noch nicht l\u00e4uft."
+                    else
+                        "Der wirksamste Schutz gegen den Neustart-Trick. Android fragt, welche " +
+                            "App der Startbildschirm sein soll \u2014 w\u00e4hle dort diese App.",
+                    onClick = { LauncherGuard.openHomeChooser(context) }
+                ) {
+                    NovaPill(if (isHome) "Aktiv" else "Einrichten", if (isHome) Nova.Success else Nova.Warning)
+                }
+                NovaDivider()
+                NovaRow(
+                    title = "App-Symbol ausblenden",
+                    subtitle = if (isHome)
+                        "Ohne Symbol f\u00fchrt kein Langdruck mehr zu \u201eApp-Info\u201c und damit zu " +
+                            "\u201eBeenden erzwingen\u201c \u2014 dem einzigen Griff, der den Schutz sofort stoppt."
+                    else
+                        "Erst m\u00f6glich, wenn die App der Startbildschirm ist \u2014 sonst g\u00e4be es " +
+                            "keinen Weg mehr in die App hinein."
+                ) {
+                    NovaSwitch(checked = LauncherGuard.isIconHidden(context)) { want ->
+                        // Refused when the app is not the home screen; the state simply stays
+                        // off, and the subtitle above already says why.
+                        LauncherGuard.setIconHidden(context, want)
+                        v++
+                    }
+                }
+            }
+        }
         SectionHeader("Verbindung")
         NovaCard {
             NovaRow(
