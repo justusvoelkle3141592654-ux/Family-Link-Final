@@ -48,6 +48,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -128,6 +129,8 @@ private fun Home() {
     var drawerOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var spaceMenu by remember { mutableStateOf(false) }
+    // Two steps, because filling the pages throws away whatever arrangement is there now.
+    var confirmFill by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         var config: org.json.JSONObject? = null
@@ -325,7 +328,16 @@ private fun Home() {
                     spaceMenu = false
                 },
                 onAddPage = { model.addPage(); spaceMenu = false },
+                onFillAll = { spaceMenu = false; confirmFill = true },
                 onDismiss = { spaceMenu = false }
+            )
+        }
+
+        if (confirmFill) {
+            ConfirmFill(
+                count = apps.size,
+                onConfirm = { model.fillWithAllApps(apps); confirmFill = false },
+                onDismiss = { confirmFill = false }
             )
         }
     }
@@ -843,7 +855,12 @@ private fun AppMenu(
 
 /** Long-press on empty space, as on any launcher. */
 @Composable
-private fun SpaceMenu(onWallpaper: () -> Unit, onAddPage: () -> Unit, onDismiss: () -> Unit) {
+private fun SpaceMenu(
+    onWallpaper: () -> Unit,
+    onAddPage: () -> Unit,
+    onFillAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
     Box(
         Modifier.fillMaxSize().background(Color(0x99000000)).clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
@@ -857,6 +874,54 @@ private fun SpaceMenu(onWallpaper: () -> Unit, onAddPage: () -> Unit, onDismiss:
         ) {
             MenuItem(Icons.Filled.Wallpaper, "Hintergrundbild ändern", onWallpaper)
             MenuItem(Icons.Filled.Add, "Seite hinzufügen", onAddPage)
+            MenuItem(Icons.Filled.Apps, "Alle Apps anordnen", onFillAll)
+        }
+    }
+}
+
+/**
+ * Ask before laying every app out.
+ *
+ * The first start does this by itself; this is the way back to it on a phone that is already set
+ * up — and there it would overwrite an arrangement someone made by hand, so it asks first.
+ */
+@Composable
+private fun ConfirmFill(count: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0x99000000)).clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier
+                .padding(32.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF23232A))
+                .padding(20.dp)
+        ) {
+            Text("Alle Apps anordnen", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Alle $count Apps des Telefons werden alphabetisch auf die Seiten gelegt. " +
+                    "Die jetzige Anordnung geht dabei verloren; das Dock bleibt.",
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 14.sp
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Text(
+                    "Abbrechen",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 15.sp,
+                    modifier = Modifier.clickable(onClick = onDismiss).padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+                Text(
+                    "Anordnen",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.clickable(onClick = onConfirm).padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
         }
     }
 }

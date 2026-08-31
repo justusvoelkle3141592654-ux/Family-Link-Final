@@ -45,27 +45,34 @@ class HomeModel(context: Context) {
         val seeded = wanted.mapNotNull { group -> group.firstOrNull { it in byPackage } }
         if (seeded.isNotEmpty()) storeDock(seeded.take(LauncherPrefs.DOCK_MAX))
 
-        // And fill the first page, so the phone does not open on an empty screen with no hint
-        // that anything can be put there. Same rule as the dock: whichever of these exists.
-        val onDock = seeded.toSet()
-        val firstPage = listOf(
-            listOf("com.google.android.apps.messaging", "com.android.mms"),
-            listOf("com.whatsapp"),
-            listOf("com.android.camera2", "com.android.camera", "com.google.android.GoogleCamera"),
-            listOf("com.google.android.apps.photos", "com.android.gallery3d"),
-            listOf("com.google.android.deskclock", "com.android.deskclock"),
-            listOf("com.google.android.calendar", "com.android.calendar"),
-            listOf("com.google.android.youtube"),
-            listOf("com.spotify.music"),
-            listOf("com.google.android.apps.maps"),
-            listOf("com.android.settings")
-        ).mapNotNull { group -> group.firstOrNull { it in byPackage && it !in onDock } }
+        // Then lay out everything else. Guessing a list of package names is hopeless — the
+        // phone knows what it has, and the point is a home screen that is already the child's
+        // phone rather than a blank one.
+        fillWithAllApps(installed)
+    }
 
-        if (firstPage.isNotEmpty()) {
+    /**
+     * Put every installed app onto the pages, alphabetically, in reading order.
+     *
+     * Offered from the long-press menu as well as run once at setup, because the first run only
+     * ever happens once and a phone that was already set up would otherwise be stuck with
+     * whatever it had. Apps already in the dock are left there rather than listed twice.
+     *
+     * This replaces the page layout. The dock is untouched.
+     */
+    fun fillWithAllApps(installed: List<AppEntry>) {
+        val inDock = dock.toSet()
+        val ordered = installed
+            .filterNot { it.packageName in inDock }
+            .sortedBy { it.label.lowercase() }
+            .map { it.packageName }
+
+        val grid = ordered.chunked(LauncherPrefs.PAGE_SLOTS).map { chunk ->
             val page = prefs.emptyPage().toMutableList()
-            firstPage.take(LauncherPrefs.PAGE_SLOTS).forEachIndexed { i, pkg -> page[i] = pkg }
-            commit(listOf(page), dock)
+            chunk.forEachIndexed { i, pkg -> page[i] = pkg }
+            page as List<String?>
         }
+        commit(grid.ifEmpty { listOf(prefs.emptyPage()) }, dock)
     }
 
     // ---- editing -----------------------------------------------------------
