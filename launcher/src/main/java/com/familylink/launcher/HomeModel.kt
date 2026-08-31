@@ -44,6 +44,28 @@ class HomeModel(context: Context) {
         )
         val seeded = wanted.mapNotNull { group -> group.firstOrNull { it in byPackage } }
         if (seeded.isNotEmpty()) storeDock(seeded.take(LauncherPrefs.DOCK_MAX))
+
+        // And fill the first page, so the phone does not open on an empty screen with no hint
+        // that anything can be put there. Same rule as the dock: whichever of these exists.
+        val onDock = seeded.toSet()
+        val firstPage = listOf(
+            listOf("com.google.android.apps.messaging", "com.android.mms"),
+            listOf("com.whatsapp"),
+            listOf("com.android.camera2", "com.android.camera", "com.google.android.GoogleCamera"),
+            listOf("com.google.android.apps.photos", "com.android.gallery3d"),
+            listOf("com.google.android.deskclock", "com.android.deskclock"),
+            listOf("com.google.android.calendar", "com.android.calendar"),
+            listOf("com.google.android.youtube"),
+            listOf("com.spotify.music"),
+            listOf("com.google.android.apps.maps"),
+            listOf("com.android.settings")
+        ).mapNotNull { group -> group.firstOrNull { it in byPackage && it !in onDock } }
+
+        if (firstPage.isNotEmpty()) {
+            val page = prefs.emptyPage().toMutableList()
+            firstPage.take(LauncherPrefs.PAGE_SLOTS).forEachIndexed { i, pkg -> page[i] = pkg }
+            commit(listOf(page), dock)
+        }
     }
 
     // ---- editing -----------------------------------------------------------
@@ -68,11 +90,18 @@ class HomeModel(context: Context) {
         commit(grid, cleanDock)
     }
 
-    /** Put [pkg] in the dock, unless it is already full. */
-    fun addToDock(pkg: String): Boolean {
+    /**
+     * Put [pkg] into the dock at [index], or at the end when no position is given.
+     *
+     * Inserting at a position rather than always appending is what lets the dock be reordered:
+     * dragging an app that is already in the dock onto another of its places moves it there.
+     */
+    fun addToDock(pkg: String, index: Int = -1): Boolean {
         val (cleanPages, cleanDock) = removeEverywhere(pkg)
         if (cleanDock.size >= LauncherPrefs.DOCK_MAX) return false
-        commit(cleanPages.map { it.toMutableList() }, cleanDock + pkg)
+        val at = if (index < 0) cleanDock.size else index.coerceIn(0, cleanDock.size)
+        val newDock = cleanDock.toMutableList().apply { add(at, pkg) }
+        commit(cleanPages.map { it.toMutableList() }, newDock)
         return true
     }
 
@@ -102,6 +131,11 @@ class HomeModel(context: Context) {
         dock = newDock
         prefs.pages = kept
         prefs.dock = newDock
+    }
+
+    /** Add an empty page at the end. The commit below always leaves one spare after it. */
+    fun addPage() {
+        commit(pages + listOf(prefs.emptyPage()), dock)
     }
 
     /** Named storeDock, not setDock: that name is taken by the property's own setter. */
