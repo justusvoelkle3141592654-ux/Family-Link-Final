@@ -40,20 +40,36 @@ class LauncherPrefs(context: Context) {
     // Pages and dock are plain package lists. Storing positions rather than a grid means a
     // phone rotation or a different screen size rearranges nothing: the tiles simply flow.
 
-    /** Package names on each home page, outermost list = pages. */
-    var pages: List<List<String>>
+    /**
+     * Each home page as a fixed set of slots; null means an empty place.
+     *
+     * Storing slots rather than a plain list is what makes the arrangement stay put: removing
+     * an icon leaves a gap instead of pulling everything after it one place forward, which was
+     * the complaint about the layout wandering.
+     *
+     * On disk an empty slot is the empty string, because JSONArray has no null of its own worth
+     * relying on. Old saves — plain lists, no gaps — are read and padded to full pages, so the
+     * upgrade keeps whatever was already arranged.
+     */
+    var pages: List<List<String?>>
         get() = runCatching {
-            val outer = JSONArray(sp.getString("pages", "[[]]") ?: "[[]]")
-            (0 until outer.length()).map { i ->
+            val outer = JSONArray(sp.getString("pages", "[]") ?: "[]")
+            val read = (0 until outer.length()).map { i ->
                 val inner = outer.getJSONArray(i)
-                (0 until inner.length()).map { inner.getString(it) }
+                (0 until inner.length()).map { inner.getString(it).ifBlank { null } }
             }
-        }.getOrDefault(listOf(emptyList()))
+            read.map { page -> page.take(PAGE_SLOTS) + List((PAGE_SLOTS - page.size).coerceAtLeast(0)) { null } }
+                .ifEmpty { listOf(emptyPage()) }
+        }.getOrDefault(listOf(emptyPage()))
         set(v) {
             val outer = JSONArray()
-            v.forEach { page -> outer.put(JSONArray().also { a -> page.forEach(a::put) }) }
+            v.forEach { page ->
+                outer.put(JSONArray().also { a -> page.forEach { a.put(it ?: "") } })
+            }
             sp.edit().putString("pages", outer.toString()).apply()
         }
+
+    fun emptyPage(): List<String?> = List(PAGE_SLOTS) { null }
 
     /** The fixed row that stays on every page. */
     var dock: List<String>
@@ -68,8 +84,38 @@ class LauncherPrefs(context: Context) {
         get() = sp.getBoolean("seeded", false)
         set(v) = sp.edit().putBoolean("seeded", v).apply()
 
+    // ---- recently used -----------------------------------------------------
+
+    /**
+     * The last handful of apps actually started from here, newest first.
+     *
+     * Kept by the launcher rather than read from UsageStats: this is about what the child
+     * reaches for on the home screen, and it needs no permission at all.
+     */
+    var recents: List<String>
+        get() = runCatching {
+            val a = JSONArray(sp.getString("recents", "[]") ?: "[]")
+            (0 until a.length()).map { a.getString(it) }
+        }.getOrDefault(emptyList())
+        private set(v) = sp.edit()
+            .putString("recents", JSONArray().also { a -> v.forEach(a::put) }.toString())
+            .apply()
+
+    /** Move [pkg] to the front of the recents list. */
+    fun noteLaunched(pkg: String) {
+        recents = (listOf(pkg) + recents.filterNot { it == pkg }).take(RECENTS_MAX)
+    }
+
     companion object {
         /** Beyond this the dock stops taking new icons; five is what fits on a phone. */
         const val DOCK_MAX = 5
+
+        /** One row of "recently used" above the alphabet. */
+        const val RECENTS_MAX = 8
+
+        /** Fixed slots per home page, so removing an icon leaves a gap rather than shuffling. */
+        const val PAGE_COLUMNS = 4
+        const val PAGE_ROWS = 5
+        const val PAGE_SLOTS = PAGE_COLUMNS * PAGE_ROWS
     }
 }

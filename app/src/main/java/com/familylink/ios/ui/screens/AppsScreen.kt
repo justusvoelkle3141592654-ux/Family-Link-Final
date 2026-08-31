@@ -115,6 +115,31 @@ fun AppsScreen() {
             )
         }
         Legend()
+        // Keyboards are listed but cannot be limited; the only real lever is switching one off
+        // in Android's own settings, which the PIN gate then keeps switched off.
+        if (!prefs.isParentDevice && apps.any { it.isKeyboard }) {
+            com.familylink.ios.ui.components.NovaNote(
+                "Tastaturen stehen mit in der Liste, lassen sich aber nicht zeitlich begrenzen — " +
+                    "Android misst ihnen keine Nutzungszeit zu. Abschalten geht nur in den " +
+                    "Tastatur-Einstellungen; die PIN-Sperre verhindert danach das Wiedereinschalten.",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Tastatur-Einstellungen öffnen",
+                fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Nova.Primary,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clickable {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+            )
+        }
         Spacer(Modifier.height(8.dp))
 
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -153,6 +178,9 @@ fun AppsScreen() {
                         Column(Modifier.weight(1f)) {
                             Text(app.label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
                             val sub = when {
+                                // A keyboard never runs as a foreground app, so there is no time
+                                // to show and no limit to set — say that instead of "0 Min".
+                                app.isKeyboard -> "Tastatur · Zeit nicht messbar"
                                 cat == AppCategory.LIMIT -> "Limit $limit Min · heute ${TimeFmt.hm(used)}"
                                 used > 0 -> "Heute ${TimeFmt.hm(used)}"
                                 else -> "Heute noch nicht genutzt"

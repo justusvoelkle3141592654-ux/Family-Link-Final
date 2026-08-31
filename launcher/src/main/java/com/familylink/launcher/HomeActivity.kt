@@ -1,16 +1,21 @@
 package com.familylink.launcher
 
+import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,16 +23,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,6 +47,8 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
@@ -48,37 +57,47 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * The home screen.
  *
- * An ordinary launcher on the surface — swipeable pages, a fixed dock, an app drawer that pulls
- * up from the bottom — and a second line of defence underneath. Two things are deliberate:
+ * An ordinary launcher on the surface — swipeable pages, a fixed dock, an app drawer pulled up
+ * from the bottom — with a second line of defence underneath. The deliberate parts:
  *
- *  - Every app stays in the drawer, always. Hiding what is locked made the phone feel like it
- *    was breaking; a greyed tile with a lock says the same thing without the mystery, and
- *    tapping it explains itself.
- *  - The rules come from the guard when it is answering and from the family's own database when
- *    it is not, so force-stopping the guard during bedtime no longer hands over a free phone.
+ *  - Every app stays in the drawer, always, keyboards included. Hiding what is locked made the
+ *    phone feel broken; a faded tile with a lock says the same thing and explains itself.
+ *  - Pages are fixed slots, so removing an icon leaves a gap rather than shuffling the rest.
+ *  - The rules come from the guard while it answers and from the family's own database when it
+ *    does not, so stopping the guard during bedtime no longer hands over a free phone.
  */
 class HomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,6 +106,9 @@ class HomeActivity : ComponentActivity() {
         setContent { Home() }
     }
 }
+
+/** What is currently held by a finger, and where. */
+private data class Drag(val pkg: String, val position: Offset)
 
 @Composable
 private fun Home() {
@@ -101,6 +123,7 @@ private fun Home() {
     var state by remember { mutableStateOf(Guard.State.UNKNOWN) }
     var drawerOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var drag by remember { mutableStateOf<Drag?>(null) }
 
     // The guard first; the family's database only when it stops answering. Every pass also
     // pokes the guard, so a force stop is undone within a second of looking at the home screen.
@@ -109,6 +132,7 @@ private fun Home() {
         while (true) {
             val bridge = withContext(Dispatchers.IO) { Guard.readBridge(context) }
             state = if (bridge != null) {
+                config = null
                 bridge
             } else {
                 Guard.revive(context)
@@ -123,67 +147,70 @@ private fun Home() {
                     Guard.State.UNKNOWN
                 }
             }
-            // The cached config goes stale the moment the guard is back to being authoritative.
-            if (bridge != null) config = null
             delay(1000)
         }
     }
 
-    // The home screen is the bottom of the stack: back closes the drawer and nothing more.
     BackHandler(enabled = true) {
         if (drawerOpen) { drawerOpen = false; query = "" }
     }
 
-    // Everything sealed AND the guard cannot draw its own overlay: this is the fallback the
-    // whole second connection exists for.
     if (state.sealed && !state.guardAlive) {
         SealedScreen(state.reason) { Guard.openPortal(context) }
         return
     }
 
-    fun open(pkg: String) {
-        if (pkg in state.locked || state.sealed) {
+    fun open(entry: AppEntry) {
+        if (entry.packageName in state.locked || state.sealed) {
             // Never start it: the guard's block screen explains the reason and offers the
             // request for more time, and it works even while the guard is only just waking up.
             if (!Guard.showBlocked(context)) Guard.openPortal(context)
         } else {
-            Apps.launch(context, pkg)
+            Apps.launch(context, entry)
         }
     }
 
+    val pagerState = rememberPagerState { model.pages.size.coerceAtLeast(1) }
+
     Box(Modifier.fillMaxSize()) {
         Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
         ) {
+            ClockHeader()
             StatusStrip(state)
 
+            // While something is being dragged, the top of the screen becomes the bin.
+            if (drag != null) RemoveTarget()
+
             HorizontalPager(
-                state = rememberPagerState { model.pages.size.coerceAtLeast(1) },
+                state = pagerState,
                 modifier = Modifier
                     .weight(1f)
-                    // Pulling up anywhere on the pages opens the drawer, as on any phone.
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            if (dragAmount < -18f) drawerOpen = true
+                    .pointerInput(drag == null) {
+                        // Only when nothing is being dragged, so a drag does not open the drawer.
+                        if (drag == null) {
+                            detectVerticalDragGestures { _, dy -> if (dy < -18f) drawerOpen = true }
                         }
                     }
             ) { page ->
                 HomePage(
-                    packages = model.pages.getOrElse(page) { emptyList() },
+                    slots = model.pages.getOrElse(page) { prefs.emptyPage() },
                     byPackage = byPackage,
                     state = state,
                     onOpen = ::open,
-                    onRemove = { model.remove(it) }
+                    onPickUp = { pkg, pos -> drag = Drag(pkg, pos) },
+                    onDragMove = { pos -> drag = drag?.copy(position = pos) },
+                    onDrop = { slot ->
+                        drag?.let { model.dropOnPage(it.pkg, pagerState.currentPage, slot) }
+                        drag = null
+                    }
                 )
             }
 
             Dock(model.dock, byPackage, state, onOpen = ::open, onRemove = { model.remove(it) })
             SearchRow(
                 query = "",
-                readOnly = true,
+                editable = false,
                 onChange = {},
                 onFocus = { drawerOpen = true },
                 onPortal = { Guard.openPortal(context) }
@@ -197,23 +224,92 @@ private fun Home() {
         ) {
             Drawer(
                 apps = apps,
+                recents = prefs.recents,
                 state = state,
                 query = query,
                 onQuery = { query = it },
                 onOpen = { drawerOpen = false; query = ""; open(it) },
-                onPinToHome = { pkg ->
-                    if (!model.addToDock(pkg)) model.addToPage(pkg, 0)
+                onPickUp = { pkg ->
+                    // Picking an app up in the drawer drops you onto the home screen still
+                    // holding it, which is the whole point of dragging rather than pinning.
                     drawerOpen = false
                     query = ""
+                    drag = Drag(pkg, Offset.Zero)
                 },
                 onClose = { drawerOpen = false; query = "" },
                 onPortal = { Guard.openPortal(context) }
             )
         }
+
+        // The tile that follows the finger.
+        drag?.let { d ->
+            byPackage[d.pkg]?.icon?.let { icon ->
+                val density = LocalDensity.current
+                Image(
+                    icon.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (d.position.x - with(density) { 28.dp.toPx() }).toInt(),
+                                (d.position.y - with(density) { 28.dp.toPx() }).toInt()
+                            )
+                        }
+                        .size(56.dp)
+                        .alpha(0.85f)
+                )
+            }
+        }
     }
 }
 
-/** The thin line at the top: how much is left, or why nothing is. */
+/** Clock, date, and the weather beside it. */
+@Composable
+private fun ClockHeader() {
+    val context = LocalContext.current
+    var now by remember { mutableStateOf(Date()) }
+    var weather by remember { mutableStateOf<Weather.Now?>(null) }
+    var askedLocation by remember { mutableStateOf(false) }
+
+    val permission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted or not, the next refresh picks it up */ }
+
+    LaunchedEffect(Unit) {
+        while (true) { now = Date(); delay(1000) }
+    }
+    // Weather is slow-moving and optional; half-hourly is plenty and costs almost nothing.
+    LaunchedEffect(Unit) {
+        while (true) {
+            weather = withContext(Dispatchers.IO) { runCatching { Weather.fetch(context) }.getOrNull() }
+            delay(30 * 60 * 1000L)
+        }
+    }
+
+    val clock = remember(now) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(now) }
+    val date = remember(now) { SimpleDateFormat("EEEE, d. MMMM", Locale.getDefault()).format(now) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, top = 20.dp)
+            .clickable(enabled = !Weather.hasPermission(context) && !askedLocation) {
+                askedLocation = true
+                permission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(clock, color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Light)
+            weather?.let { w ->
+                Spacer(Modifier.width(14.dp))
+                Text("${w.symbol} ${w.celsius}°", color = Color.White.copy(alpha = 0.9f), fontSize = 18.sp)
+            }
+        }
+        Text(date, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+    }
+}
+
+/** The thin line under the clock: how much is left, or why nothing is. */
 @Composable
 private fun StatusStrip(state: Guard.State) {
     val text = when {
@@ -223,7 +319,7 @@ private fun StatusStrip(state: Guard.State) {
         else -> "Noch ${fmt(state.remainingSeconds)}"
     }
     if (text.isBlank()) { Spacer(Modifier.height(10.dp)); return }
-    Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp), contentAlignment = Alignment.Center) {
         Text(
             text,
             color = Color.White.copy(alpha = 0.92f),
@@ -242,40 +338,72 @@ private fun fmt(seconds: Int): String {
     return if (m >= 60) "${m / 60} Std ${m % 60} Min" else "$m Min"
 }
 
-/** One page of the home screen. Empty pages carry a hint rather than nothing at all. */
+/** Shown at the top only while something is held, as the place to drop it to remove it. */
+@Composable
+private fun RemoveTarget() {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 40.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color(0x66B3261E))
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Filled.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Zum Entfernen hierher ziehen", color = Color.White, fontSize = 13.sp)
+    }
+}
+
+/**
+ * One page: a fixed grid of slots. Empty slots are still drawn, as the places a dragged icon
+ * can land — an invisible drop target is the reason dragging felt broken before.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomePage(
-    packages: List<String>,
+    slots: List<String?>,
     byPackage: Map<String, AppEntry>,
     state: Guard.State,
-    onOpen: (String) -> Unit,
-    onRemove: (String) -> Unit
+    onOpen: (AppEntry) -> Unit,
+    onPickUp: (String, Offset) -> Unit,
+    onDragMove: (Offset) -> Unit,
+    onDrop: (Int) -> Unit
 ) {
-    if (packages.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "Nach oben wischen für alle Apps",
-                color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp
-            )
-        }
-        return
-    }
     LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
+        columns = GridCells.Fixed(LauncherPrefs.PAGE_COLUMNS),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(packages, key = { it }) { pkg ->
-            val app = byPackage[pkg]
-            if (app != null) {
-                Tile(
-                    app = app,
-                    locked = pkg in state.locked || state.sealed,
-                    onClick = { onOpen(pkg) },
-                    onLongClick = { onRemove(pkg) }
-                )
+        items(slots.indices.toList(), key = { it }) { index ->
+            val pkg = slots.getOrNull(index)
+            val app = pkg?.let { byPackage[it] }
+            Box(
+                Modifier
+                    .height(86.dp)
+                    .pointerInput(pkg) {
+                        // An empty slot is only a drop target; a filled one can be picked up.
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { offset -> pkg?.let { onPickUp(it, offset) } },
+                            onDrag = { change, _ -> onDragMove(change.position) },
+                            onDragEnd = { onDrop(index) },
+                            onDragCancel = { onDrop(index) }
+                        )
+                    },
+                contentAlignment = Alignment.TopCenter
+            ) {
+                if (app != null) {
+                    Tile(
+                        app = app,
+                        locked = app.packageName in state.locked || state.sealed,
+                        onClick = { onOpen(app) },
+                        onLongClick = { }
+                    )
+                }
             }
         }
     }
@@ -287,7 +415,7 @@ private fun Dock(
     packages: List<String>,
     byPackage: Map<String, AppEntry>,
     state: Guard.State,
-    onOpen: (String) -> Unit,
+    onOpen: (AppEntry) -> Unit,
     onRemove: (String) -> Unit
 ) {
     if (packages.isEmpty()) return
@@ -307,7 +435,7 @@ private fun Dock(
                     app = app,
                     locked = pkg in state.locked || state.sealed,
                     showLabel = false,
-                    onClick = { onOpen(pkg) },
+                    onClick = { onOpen(app) },
                     onLongClick = { onRemove(pkg) }
                 )
             }
@@ -318,10 +446,10 @@ private fun Dock(
 /**
  * One app.
  *
- * A locked app is drawn faded with a lock badge rather than removed: the grid stays still, and
- * the child can see what exists and what is simply not available right now.
+ * A locked app is faded with a lock badge rather than removed: the grid stays still, and the
+ * child can see what exists and what is simply not available right now.
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Tile(
     app: AppEntry,
@@ -331,9 +459,7 @@ private fun Tile(
     onLongClick: () -> Unit
 ) {
     Column(
-        Modifier
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(vertical = 4.dp),
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(contentAlignment = Alignment.BottomEnd) {
@@ -346,18 +472,16 @@ private fun Tile(
                 contentAlignment = Alignment.Center
             ) {
                 val icon = app.icon
-                if (icon != null) {
-                    Image(icon.asImageBitmap(), app.label, Modifier.size(50.dp))
-                } else {
-                    Text(app.label.take(1), color = Color.White, fontSize = 22.sp)
-                }
+                if (icon != null) Image(icon.asImageBitmap(), app.label, Modifier.size(50.dp))
+                else Text(app.label.take(1), color = Color.White, fontSize = 22.sp)
             }
-            if (locked) {
-                Box(
-                    Modifier.size(20.dp).clip(CircleShape).background(Color(0xE6B3261E)),
-                    contentAlignment = Alignment.Center
-                ) {
+            when {
+                locked -> Badge(Color(0xE6B3261E)) {
                     Icon(Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                }
+                // A keyboard cannot be started; the badge says so before the tap does.
+                app.isKeyboard -> Badge(Color(0xE60B57D0)) {
+                    Icon(Icons.Filled.Keyboard, null, tint = Color.White, modifier = Modifier.size(12.dp))
                 }
             }
         }
@@ -375,23 +499,47 @@ private fun Tile(
     }
 }
 
-/** The full app list, pulled up from the bottom. Everything installed, always. */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun Badge(color: Color, content: @Composable () -> Unit) {
+    Box(
+        Modifier.size(20.dp).clip(CircleShape).background(color),
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
+
+/**
+ * The full app list.
+ *
+ * The search field sits at the TOP once the drawer is open, with the results directly beneath
+ * it. It used to sit at the bottom, where the keyboard covered everything worth looking at —
+ * you typed a letter and could not see what you had found.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Drawer(
     apps: List<AppEntry>,
+    recents: List<String>,
     state: Guard.State,
     query: String,
     onQuery: (String) -> Unit,
-    onOpen: (String) -> Unit,
-    onPinToHome: (String) -> Unit,
+    onOpen: (AppEntry) -> Unit,
+    onPickUp: (String) -> Unit,
     onClose: () -> Unit,
     onPortal: () -> Unit
 ) {
+    val searching = query.isNotBlank()
     val visible = remember(apps, query) {
-        if (query.isBlank()) apps
-        else apps.filter { it.label.contains(query, ignoreCase = true) }
+        if (!searching) apps else apps.filter { it.label.contains(query, ignoreCase = true) }
     }
+    // Alphabetical sections, so the list reads as an index rather than a wall.
+    val sections = remember(visible) {
+        visible.groupBy { it.label.firstOrNull()?.uppercaseChar()?.takeIf { c -> c.isLetter() } ?: '#' }
+            .toSortedMap()
+    }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val byPackage = remember(apps) { apps.associateBy { it.packageName } }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -399,46 +547,137 @@ private fun Drawer(
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
-            // Pulling back down closes it again.
-            .pointerInput(Unit) {
-                detectVerticalDragGestures { _, dragAmount -> if (dragAmount > 22f) onClose() }
-            }
     ) {
-        Text(
-            "Alle Apps",
-            color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 10.dp)
-        )
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(visible, key = { it.packageName }) { app ->
-                Tile(
-                    app = app,
-                    locked = app.packageName in state.locked || state.sealed,
-                    onClick = { onOpen(app.packageName) },
-                    // Long press is "put this on my home screen" — the drawer is the source,
-                    // the home screen is the arrangement.
-                    onLongClick = { onPinToHome(app.packageName) }
-                )
-            }
-        }
-        if (visible.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nichts gefunden", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp)
-            }
-        }
+        // Search at the top, results underneath: the whole point of this rework.
         SearchRow(
             query = query,
-            readOnly = false,
+            editable = true,
+            autoFocus = false,
             onChange = onQuery,
             onFocus = {},
             onPortal = onPortal
         )
+
+        Box(Modifier.weight(1f)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 12.dp, end = 28.dp, bottom = 16.dp)
+            ) {
+                if (!searching && recents.isNotEmpty()) {
+                    item("recents-h") { SectionLabel("Zuletzt benutzt") }
+                    item("recents") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            recents.mapNotNull { byPackage[it] }.take(4).forEach { app ->
+                                Box(Modifier.weight(1f)) {
+                                    Tile(
+                                        app = app,
+                                        locked = app.packageName in state.locked || state.sealed,
+                                        onClick = { onOpen(app) },
+                                        onLongClick = { onPickUp(app.packageName) }
+                                    )
+                                }
+                            }
+                            repeat(4 - recents.mapNotNull { byPackage[it] }.take(4).size) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+                sections.forEach { (letter, entries) ->
+                    item("h-$letter") { SectionLabel(letter.toString()) }
+                    entries.chunked(LauncherPrefs.PAGE_COLUMNS).forEachIndexed { i, row ->
+                        item("$letter-$i") {
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                row.forEach { app ->
+                                    Box(Modifier.weight(1f)) {
+                                        Tile(
+                                            app = app,
+                                            locked = app.packageName in state.locked || state.sealed,
+                                            onClick = { onOpen(app) },
+                                            onLongClick = { onPickUp(app.packageName) }
+                                        )
+                                    }
+                                }
+                                repeat(LauncherPrefs.PAGE_COLUMNS - row.size) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+                if (visible.isEmpty()) {
+                    item("empty") {
+                        Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                            Text("Nichts gefunden", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+
+            // The A–Z rail. Only worth drawing when there is enough to scroll past.
+            if (!searching && sections.size > 3) {
+                AlphabetRail(sections.keys.toList()) { letter ->
+                    val index = indexOfSection(sections, letter, recents.isNotEmpty())
+                    scope.launch { listState.scrollToItem(index) }
+                }
+            }
+        }
+    }
+}
+
+/** How many list items sit before [letter]'s heading, so the rail can jump to it. */
+private fun indexOfSection(
+    sections: Map<Char, List<AppEntry>>,
+    letter: Char,
+    hasRecents: Boolean
+): Int {
+    var index = if (hasRecents) 2 else 0
+    for ((c, entries) in sections) {
+        if (c == letter) return index
+        index += 1 + (entries.size + LauncherPrefs.PAGE_COLUMNS - 1) / LauncherPrefs.PAGE_COLUMNS
+    }
+    return index
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        color = Color.White.copy(alpha = 0.55f),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 8.dp, top = 14.dp, bottom = 2.dp)
+    )
+}
+
+/** The thin A–Z strip down the right edge. */
+@Composable
+private fun AlphabetRail(letters: List<Char>, onPick: (Char) -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(end = 4.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.Center
+    ) {
+        letters.forEach { c ->
+            Text(
+                c.toString(),
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clickable { onPick(c) }
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+        }
     }
 }
 
@@ -446,7 +685,7 @@ private fun Drawer(
  * The search field.
  *
  * On the home screen it is a dummy that opens the drawer on a tap; inside the drawer it is the
- * real thing. One composable for both so the bar does not appear to jump when the drawer opens.
+ * real thing at the top. One composable for both so nothing appears to jump.
  *
  * It filters installed apps and nothing else — a launcher search box that quietly reached the
  * web would undo half the point of the phone.
@@ -454,11 +693,15 @@ private fun Drawer(
 @Composable
 private fun SearchRow(
     query: String,
-    readOnly: Boolean,
+    editable: Boolean,
+    autoFocus: Boolean = false,
     onChange: (String) -> Unit,
     onFocus: () -> Unit,
     onPortal: () -> Unit
 ) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(autoFocus) { if (autoFocus && editable) runCatching { focus.requestFocus() } }
+
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -469,7 +712,7 @@ private fun SearchRow(
                 .height(52.dp)
                 .clip(RoundedCornerShape(26.dp))
                 .background(Color(0x33FFFFFF))
-                .then(if (readOnly) Modifier.clickable { onFocus() } else Modifier)
+                .then(if (!editable) Modifier.clickable { onFocus() } else Modifier)
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -479,14 +722,14 @@ private fun SearchRow(
                 if (query.isEmpty()) {
                     Text("Apps suchen", color = Color.White.copy(alpha = 0.65f), fontSize = 15.sp)
                 }
-                if (!readOnly) {
+                if (editable) {
                     BasicTextField(
                         value = query,
                         onValueChange = onChange,
                         singleLine = true,
                         textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
                         cursorBrush = SolidColor(Color.White),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus)
                     )
                 }
             }
@@ -514,8 +757,7 @@ private fun SearchRow(
  *
  * Only ever seen when the phone is sealed AND the guard is not answering — normally its overlay
  * covers everything long before this. Without it, stopping the guard during bedtime would leave
- * the child holding an unlocked phone, which is the one outcome the whole second app exists to
- * prevent.
+ * the child holding an unlocked phone, which is the one outcome the second app exists to stop.
  */
 @Composable
 private fun SealedScreen(reason: String, onPortal: () -> Unit) {
@@ -524,7 +766,7 @@ private fun SealedScreen(reason: String, onPortal: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(
-            Modifier.fillMaxHeight().padding(32.dp),
+            Modifier.padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -535,10 +777,7 @@ private fun SealedScreen(reason: String, onPortal: () -> Unit) {
                 Icon(Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(32.dp))
             }
             Spacer(Modifier.height(18.dp))
-            Text(
-                reason.ifBlank { "Gesperrt" },
-                color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium
-            )
+            Text(reason.ifBlank { "Gesperrt" }, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Das Handy ist gerade gesperrt.",

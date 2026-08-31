@@ -9,6 +9,19 @@
     <!-- Reading which apps the guard has locked. Granted only because both APKs share a key. -->
     <uses-permission android:name="com.familylink.ios.permission.LAUNCHER_BRIDGE" />
 
+    <!--
+      The launcher's own line to the family's database, and the weather.
+
+      Without INTERNET the fallback added in 4.6 could never connect: Sync.get() failed
+      silently, readFirebase() got null, and the launcher could not seal the phone while the
+      guard was stopped — the one thing that whole second connection exists for.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Weather only. Coarse is enough for a city-level forecast and is the milder ask. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
         android:name=".LauncherApp"
         android:allowBackup="false"
