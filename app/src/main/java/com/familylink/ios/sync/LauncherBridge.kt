@@ -57,6 +57,19 @@ class LauncherBridge : ContentProvider() {
 
         cursor.addRow(arrayOf(ROW_STATE, if (sealed) "1" else "0", stateReason(prefs, focusRunning)))
 
+        // What the launcher puts in its top strip, so the child sees where they stand without
+        // opening anything.
+        val limit = prefs.globalLimitMinutes * 60 + prefs.bonusSecondsToday
+        val remaining = (limit - prefs.globalUsedSeconds).coerceAtLeast(0)
+        cursor.addRow(arrayOf(ROW_TIME, remaining.toString(), limit.toString()))
+
+        // The family's own Firebase, handed over once so the launcher can hold its own live
+        // connection. Without it the launcher only knows what this app tells it — and this app
+        // is exactly what stops answering when someone force-stops it.
+        if (prefs.syncConfigured) {
+            cursor.addRow(arrayOf(ROW_SYNC, prefs.syncUrl, prefs.familyId))
+        }
+
         val usage = prefs.getPerAppSeconds()
         val engine = LimitEngine(prefs)
         // The day's budget being gone locks everything that is not a Plus app, so it is asked
@@ -100,6 +113,8 @@ class LauncherBridge : ContentProvider() {
 
         const val ROW_STATE = "state"
         const val ROW_LOCKED = "locked"
+        const val ROW_TIME = "time"
+        const val ROW_SYNC = "sync"
 
         /** kind | value | detail */
         private val COLUMNS = arrayOf("kind", "value", "detail")

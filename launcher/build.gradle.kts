@@ -11,8 +11,8 @@ android {
         applicationId = "com.familylink.launcher"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -69,6 +69,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
+    // The drawer slides up; AnimatedVisibility lives here, not in foundation.
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material:material")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.runtime:runtime")
