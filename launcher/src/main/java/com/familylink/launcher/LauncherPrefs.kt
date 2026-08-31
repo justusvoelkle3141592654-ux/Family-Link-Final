@@ -79,10 +79,16 @@ class LauncherPrefs(context: Context) {
         }.getOrDefault(emptyList())
         set(v) = sp.edit().putString("dock", JSONArray().also { a -> v.forEach(a::put) }.toString()).apply()
 
-    /** True once the first run has filled the dock, so we never overwrite the child's choices. */
-    var seeded: Boolean
-        get() = sp.getBoolean("seeded", false)
-        set(v) = sp.edit().putBoolean("seeded", v).apply()
+    /**
+     * True once the setup wizard has been through.
+     *
+     * The home screen used to fill itself on first run. Choosing the apps by hand is both
+     * clearer and less work than arranging them by dragging, so the first start now asks
+     * instead of guessing — and this is the flag that makes it ask exactly once.
+     */
+    var setupDone: Boolean
+        get() = sp.getBoolean("setup_done", false)
+        set(v) = sp.edit().putBoolean("setup_done", v).apply()
 
     // ---- recently used -----------------------------------------------------
 

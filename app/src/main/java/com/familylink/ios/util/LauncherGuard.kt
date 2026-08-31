@@ -66,6 +66,24 @@ object LauncherGuard {
         }
     }
 
+    /**
+     * The launcher's own settings — the setup wizard, the home screen apps, the wallpaper.
+     *
+     * Started by action rather than by class name, so this app never has to know the launcher's
+     * internals; the activity is protected by the same signature permission as the bridge, so
+     * the intent resolves for this app and for nothing else on the phone.
+     *
+     * @return false when the launcher is not installed, or is too old to have the screen.
+     */
+    fun openLauncherSettings(context: Context): Boolean = runCatching {
+        val intent = Intent("com.familylink.launcher.SETTINGS")
+            .setPackage(LAUNCHER_PACKAGE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (context.packageManager.resolveActivity(intent, 0) == null) return false
+        context.startActivity(intent)
+        true
+    }.getOrDefault(false)
+
     fun isIconHidden(context: Context): Boolean = runCatching {
         context.packageManager.getComponentEnabledSetting(alias(context)) ==
             PackageManager.COMPONENT_ENABLED_STATE_DISABLED

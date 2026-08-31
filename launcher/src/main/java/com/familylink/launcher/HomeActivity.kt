@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.runtime.Composable
@@ -123,14 +124,16 @@ private fun Home() {
 
     val apps = remember { Apps.load(context) }
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
-    LaunchedEffect(apps) { model.seedIfEmpty(apps) }
+    // The first start asks instead of guessing. Choosing apps from a list is less work than
+    // dragging them into place, and the result is the one that was actually wanted.
+    LaunchedEffect(Unit) {
+        if (!prefs.setupDone) SetupActivity.start(context, SetupActivity.STEP_ALL)
+    }
 
     var state by remember { mutableStateOf(Guard.State.UNKNOWN) }
     var drawerOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var spaceMenu by remember { mutableStateOf(false) }
-    // Two steps, because filling the pages throws away whatever arrangement is there now.
-    var confirmFill by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         var config: org.json.JSONObject? = null
@@ -328,16 +331,12 @@ private fun Home() {
                     spaceMenu = false
                 },
                 onAddPage = { model.addPage(); spaceMenu = false },
-                onFillAll = { spaceMenu = false; confirmFill = true },
+                onSettings = { spaceMenu = false; SettingsActivity.start(context) },
+                onEditHome = {
+                    spaceMenu = false
+                    SetupActivity.start(context, SetupActivity.STEP_APPS)
+                },
                 onDismiss = { spaceMenu = false }
-            )
-        }
-
-        if (confirmFill) {
-            ConfirmFill(
-                count = apps.size,
-                onConfirm = { model.fillWithAllApps(apps); confirmFill = false },
-                onDismiss = { confirmFill = false }
             )
         }
     }
@@ -858,7 +857,8 @@ private fun AppMenu(
 private fun SpaceMenu(
     onWallpaper: () -> Unit,
     onAddPage: () -> Unit,
-    onFillAll: () -> Unit,
+    onSettings: () -> Unit,
+    onEditHome: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Box(
@@ -874,57 +874,12 @@ private fun SpaceMenu(
         ) {
             MenuItem(Icons.Filled.Wallpaper, "Hintergrundbild ändern", onWallpaper)
             MenuItem(Icons.Filled.Add, "Seite hinzufügen", onAddPage)
-            MenuItem(Icons.Filled.Apps, "Alle Apps anordnen", onFillAll)
+            MenuItem(Icons.Filled.Apps, "Startbildschirm bearbeiten", onEditHome)
+            MenuItem(Icons.Filled.Settings, "Einstellungen", onSettings)
         }
     }
 }
 
-/**
- * Ask before laying every app out.
- *
- * The first start does this by itself; this is the way back to it on a phone that is already set
- * up — and there it would overwrite an arrangement someone made by hand, so it asks first.
- */
-@Composable
-private fun ConfirmFill(count: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    Box(
-        Modifier.fillMaxSize().background(Color(0x99000000)).clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            Modifier
-                .padding(32.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF23232A))
-                .padding(20.dp)
-        ) {
-            Text("Alle Apps anordnen", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Alle $count Apps des Telefons werden alphabetisch auf die Seiten gelegt. " +
-                    "Die jetzige Anordnung geht dabei verloren; das Dock bleibt.",
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 14.sp
-            )
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Text(
-                    "Abbrechen",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 15.sp,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-                Text(
-                    "Anordnen",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable(onClick = onConfirm).padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun MenuItem(

@@ -24,55 +24,43 @@ class HomeModel(context: Context) {
         private set
 
     /**
-     * First run: put a few obvious apps in the dock so the phone is not a blank slate.
+     * Lay the chosen apps out on the pages, important ones first.
      *
-     * Only ever once — after that the layout is the child's, and re-seeding it on an update
-     * would silently undo their arrangement.
+     * This is what the setup wizard hands back. Choosing by tapping and letting the launcher
+     * arrange them is the point: dragging seventy icons into place is work, and the order that
+     * results is rarely better than "phone, messages, camera, then the rest by name".
+     *
+     * Apps that are not chosen are not hidden — they stay in the drawer, always. This only
+     * decides what sits on the home screen.
+     *
+     * The dock is left as it is; [applyDock] handles that separately.
      */
-    fun seedIfEmpty(installed: List<AppEntry>) {
-        if (prefs.seeded) return
-        prefs.seeded = true
-        if (dock.isNotEmpty() || pages.any { page -> page.any { it != null } }) return
-
-        val byPackage = installed.associateBy { it.packageName }
-        // The four a phone is actually for. Whichever of them exists, in this order.
-        val wanted = listOf(
-            listOf("com.android.dialer", "com.google.android.dialer", "com.android.phone"),
-            listOf("com.google.android.apps.messaging", "com.android.mms"),
-            listOf("com.android.chrome", "com.google.android.googlequicksearchbox"),
-            listOf("com.google.android.apps.photos", "com.android.gallery3d")
-        )
-        val seeded = wanted.mapNotNull { group -> group.firstOrNull { it in byPackage } }
-        if (seeded.isNotEmpty()) storeDock(seeded.take(LauncherPrefs.DOCK_MAX))
-
-        // Then lay out everything else. Guessing a list of package names is hopeless — the
-        // phone knows what it has, and the point is a home screen that is already the child's
-        // phone rather than a blank one.
-        fillWithAllApps(installed)
-    }
-
-    /**
-     * Put every installed app onto the pages, alphabetically, in reading order.
-     *
-     * Offered from the long-press menu as well as run once at setup, because the first run only
-     * ever happens once and a phone that was already set up would otherwise be stuck with
-     * whatever it had. Apps already in the dock are left there rather than listed twice.
-     *
-     * This replaces the page layout. The dock is untouched.
-     */
-    fun fillWithAllApps(installed: List<AppEntry>) {
+    fun applySelection(packages: List<String>, byPackage: Map<String, AppEntry>) {
         val inDock = dock.toSet()
-        val ordered = installed
-            .filterNot { it.packageName in inDock }
-            .sortedBy { it.label.lowercase() }
-            .map { it.packageName }
-
+        val ordered = AppOrder.sortPackages(packages.filterNot { it in inDock }, byPackage)
         val grid = ordered.chunked(LauncherPrefs.PAGE_SLOTS).map { chunk ->
             val page = prefs.emptyPage().toMutableList()
             chunk.forEachIndexed { i, pkg -> page[i] = pkg }
             page as List<String?>
         }
         commit(grid.ifEmpty { listOf(prefs.emptyPage()) }, dock)
+    }
+
+    /** Replace the dock, and take those apps off the pages so nothing appears twice. */
+    fun applyDock(packages: List<String>) {
+        val newDock = packages.take(LauncherPrefs.DOCK_MAX)
+        val cleaned = pages.map { page -> page.map { if (it in newDock) null else it } }
+        commit(cleaned, newDock)
+    }
+
+    /**
+     * Put every installed app onto the pages, important ones first, then alphabetically.
+     *
+     * Offered from the launcher's settings for a phone that is already set up and simply wants
+     * everything within reach. Apps already in the dock are left there rather than listed twice.
+     */
+    fun fillWithAllApps(installed: List<AppEntry>) {
+        applySelection(installed.map { it.packageName }, installed.associateBy { it.packageName })
     }
 
     // ---- editing -----------------------------------------------------------
@@ -145,9 +133,6 @@ class HomeModel(context: Context) {
         commit(pages + listOf(prefs.emptyPage()), dock)
     }
 
-    /** Named storeDock, not setDock: that name is taken by the property's own setter. */
-    private fun storeDock(list: List<String>) {
-        dock = list
-        prefs.dock = list
-    }
+    /** Everything currently on a page, so the wizard can show the layout as it stands. */
+    fun homeApps(): List<String> = pages.flatten().filterNotNull()
 }

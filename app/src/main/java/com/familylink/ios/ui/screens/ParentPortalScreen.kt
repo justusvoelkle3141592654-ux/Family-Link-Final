@@ -1046,6 +1046,19 @@ fun ParentPortalScreen(
                         v++
                     }
                 }
+                if (installed) {
+                    NovaDivider()
+                    NovaRow(
+                        title = "Startbildschirm einrichten",
+                        subtitle = "Assistent und Einstellungen von \u201eV\u00f6lkle Start\u201c: " +
+                            "welche Apps auf dem Startbildschirm liegen, die Leiste unten, " +
+                            "Hintergrundbild. Ohne PIN — welche Symbole wo liegen, darf das " +
+                            "Kind selbst bestimmen.",
+                        onClick = { LauncherGuard.openLauncherSettings(context) }
+                    ) {
+                        NovaPill("\u00d6ffnen", Nova.Primary)
+                    }
+                }
             }
         }
         SectionHeader("Verbindung")

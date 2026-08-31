@@ -24,6 +24,44 @@ data class AppEntry(
     val isKeyboard: Boolean = false
 )
 
+/**
+ * The order apps are laid out in: the ones a phone is actually for first, then the rest by name.
+ *
+ * Purely alphabetical put "Adobe Acrobat" before the dialler, which is a poor first screen. The
+ * groups below are matched by package name because labels differ per language and per vendor;
+ * each group lists the usual candidates and only the installed one is used.
+ */
+object AppOrder {
+
+    private val PRIORITY: List<List<String>> = listOf(
+        listOf("com.android.dialer", "com.google.android.dialer", "com.android.phone", "com.android.contacts"),
+        listOf("com.google.android.apps.messaging", "com.android.mms", "com.android.messaging"),
+        listOf("com.whatsapp", "com.whatsapp.w4b"),
+        listOf("com.android.camera", "com.android.camera2", "com.google.android.GoogleCamera", "com.nothing.camera"),
+        listOf("com.android.chrome", "org.mozilla.firefox", "com.google.android.googlequicksearchbox"),
+        listOf("com.google.android.apps.photos", "com.android.gallery3d", "com.nothing.gallery"),
+        listOf("com.google.android.deskclock", "com.android.deskclock", "com.nothing.clock"),
+        listOf("com.google.android.calendar", "com.android.calendar"),
+        listOf("com.spotify.music", "com.google.android.youtube", "com.google.android.apps.youtube.music"),
+        listOf("com.google.android.apps.maps")
+    )
+
+    private fun rank(pkg: String): Int {
+        val i = PRIORITY.indexOfFirst { pkg in it }
+        return if (i < 0) PRIORITY.size else i
+    }
+
+    /** Important first, everything else alphabetically. Keyboards last: they cannot be started. */
+    fun sort(entries: List<AppEntry>): List<AppEntry> =
+        entries.sortedWith(
+            compareBy({ if (it.isKeyboard) 1 else 0 }, { rank(it.packageName) }, { it.label.lowercase() })
+        )
+
+    /** The same order for a list of package names, when the entries are looked up by package. */
+    fun sortPackages(packages: List<String>, byPackage: Map<String, AppEntry>): List<String> =
+        sort(packages.mapNotNull { byPackage[it] }).map { it.packageName }
+}
+
 object Apps {
 
     /**

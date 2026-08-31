@@ -14,4 +14,13 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!--
+      The wizard and the settings screen. Same bars, but opaque: a list of settings read over
+      a photograph is a list nobody reads.
+    -->
+    <style name="Theme.Launcher.Solid" parent="Theme.Launcher">
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowBackground">#FF141418</item>
+    </style>
 </resources>
