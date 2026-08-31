@@ -42,7 +42,7 @@ class HomeModel(context: Context) {
             listOf("com.google.android.apps.photos", "com.android.gallery3d")
         )
         val seeded = wanted.mapNotNull { group -> group.firstOrNull { it in byPackage } }
-        if (seeded.isNotEmpty()) setDock(seeded.take(LauncherPrefs.DOCK_MAX))
+        if (seeded.isNotEmpty()) storeDock(seeded.take(LauncherPrefs.DOCK_MAX))
     }
 
     // ---- editing -----------------------------------------------------------
@@ -89,7 +89,8 @@ class HomeModel(context: Context) {
         prefs.dock = newDock
     }
 
-    private fun setDock(list: List<String>) {
+    /** Named storeDock, not setDock: that name is taken by the property's own setter. */
+    private fun storeDock(list: List<String>) {
         dock = list
         prefs.dock = list
     }
