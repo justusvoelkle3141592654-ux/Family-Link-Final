@@ -173,7 +173,7 @@ private fun Home() {
     }
 
     fun open(entry: AppEntry) {
-        if (entry.packageName in state.locked || state.sealed) {
+        if (state.blocks(entry.packageName)) {
             if (!Guard.showBlocked(context)) Guard.openPortal(context)
         } else {
             Apps.launch(context, entry)
@@ -375,13 +375,13 @@ private fun ClockHeader() {
             }
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(clock, color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Light)
+            Text(clock, color = Look.OnWall, fontSize = 52.sp, fontWeight = FontWeight.Light)
             weather?.let { w ->
                 Spacer(Modifier.width(14.dp))
-                Text("${w.symbol} ${w.celsius}°", color = Color.White.copy(alpha = 0.9f), fontSize = 18.sp)
+                Text("${w.symbol} ${w.celsius}°", color = Look.OnWallMuted, fontSize = 18.sp)
             }
         }
-        Text(date, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+        Text(date, color = Look.OnWallMuted, fontSize = 14.sp)
     }
 }
 
@@ -389,20 +389,24 @@ private fun ClockHeader() {
 private fun StatusStrip(state: Guard.State) {
     val text = when {
         state.sealed -> state.reason.ifBlank { "Gesperrt" }
+        // Not "everything is over": the apps on Plus still open, and saying so is the
+        // difference between a phone that looks broken and one that is doing its job.
+        state.plusOnly ->
+            "${state.plusOnlyReason.ifBlank { "Zeit ist um" }} · zugelassene Apps gehen weiter"
         state.remainingSeconds < 0 -> ""
-        state.remainingSeconds == 0 -> "Zeit ist aufgebraucht"
+        state.remainingSeconds == 0 -> "Zeit ist um · zugelassene Apps gehen weiter"
         else -> "Noch ${fmt(state.remainingSeconds)}"
     }
     if (text.isBlank()) { Spacer(Modifier.height(10.dp)); return }
     Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp), contentAlignment = Alignment.Center) {
         Text(
             text,
-            color = Color.White.copy(alpha = 0.92f),
+            color = Look.OnWallMuted,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
-                .background(Color(0x33000000))
+                .background(Look.Scrim.copy(alpha = 0.30f))
                 .padding(horizontal = 14.dp, vertical = 6.dp)
         )
     }
@@ -427,7 +431,7 @@ private fun PageDots(count: Int, current: Int) {
                     .padding(horizontal = 3.dp)
                     .size(if (i == current) 7.dp else 5.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = if (i == current) 0.9f else 0.35f))
+                    .background(Look.OnWall.copy(alpha = if (i == current) 0.9f else 0.35f))
             )
         }
     }
@@ -442,14 +446,14 @@ private fun RemoveTarget(drag: DragController) {
             .padding(horizontal = 40.dp, vertical = 8.dp)
             .onGloballyPositioned { drag.register(DropTarget.Remove, it.boundsInRoot()) }
             .clip(RoundedCornerShape(50))
-            .background(Color(0x66B3261E))
+            .background(Look.Danger.copy(alpha = 0.55f))
             .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Filled.Delete, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        Icon(Icons.Filled.Delete, null, tint = Look.OnWall, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Zum Entfernen hierher ziehen", color = Color.White, fontSize = 13.sp)
+        Text("Zum Entfernen hierher ziehen", color = Look.OnWall, fontSize = 13.sp)
     }
 }
 
@@ -490,7 +494,7 @@ private fun HomePage(
                 if (app != null) {
                     DraggableTile(
                         app = app,
-                        locked = app.packageName in state.locked || state.sealed,
+                        locked = state.blocks(app.packageName),
                         drag = drag,
                         fromDrawer = false,
                         onClick = { onOpen(app) },
@@ -517,7 +521,7 @@ private fun Dock(
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(Color(0x22FFFFFF))
+            .background(Look.OnWall.copy(alpha = 0.13f))
             .padding(vertical = 10.dp)
             .height(64.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -537,7 +541,7 @@ private fun Dock(
                     byPackage[pkg]?.let { app ->
                         DraggableTile(
                             app = app,
-                            locked = pkg in state.locked || state.sealed,
+                            locked = state.blocks(pkg),
                             drag = drag,
                             fromDrawer = false,
                             showLabel = false,
@@ -604,20 +608,20 @@ private fun Tile(
                 Modifier
                     .size(56.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0x22FFFFFF))
+                    .background(Look.OnWall.copy(alpha = 0.13f))
                     .alpha(if (locked) 0.4f else 1f),
                 contentAlignment = Alignment.Center
             ) {
                 val icon = app.icon
                 if (icon != null) Image(icon.asImageBitmap(), app.label, Modifier.size(50.dp))
-                else Text(app.label.take(1), color = Color.White, fontSize = 22.sp)
+                else Text(app.label.take(1), color = Look.OnWall, fontSize = 22.sp)
             }
             when {
-                locked -> Badge(Color(0xE6B3261E)) {
-                    Icon(Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                locked -> Badge(Look.Danger) {
+                    Icon(Icons.Filled.Lock, null, tint = Look.OnWall, modifier = Modifier.size(12.dp))
                 }
-                app.isKeyboard -> Badge(Color(0xE60B57D0)) {
-                    Icon(Icons.Filled.Keyboard, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                app.isKeyboard -> Badge(Look.Primary) {
+                    Icon(Icons.Filled.Keyboard, null, tint = Look.OnWall, modifier = Modifier.size(12.dp))
                 }
             }
         }
@@ -625,7 +629,7 @@ private fun Tile(
             Spacer(Modifier.height(6.dp))
             Text(
                 app.label,
-                color = Color.White.copy(alpha = if (locked) 0.6f else 1f),
+                color = Look.OnWall.copy(alpha = if (locked) 0.6f else 1f),
                 fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -677,7 +681,7 @@ private fun Drawer(
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color(0xF21A1A1E))
+            .background(Look.Canvas.copy(alpha = 0.97f))
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -689,6 +693,16 @@ private fun Drawer(
             onFocus = {},
             onPortal = onPortal
         )
+
+        // Every app stays listed, always — but when only the Plus apps will open, the drawer
+        // says so once at the top instead of letting the child find out by tapping.
+        if (state.plusOnly && !state.sealed) {
+            LookNote(
+                "${state.plusOnlyReason.ifBlank { "Zeit ist um" }}. Bis morgen lassen sich nur " +
+                    "die zugelassenen Apps öffnen — die anderen sind weiterhin hier.",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+        }
 
         Box(Modifier.weight(1f)) {
             LazyColumn(
@@ -716,7 +730,7 @@ private fun Drawer(
                 if (visible.isEmpty()) {
                     item("empty") {
                         Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                            Text("Nichts gefunden", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp)
+                            Text("Nichts gefunden", color = Look.InkMuted, fontSize = 15.sp)
                         }
                     }
                 }
@@ -749,7 +763,7 @@ private fun TileRow(
             Box(Modifier.weight(1f)) {
                 DraggableTile(
                     app = app,
-                    locked = app.packageName in state.locked || state.sealed,
+                    locked = state.blocks(app.packageName),
                     drag = drag,
                     fromDrawer = true,
                     onClick = { onOpen(app) },
@@ -778,7 +792,7 @@ private fun indexOfSection(
 private fun SectionLabel(text: String) {
     Text(
         text,
-        color = Color.White.copy(alpha = 0.55f),
+        color = Look.InkFaint,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(start = 8.dp, top = 14.dp, bottom = 2.dp)
@@ -795,7 +809,7 @@ private fun AlphabetRail(letters: List<Char>, onPick: (Char) -> Unit) {
         letters.forEach { c ->
             Text(
                 c.toString(),
-                color = Color.White.copy(alpha = 0.6f),
+                color = Look.InkFaint,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.clickable { onPick(c) }.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -825,29 +839,23 @@ private fun AppMenu(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0x99000000))
+            .background(Look.Scrim)
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            Modifier
-                .padding(32.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF23232A))
-                .padding(vertical = 8.dp)
-        ) {
+        LookPanel {
             Text(
                 app.label,
-                color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                color = Look.Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
             )
             if (!onHomeScreen) {
-                MenuItem(Icons.Filled.Add, "Zum Startbildschirm", onHome)
-                MenuItem(Icons.Filled.Add, "Ins Dock", onDock)
+                LookMenuItem(Icons.Filled.Add, "Zum Startbildschirm", onHome)
+                LookMenuItem(Icons.Filled.Add, "Ins Dock", onDock)
             } else {
-                MenuItem(Icons.Filled.Delete, "Vom Startbildschirm entfernen", onRemove)
+                LookMenuItem(Icons.Filled.Delete, "Vom Startbildschirm entfernen", onRemove)
             }
-            MenuItem(Icons.Filled.Info, "App-Info", onInfo)
+            LookMenuItem(Icons.Filled.Info, "App-Info", onInfo)
         }
     }
 }
@@ -862,40 +870,18 @@ private fun SpaceMenu(
     onDismiss: () -> Unit
 ) {
     Box(
-        Modifier.fillMaxSize().background(Color(0x99000000)).clickable(onClick = onDismiss),
+        Modifier.fillMaxSize().background(Look.Scrim).clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            Modifier
-                .padding(32.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF23232A))
-                .padding(vertical = 8.dp)
-        ) {
-            MenuItem(Icons.Filled.Wallpaper, "Hintergrundbild ändern", onWallpaper)
-            MenuItem(Icons.Filled.Add, "Seite hinzufügen", onAddPage)
-            MenuItem(Icons.Filled.Apps, "Startbildschirm bearbeiten", onEditHome)
-            MenuItem(Icons.Filled.Settings, "Einstellungen", onSettings)
+        LookPanel {
+            LookMenuItem(Icons.Filled.Wallpaper, "Hintergrundbild ändern", onWallpaper)
+            LookMenuItem(Icons.Filled.Add, "Seite hinzufügen", onAddPage)
+            LookMenuItem(Icons.Filled.Apps, "Startbildschirm bearbeiten", onEditHome)
+            LookMenuItem(Icons.Filled.Settings, "Einstellungen", onSettings)
         }
     }
 }
 
-
-@Composable
-private fun MenuItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(14.dp))
-        Text(label, color = Color.White, fontSize = 15.sp)
-    }
-}
 
 @Composable
 private fun SearchRow(
@@ -915,24 +901,24 @@ private fun SearchRow(
                 .weight(1f)
                 .height(52.dp)
                 .clip(RoundedCornerShape(26.dp))
-                .background(Color(0x33FFFFFF))
+                .background(Look.OnWall.copy(alpha = 0.18f))
                 .then(if (!editable) Modifier.clickable { onFocus() } else Modifier)
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Search, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
+            Icon(Icons.Filled.Search, null, tint = Look.OnWallMuted, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (query.isEmpty()) {
-                    Text("Apps suchen", color = Color.White.copy(alpha = 0.65f), fontSize = 15.sp)
+                    Text("Apps suchen", color = Look.OnWallFaint, fontSize = 15.sp)
                 }
                 if (editable) {
                     BasicTextField(
                         value = query,
                         onValueChange = onChange,
                         singleLine = true,
-                        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                        cursorBrush = SolidColor(Color.White),
+                        textStyle = TextStyle(color = Look.OnWall, fontSize = 15.sp),
+                        cursorBrush = SolidColor(Look.OnWall),
                         modifier = Modifier.fillMaxWidth().focusRequester(focus)
                     )
                 }
@@ -940,18 +926,18 @@ private fun SearchRow(
             if (query.isNotEmpty()) {
                 Icon(
                     Icons.Filled.Close, "Leeren",
-                    tint = Color.White.copy(alpha = 0.8f),
+                    tint = Look.OnWallMuted,
                     modifier = Modifier.size(20.dp).clickable { onChange("") }
                 )
             }
         }
         Spacer(Modifier.width(10.dp))
         Box(
-            Modifier.size(52.dp).clip(CircleShape).background(Color(0x33FFFFFF))
+            Modifier.size(52.dp).clip(CircleShape).background(Look.OnWall.copy(alpha = 0.18f))
                 .clickable(onClick = onPortal),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.Shield, "Kindersicherung", tint = Color.White, modifier = Modifier.size(22.dp))
+            Icon(Icons.Filled.Shield, "Kindersicherung", tint = Look.OnWall, modifier = Modifier.size(22.dp))
         }
     }
 }
@@ -963,7 +949,7 @@ private fun SearchRow(
 @Composable
 private fun SealedScreen(reason: String, onPortal: () -> Unit) {
     Box(
-        Modifier.fillMaxSize().background(Color(0xF20B1020)),
+        Modifier.fillMaxSize().background(Look.Canvas.copy(alpha = 0.97f)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -972,25 +958,25 @@ private fun SealedScreen(reason: String, onPortal: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
             Box(
-                Modifier.size(72.dp).clip(CircleShape).background(Color(0x33FFFFFF)),
+                Modifier.size(72.dp).clip(CircleShape).background(Look.Fill),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                Icon(Icons.Filled.Lock, null, tint = Look.Ink, modifier = Modifier.size(32.dp))
             }
             Spacer(Modifier.height(18.dp))
-            Text(reason.ifBlank { "Gesperrt" }, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+            Text(reason.ifBlank { "Gesperrt" }, color = Look.Ink, fontSize = 26.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Das Handy ist gerade gesperrt.",
-                color = Color.White.copy(alpha = 0.8f), fontSize = 15.sp, textAlign = TextAlign.Center
+                color = Look.InkMuted, fontSize = 15.sp, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(22.dp))
             Text(
                 "Kindersicherung öffnen",
-                color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                color = Look.Canvas, fontSize = 15.sp, fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color(0x33FFFFFF))
+                    .background(Look.Primary)
                     .clickable(onClick = onPortal)
                     .padding(horizontal = 22.dp, vertical = 12.dp)
             )

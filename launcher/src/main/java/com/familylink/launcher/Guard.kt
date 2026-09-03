@@ -35,8 +35,27 @@ object Guard {
         /** The day's budget in seconds, or -1 when unknown. */
         val limitSeconds: Int,
         /** False when the guard did not answer: it is stopped, or gone. */
-        val guardAlive: Boolean
+        val guardAlive: Boolean,
+        /**
+         * Only the Plus apps may be opened — the day's budget is spent, or class is in session.
+         * Not a seal: the home screen stays, and those apps still open. Everything else waits.
+         */
+        val plusOnly: Boolean = false,
+        /** Why, in one word, for the strip. */
+        val plusOnlyReason: String = "",
+        /** The apps the parent put on Plus — the ones the day limit does not touch. */
+        val plus: Set<String> = emptySet()
     ) {
+        /**
+         * May this app be opened?
+         *
+         * The day limit is answered by the rule rather than by the list, because the list can
+         * only name apps that have a category and an unsorted app has none. Under the budget
+         * rule that would have made the least-known apps the only ones still openable.
+         */
+        fun blocks(pkg: String): Boolean =
+            sealed || pkg in locked || (plusOnly && pkg !in plus)
+
         companion object {
             val UNKNOWN = State(emptySet(), false, "", -1, -1, false)
         }
@@ -45,6 +64,9 @@ object Guard {
     /** Ask the guard. Null when it did not answer at all. */
     fun readBridge(context: Context): State? {
         val locked = HashSet<String>()
+        val plus = HashSet<String>()
+        var plusOnly = false
+        var plusOnlyReason = ""
         var sealed = false
         var reason = ""
         var remaining = -1
@@ -58,6 +80,8 @@ object Guard {
                     val detail = c.getString(2) ?: ""
                     when (c.getString(0)) {
                         "locked" -> locked.add(value)
+                        "plus" -> plus.add(value)
+                        "budget" -> { plusOnly = value == "1"; plusOnlyReason = detail }
                         "state" -> { sealed = value == "1"; reason = detail }
                         "time" -> {
                             remaining = value.toIntOrNull() ?: -1
@@ -74,7 +98,11 @@ object Guard {
         // Take a copy of the pairing while the guard is still there to give it.
         if (syncUrl.isNotBlank()) LauncherPrefs(context).inheritSync(syncUrl, familyId)
 
-        return State(locked, sealed, reason, remaining, limit, guardAlive = true)
+        return State(
+            locked, sealed, reason, remaining, limit,
+            guardAlive = true, plusOnly = plusOnly, plusOnlyReason = plusOnlyReason,
+            plus = plus
+        )
     }
 
     /**

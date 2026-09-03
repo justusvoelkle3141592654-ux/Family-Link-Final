@@ -29,15 +29,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -47,11 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -153,7 +147,7 @@ private fun Wizard(mode: String, onClose: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF141418))
+            .background(Look.Canvas)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -261,14 +255,15 @@ private fun Welcome(modifier: Modifier = Modifier) {
         modifier.fillMaxWidth().padding(28.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Völkle Start", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Light)
+        Text("Völkle Start", color = Look.Ink, fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         Text(
             "In drei Schritten eingerichtet: die Leiste unten, die Apps auf dem Startbildschirm, " +
                 "und ein paar Kleinigkeiten.\n\n" +
                 "Alles lässt sich später jederzeit ändern — langer Druck auf eine freie Fläche.",
-            color = Color.White.copy(alpha = 0.75f),
-            fontSize = 16.sp
+            color = Look.InkMuted,
+            fontSize = 16.sp,
+            lineHeight = 22.sp
         )
     }
 }
@@ -288,13 +283,18 @@ private fun Explain(
         modifier.fillMaxWidth().padding(28.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(36.dp))
+        Box(
+            Modifier.size(56.dp).clip(CircleShape).background(Look.Accent),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = Look.Primary, modifier = Modifier.size(26.dp))
+        }
         Spacer(Modifier.height(16.dp))
-        Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Light)
+        Text(title, color = Look.Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
-        Text(body, color = Color.White.copy(alpha = 0.75f), fontSize = 15.sp)
+        Text(body, color = Look.InkMuted, fontSize = 15.sp, lineHeight = 21.sp)
         Spacer(Modifier.height(24.dp))
-        Pill(if (done) "Erledigt" else action) { done = true; onAction() }
+        LookButton(if (done) "Erledigt" else action) { done = true; onAction() }
     }
 }
 
@@ -304,16 +304,22 @@ private fun Done(homeCount: Int, dockCount: Int, modifier: Modifier = Modifier) 
         modifier.fillMaxWidth().padding(28.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(36.dp))
+        Box(
+            Modifier.size(56.dp).clip(CircleShape).background(Look.Success.copy(alpha = 0.22f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Check, null, tint = Look.Success, modifier = Modifier.size(26.dp))
+        }
         Spacer(Modifier.height(16.dp))
-        Text("Fertig", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Light)
+        Text("Fertig", color = Look.Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         Text(
             "$dockCount Apps in der Leiste, $homeCount auf dem Startbildschirm.\n\n" +
                 "Ändern geht jederzeit: langer Druck auf eine freie Fläche → Einstellungen. " +
                 "Einzelne Apps lassen sich dort auch weiter mit dem Finger verschieben.",
-            color = Color.White.copy(alpha = 0.75f),
-            fontSize = 15.sp
+            color = Look.InkMuted,
+            fontSize = 15.sp,
+            lineHeight = 21.sp
         )
     }
 }
@@ -343,54 +349,31 @@ private fun AppPicker(
     }
 
     Column(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 12.dp)) {
-            Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.height(6.dp))
-            Text(subtitle, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
-            if (max != Int.MAX_VALUE) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "${selected.size} von $max gewählt",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 13.sp
-                )
-            }
+        LookTitle(title, subtitle)
+        if (max != Int.MAX_VALUE) {
+            Text(
+                "${selected.size} von $max gewählt",
+                color = Look.InkFaint,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+            )
         }
+        Spacer(Modifier.height(4.dp))
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color(0x22FFFFFF))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Filled.Search, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(10.dp))
-            Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) {
-                    Text("Suchen", color = Color.White.copy(alpha = 0.45f), fontSize = 15.sp)
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                    cursorBrush = SolidColor(Color.White),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
+        LookSearch(
+            query = query,
+            onChange = { query = it },
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
 
         onQuickSelect?.let { quick ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Pill("Alle", small = true) { quick(Quick.ALL) }
-                Pill("Keine", small = true) { quick(Quick.NONE) }
-                Pill("Die üblichen", small = true) { quick(Quick.USUAL) }
+                LookButton("Alle", filled = false, small = true) { quick(Quick.ALL) }
+                LookButton("Keine", filled = false, small = true) { quick(Quick.NONE) }
+                LookButton("Die üblichen", filled = false, small = true) { quick(Quick.USUAL) }
             }
         }
 
@@ -416,7 +399,7 @@ private fun AppPicker(
                     Column(Modifier.weight(1f)) {
                         Text(
                             app.label,
-                            color = Color.White.copy(alpha = if (full) 0.4f else 1f),
+                            color = if (full) Look.InkFaint else Look.Ink,
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -424,7 +407,7 @@ private fun AppPicker(
                         if (app.isKeyboard) {
                             Text(
                                 "Tastatur",
-                                color = Color.White.copy(alpha = 0.45f),
+                                color = Look.InkFaint,
                                 fontSize = 12.sp
                             )
                         }
@@ -434,13 +417,13 @@ private fun AppPicker(
                         Modifier
                             .size(24.dp)
                             .clip(CircleShape)
-                            .background(if (on) Color(0xFF4C8DFF) else Color(0x22FFFFFF)),
+                            .background(if (on) Look.Primary else Look.Fill),
                         contentAlignment = Alignment.Center
                     ) {
                         if (on) {
                             Icon(
                                 Icons.Filled.Check, null,
-                                tint = Color.White, modifier = Modifier.size(15.dp)
+                                tint = Look.Canvas, modifier = Modifier.size(15.dp)
                             )
                         }
                     }
@@ -466,55 +449,21 @@ private fun Footer(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
+        LookButton(
             if (index == 0 && count == 1) "Abbrechen" else "Zurück",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 15.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .clickable(onClick = onBack)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+            filled = false,
+            onClick = onBack
         )
         Spacer(Modifier.weight(1f))
         if (count > 1) {
-            Text(
-                "${index + 1}/$count",
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 13.sp
-            )
+            Text("${index + 1}/$count", color = Look.InkFaint, fontSize = 13.sp)
             Spacer(Modifier.width(12.dp))
         }
         // Optional steps say so, rather than making the parent guess whether they must act.
         if (step == Step.WEATHER || step == Step.DEFAULT_HOME) {
-            Text(
-                "Überspringen",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 15.sp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable(onClick = onSkip)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            )
-            Spacer(Modifier.width(6.dp))
+            LookButton("Überspringen", filled = false, small = true, onClick = onSkip)
+            Spacer(Modifier.width(8.dp))
         }
-        Pill(if (last) "Fertig" else "Weiter") { if (last) onSave() else onNext() }
+        LookButton(if (last) "Fertig" else "Weiter") { if (last) onSave() else onNext() }
     }
-}
-
-@Composable
-private fun Pill(label: String, small: Boolean = false, onClick: () -> Unit) {
-    Text(
-        label,
-        color = Color(0xFF141418),
-        fontSize = if (small) 14.sp else 15.sp,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier
-            .clip(RoundedCornerShape(22.dp))
-            .background(Color.White)
-            .clickable(onClick = onClick)
-            .padding(
-                horizontal = if (small) 14.dp else 22.dp,
-                vertical = if (small) 8.dp else 12.dp
-            )
-    )
 }

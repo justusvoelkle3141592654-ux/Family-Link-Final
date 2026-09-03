@@ -21,13 +21,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
@@ -36,17 +33,16 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,6 +54,9 @@ import androidx.compose.ui.unit.sp
  * Everything the setup wizard asks, reachable again afterwards — plus the two things that are
  * easier to check than to remember: whether this launcher is actually the phone's home screen,
  * and whether it has its own line to the family's database.
+ *
+ * Drawn with the same cards and rows as the Family Link app, from the shared tokens in Look.
+ * Two apps on one phone that are meant to be one product should not look like two products.
  *
  * No PIN. Arranging a home screen is not a rule to enforce, and locking it behind the parent's
  * PIN would only mean the child asks for the PIN to move an icon. Time limits, app locks and
@@ -92,12 +91,14 @@ private fun SettingsScreen(onClose: () -> Unit) {
     // do in the middle of a tap.
     val apps = remember { Apps.load(context) }
     var confirmFill by remember { mutableStateOf(false) }
+    // Bumped after anything that changes what the rows below report, so they redraw.
+    var v by remember { mutableStateOf(0) }
 
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) { v++ }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF141418))) {
+    Box(Modifier.fillMaxSize().background(Look.Canvas)) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -105,107 +106,144 @@ private fun SettingsScreen(onClose: () -> Unit) {
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
         ) {
-            Text(
-                "Einstellungen",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Light,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 4.dp)
-            )
-            Text(
-                "Völkle Start",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            )
-            Spacer(Modifier.height(20.dp))
+            LookTitle("Einstellungen", "Völkle Start")
 
-            Section("Startbildschirm")
-            Item(
-                Icons.Filled.Apps,
-                "Startbildschirm bearbeiten",
-                "Apps antippen, statt sie einzeln zu ziehen"
-            ) { SetupActivity.start(context, SetupActivity.STEP_APPS) }
-            Item(
-                Icons.Filled.Home,
-                "Leiste unten bearbeiten",
-                "Bis zu ${LauncherPrefs.DOCK_MAX} Apps, auf jeder Seite sichtbar"
-            ) { SetupActivity.start(context, SetupActivity.STEP_DOCK) }
-            Item(
-                Icons.Filled.Apps,
-                "Alle Apps anordnen",
-                "Legt jede installierte App auf die Seiten"
-            ) { confirmFill = true }
-            Item(
-                Icons.Filled.Refresh,
-                "Einrichtung erneut starten",
-                "Der ganze Assistent von vorn"
-            ) { SetupActivity.start(context, SetupActivity.STEP_ALL) }
-
-            Section("Aussehen")
-            Item(
-                Icons.Filled.Wallpaper,
-                "Hintergrundbild ändern",
-                "Öffnet die Auswahl von Android"
-            ) {
-                runCatching {
-                    context.startActivity(
-                        Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Hintergrundbild")
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }
-            Item(
-                Icons.Filled.Place,
-                "Wetter neben der Uhr",
-                if (Weather.hasPermission(context)) "Standort ist freigegeben"
-                else "Standort noch nicht freigegeben"
-            ) { locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
-
-            Section("System")
-            Item(
-                Icons.Filled.Home,
-                "Als Startbildschirm festlegen",
-                "Android fragt, welche App die Home-Taste öffnet"
-            ) {
-                runCatching {
-                    context.startActivity(
-                        Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }
-            Item(
-                Icons.Filled.Cloud,
-                "Verbindung zur Familie",
-                if (prefs.syncConfigured) "Verbunden — der Startbildschirm kennt die Regeln auch " +
-                    "dann, wenn die Haupt-App gestoppt wurde"
-                else "Noch nicht übernommen. Die Haupt-App einmal öffnen, dann holt sich der " +
-                    "Startbildschirm die Zugangsdaten von selbst."
-            ) { }
-            Item(
-                Icons.Filled.Shield,
-                "Kindersicherung öffnen",
-                "Zeiten, Apps und PIN in der Family-Link-App"
-            ) { Guard.openPortal(context) }
-
-            Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth().padding(24.dp), horizontalArrangement = Arrangement.End) {
-                Text(
-                    "Fertig",
-                    color = Color(0xFF141418),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Color.White)
-                        .clickable(onClick = onClose)
-                        .padding(horizontal = 22.dp, vertical = 12.dp)
+            LookSection("Startbildschirm")
+            LookCard {
+                LookRow(
+                    title = "Startbildschirm bearbeiten",
+                    subtitle = "Apps antippen, statt sie einzeln zu ziehen",
+                    icon = Icons.Filled.Apps,
+                    onClick = { SetupActivity.start(context, SetupActivity.STEP_APPS) }
+                )
+                LookDivider()
+                LookRow(
+                    title = "Leiste unten bearbeiten",
+                    subtitle = "Bis zu ${LauncherPrefs.DOCK_MAX} Apps, auf jeder Seite sichtbar",
+                    icon = Icons.Filled.ViewModule,
+                    onClick = { SetupActivity.start(context, SetupActivity.STEP_DOCK) }
+                )
+                LookDivider()
+                LookRow(
+                    title = "Alle Apps anordnen",
+                    subtitle = "Legt jede installierte App auf die Seiten",
+                    icon = Icons.Filled.Apps,
+                    onClick = { confirmFill = true }
+                )
+                LookDivider()
+                LookRow(
+                    title = "Einrichtung erneut starten",
+                    subtitle = "Der ganze Assistent von vorn",
+                    icon = Icons.Filled.Refresh,
+                    onClick = { SetupActivity.start(context, SetupActivity.STEP_ALL) }
                 )
             }
+
+            LookSection("Aussehen")
+            LookCard {
+                LookRow(
+                    title = "Hintergrundbild ändern",
+                    subtitle = "Öffnet die Auswahl von Android",
+                    icon = Icons.Filled.Wallpaper,
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent.createChooser(
+                                    Intent(Intent.ACTION_SET_WALLPAPER), "Hintergrundbild"
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+                )
+                LookDivider()
+                key(v) {
+                    val granted = Weather.hasPermission(context)
+                    LookRow(
+                        title = "Wetter neben der Uhr",
+                        subtitle = if (granted)
+                            "Standort ist freigegeben. Nur die grobe Position, nur für die Temperatur."
+                        else
+                            "Braucht den groben Standort. Ohne ihn steht dort einfach nur die Uhr.",
+                        icon = Icons.Filled.Place,
+                        iconTint = if (granted) Look.Success else Look.Primary,
+                        onClick = {
+                            locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                        }
+                    ) {
+                        LookPill(
+                            if (granted) "Aktiv" else "Aus",
+                            if (granted) Look.Success else Look.InkFaint
+                        )
+                    }
+                }
+            }
+
+            LookSection("System")
+            LookCard {
+                key(v) {
+                    val isHome = isDefaultHome(context)
+                    LookRow(
+                        title = "Als Startbildschirm festlegen",
+                        subtitle = if (isHome)
+                            "Völkle Start ist der Startbildschirm dieses Handys."
+                        else
+                            "Android fragt, welche App die Home-Taste öffnet — dort " +
+                                "„Völkle Start\" wählen.",
+                        icon = Icons.Filled.Home,
+                        iconTint = if (isHome) Look.Success else Look.Warning,
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_HOME_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        }
+                    ) {
+                        LookPill(
+                            if (isHome) "Aktiv" else "Einrichten",
+                            if (isHome) Look.Success else Look.Warning
+                        )
+                    }
+                }
+                LookDivider()
+                LookRow(
+                    title = "Verbindung zur Familie",
+                    subtitle = if (prefs.syncConfigured)
+                        "Verbunden. Der Startbildschirm kennt die Regeln auch dann, wenn die " +
+                            "Haupt-App gestoppt wurde."
+                    else
+                        "Noch nicht übernommen. Die Haupt-App einmal öffnen, dann holt sich " +
+                            "der Startbildschirm die Zugangsdaten von selbst.",
+                    icon = Icons.Filled.Cloud,
+                    iconTint = if (prefs.syncConfigured) Look.Success else Look.Warning
+                ) {
+                    LookPill(
+                        if (prefs.syncConfigured) "Verbunden" else "Offen",
+                        if (prefs.syncConfigured) Look.Success else Look.Warning
+                    )
+                }
+                LookDivider()
+                LookRow(
+                    title = "Kindersicherung öffnen",
+                    subtitle = "Zeiten, Apps und PIN in der Family-Link-App",
+                    icon = Icons.Filled.Shield,
+                    onClick = { Guard.openPortal(context) }
+                )
+            }
+
+            Spacer(Modifier.height(28.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                LookButton("Fertig", onClick = onClose)
+            }
+            Spacer(Modifier.height(28.dp))
         }
 
         if (confirmFill) {
-            ConfirmDialog(
+            LookConfirm(
                 title = "Alle Apps anordnen",
                 body = "Alle ${apps.size} Apps des Telefons werden auf die Seiten gelegt — " +
                     "Telefon, Nachrichten und Kamera zuerst, der Rest nach Namen. " +
@@ -218,37 +256,18 @@ private fun SettingsScreen(onClose: () -> Unit) {
     }
 }
 
-@Composable
-private fun Section(label: String) {
-    Text(
-        label.uppercase(),
-        color = Color.White.copy(alpha = 0.4f),
-        fontSize = 12.sp,
-        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 6.dp)
+/** Is this launcher the phone's home screen? Read live, because the user can change it. */
+private fun isDefaultHome(context: Context): Boolean = runCatching {
+    val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+    val res = context.packageManager.resolveActivity(
+        intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
     )
-}
+    res?.activityInfo?.packageName == context.packageName
+}.getOrDefault(false)
 
+/** The one dialog shape, matching the app's cards. */
 @Composable
-private fun Item(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 16.sp)
-            Spacer(Modifier.height(2.dp))
-            Text(subtitle, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-private fun ConfirmDialog(
+fun LookConfirm(
     title: String,
     body: String,
     confirm: String,
@@ -256,36 +275,20 @@ private fun ConfirmDialog(
     onDismiss: () -> Unit
 ) {
     Box(
-        Modifier.fillMaxSize().background(Color(0xCC000000)).clickable(onClick = onDismiss),
+        Modifier.fillMaxSize().background(Look.Scrim).clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            Modifier
-                .padding(32.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF23232A))
-                .padding(20.dp)
-        ) {
-            Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(8.dp))
-            Text(body, color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp)
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Text(
-                    "Abbrechen",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 15.sp,
-                    modifier = Modifier.clickable(onClick = onDismiss)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-                Text(
-                    confirm,
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable(onClick = onConfirm)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
+        LookPanel {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Text(title, color = Look.Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(8.dp))
+                Text(body, color = Look.InkMuted, fontSize = 14.sp, lineHeight = 19.sp)
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    LookButton("Abbrechen", filled = false, small = true, onClick = onDismiss)
+                    Spacer(Modifier.width(8.dp))
+                    LookButton(confirm, small = true, onClick = onConfirm)
+                }
             }
         }
     }
