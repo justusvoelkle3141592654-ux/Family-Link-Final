@@ -109,11 +109,17 @@ class LauncherBridge : ContentProvider() {
         // Plus, known or not.
         cursor.addRow(arrayOf(ROW_BUDGET, if (plusOnly) "1" else "0", plusOnlyReason))
 
+        // The apps that open whatever the clock says, sent alongside the Plus ones because the
+        // launcher applies the rule itself and would otherwise grey out the dialler the moment
+        // the budget ran out — while this app would have opened it without hesitating.
+        LimitEngine.ALWAYS_OPEN.forEach { cursor.addRow(arrayOf(ROW_PLUS, it, "")) }
+
         for ((pkg, entry) in prefs.getCategories()) {
             val category = entry.first
             if (category == AppCategory.PLUS) cursor.addRow(arrayOf(ROW_PLUS, pkg, ""))
             val locked = when {
                 category == AppCategory.PLUS -> false
+                pkg in LimitEngine.ALWAYS_OPEN -> false
                 category == AppCategory.BLOCKED -> true
                 // A focus session narrows the phone to the apps it names, whatever their category.
                 focusRunning && pkg !in focus.allowed -> true

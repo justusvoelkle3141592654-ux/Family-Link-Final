@@ -1,7 +1,10 @@
 package com.familylink.launcher
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -59,6 +62,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -122,7 +126,26 @@ private fun Home() {
     val prefs = remember { LauncherPrefs(context) }
     val drag = remember { DragController() }
 
-    val apps = remember { Apps.load(context) }
+    // Bumped when a package is installed, removed or changed. Without it the list was read
+    // once and never again — and a launcher is a long-lived singleTask activity, so an app
+    // installed today would not appear on the home screen until the process happened to die.
+    var appsVersion by remember { mutableStateOf(0) }
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) { appsVersion++ }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        runCatching { context.registerReceiver(receiver, filter) }
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    val apps = remember(appsVersion) { Apps.load(context) }
     val byPackage = remember(apps) { apps.associateBy { it.packageName } }
     // The first start asks instead of guessing. Choosing apps from a list is less work than
     // dragging them into place, and the result is the one that was actually wanted.

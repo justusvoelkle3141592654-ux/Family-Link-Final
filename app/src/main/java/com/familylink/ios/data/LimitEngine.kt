@@ -196,6 +196,55 @@ class LimitEngine(private val prefs: Prefs) {
         return (spent >= pot) to (spent to pot)
     }
 
+    /**
+     * How many seconds are left before something would block [pkg], as best as can be known.
+     *
+     * Only the limits that run down with the clock: the day's budget, this app's own limit and
+     * the absolute ceiling. Bedtime and school have their own times and are not counted here.
+     *
+     * Used to decide how often to look. Polling once or twice a second all day is wasteful, and
+     * polling every 1.5 seconds is too slow at the one moment that matters — the answer is to
+     * look rarely when the limit is far off and often when it is seconds away.
+     *
+     * [Int.MAX_VALUE] when nothing here applies.
+     */
+    fun secondsUntilLimit(pkg: String?, usage: Map<String, Int>): Int {
+        if (prefs.limitsDisabled() || prefs.bonusCountdownActive()) return Int.MAX_VALUE
+        var soonest = Int.MAX_VALUE
+
+        if (prefs.hardCapEnabled) {
+            val extension = prefs.bonusSecondsToday
+            val total = computeTotalDeviceSeconds(usage)
+            if (prefs.hardCapScope != LimitScope.WEEK) {
+                soonest = minOf(soonest, prefs.hardCapMinutes * 60 + extension - total)
+            }
+            if (prefs.hardCapScope != LimitScope.DAY) {
+                soonest = minOf(
+                    soonest,
+                    prefs.weeklyHardCapMinutes * 60 + extension - prefs.weekTotalSeconds()
+                )
+            }
+        }
+
+        // Below this only apps that actually spend the budget matter. A Plus app, the phone or
+        // the home screen can sit there all day without moving any of these numbers.
+        if (pkg == null || isForegroundExempt(pkg)) return soonest
+        val category = prefs.categoryOf(pkg)
+        if (category == AppCategory.PLUS || category == AppCategory.BLOCKED) return soonest
+
+        if (prefs.limitScope != LimitScope.WEEK) {
+            soonest = minOf(soonest, globalLimitSeconds() - computeGlobalUsedSeconds(usage))
+        }
+        if (prefs.limitScope != LimitScope.DAY) {
+            val (_, numbers) = weeklyBudgetExhausted()
+            soonest = minOf(soonest, numbers.second - numbers.first)
+        }
+        if (category == AppCategory.LIMIT) {
+            soonest = minOf(soonest, prefs.limitMinutesOf(pkg) * 60 - (usage[pkg] ?: 0))
+        }
+        return soonest.coerceAtLeast(0)
+    }
+
     fun decide(pkg: String?, usage: Map<String, Int>): LockDecision {
         // Bedtime is a HARD lock: it blocks EVERYTHING (PLUS included). The service keeps only
         // phone/system usable and makes it non-dismissible. It outranks the off-button.
@@ -347,6 +396,11 @@ class LimitEngine(private val prefs: Prefs) {
         )
 
         internal val LAUNCHER_EXEMPT = setOf(
+            // Our own home screen, and it was missing here — which meant every second the
+            // child spent looking at their own launcher was billed to the day's budget. The
+            // phone burned its time doing nothing, the limit arrived early, and the lock
+            // looked arbitrary. Sitting on the home screen is not using an app.
+            "com.familylink.launcher",
             "com.android.launcher",
             "com.android.launcher3",
             "com.google.android.apps.nexuslauncher",
@@ -354,5 +408,16 @@ class LimitEngine(private val prefs: Prefs) {
             "com.microsoft.launcher",
             "com.teslacoilsw.launcher"
         )
+
+        /**
+         * Apps that open no matter what the clock says: the phone, the emergency dialler, the
+         * system UI, our own two apps and any home screen.
+         *
+         * Published because the launcher needs the same list. It draws a tile as locked from
+         * what this app tells it, and without this it drew the dialler as locked the moment the
+         * day's budget ran out — while the guard would have opened it perfectly happily. A
+         * child's phone that will not make a call is not a limit, it is a fault.
+         */
+        val ALWAYS_OPEN: Set<String> = PHONE_SYSTEM_EXEMPT + OWN_PACKAGE + LAUNCHER_EXEMPT
     }
 }

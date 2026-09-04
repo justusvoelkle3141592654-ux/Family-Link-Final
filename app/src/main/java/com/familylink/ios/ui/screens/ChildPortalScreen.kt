@@ -60,6 +60,8 @@ import com.familylink.ios.data.AppCategory
 import com.familylink.ios.data.InstalledApps
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.sync.Account
+import com.familylink.ios.ui.components.NovaDivider
+import com.familylink.ios.ui.components.NovaRow
 import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.util.ScreenLock
 import com.familylink.ios.util.TimeFmt
@@ -354,30 +356,11 @@ private fun SheetRow(
     tint: Color = Nova.Primary,
     onClick: () -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(38.dp).clip(CircleShape).background(tint.copy(alpha = 0.13f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(19.dp))
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-            Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
-        }
-    }
+    NovaRow(title = title, subtitle = subtitle, icon = icon, iconTint = tint, onClick = onClick)
 }
 
 @Composable
-private fun SheetDivider() {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
-    }
-}
+private fun SheetDivider() = NovaDivider()
 
 /** How many apps fit into the screen-time card without pushing the overview off screen. */
 private const val TOP_APPS_ON_OVERVIEW = 3
@@ -646,22 +629,7 @@ private fun InfoListCard(prefs: Prefs, disabled: Boolean) {
 
 @Composable
 private fun InfoRow(icon: ImageVector, title: String, subtitle: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(40.dp).clip(CircleShape).background(Nova.SurfaceAlt),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(19.dp))
-        }
-        Spacer(Modifier.width(14.dp))
-        Column {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
-            Text(subtitle, fontSize = 13.sp, color = Nova.InkMuted)
-        }
-    }
+    NovaRow(title = title, subtitle = subtitle, icon = icon)
 }
 
 // ---------------------------------------------------------------------------
@@ -850,22 +818,28 @@ private fun SettingsTab(
 }
 
 /** The one card shape the settings page uses, so every group looks the same. */
+/**
+ * The card this screen is built from.
+ *
+ * It used to be its own shape, a few pixels off the one the parent portal uses — which is most
+ * of why the two halves of the same app looked like two ages of it. Same radius, same surface,
+ * same inner breathing room as NovaCard now; it stays a local function only because these call
+ * sites pass a ColumnScope body.
+ */
 @Composable
 private fun Card(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth()
             .clip(RoundedCornerShape(Nova.RadiusCard.dp))
-            .background(Nova.Surface),
-        content = content
-    )
-}
-
-@Composable
-private fun RowDivider() {
-    Box(Modifier.fillMaxWidth().padding(start = 70.dp, end = 16.dp)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Nova.Line))
+            .background(Nova.Surface)
+    ) {
+        Column(Modifier.padding(vertical = 4.dp), content = content)
     }
 }
+
+/** The app's one divider: edge to edge, not indented to the text. */
+@Composable
+private fun RowDivider() = NovaDivider()
 
 @Composable
 private fun SettingsRow(
@@ -874,21 +848,7 @@ private fun SettingsRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(38.dp).clip(CircleShape).background(Nova.SurfaceAlt),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = Nova.Primary, modifier = Modifier.size(20.dp))
-        }
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Nova.Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Nova.InkMuted, fontSize = 13.sp)
-        }
+    NovaRow(title = title, subtitle = subtitle, icon = icon, onClick = onClick) {
         Icon(Icons.Filled.ChevronRight, null, tint = Nova.InkFaint, modifier = Modifier.size(20.dp))
     }
 }

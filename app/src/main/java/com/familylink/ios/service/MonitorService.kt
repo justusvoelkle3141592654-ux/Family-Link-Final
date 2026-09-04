@@ -78,11 +78,27 @@ class MonitorService : Service() {
         runCatching { com.familylink.ios.admin.DeviceOwner.setStatusBarDisabled(this, blocked) }
     }
 
+    /**
+     * How long to wait before looking again — set at the end of each tick.
+     *
+     * A fixed 1.5s was both too often and not often enough: it ran all day for nothing, and
+     * still let an app carry on for up to a second and a half after the time was up. Now the
+     * loop watches the clock: far from any limit it looks every 1.5s, and inside the last
+     * minute it looks four times a second, so the block lands within a quarter second of the
+     * limit actually being reached.
+     */
+    @Volatile private var tickDelayMs = TICK_MS
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
-            worker.postDelayed(this, TICK_MS)
+            worker.postDelayed(this, tickDelayMs)
         }
+    }
+
+    /** Look often when a limit is seconds away, rarely when it is not. */
+    private fun scheduleNextTick(secondsLeft: Int) {
+        tickDelayMs = if (secondsLeft <= NEAR_LIMIT_SECONDS) FAST_TICK_MS else TICK_MS
     }
 
     override fun onCreate() {
@@ -222,6 +238,10 @@ class MonitorService : Service() {
     }
 
     private fun tick() {
+        // Back to the slow cadence unless this tick finds a limit close by. Set here so the
+        // early exits below (screen lock, missing guard, a parent's phone) all leave it right.
+        tickDelayMs = TICK_MS
+
         // The guard only ever runs on the supervised (child) device. A parent phone must never
         // lock itself, no matter how the service got started (boot, accessibility, self-heal).
         if (prefs.isParentDevice) {
@@ -298,6 +318,10 @@ class MonitorService : Service() {
         // Also cache the whole-device figure: the weekly ceiling is built from the finished
         // days plus today, so today's number has to survive the rollover into the week total.
         prefs.totalDeviceSecondsToday = engine.computeTotalDeviceSeconds(usage)
+
+        // How soon does something run out? Inside the last minute the loop speeds up, so the
+        // app is closed as the limit is reached rather than up to a second and a half later.
+        scheduleNextTick(runCatching { engine.secondsUntilLimit(pkg, usage) }.getOrDefault(Int.MAX_VALUE))
 
         // Report upward from here as well (every ~9s). The monitor is the component that
         // always runs on the child and holds the freshest numbers, so the parent no longer
@@ -656,6 +680,10 @@ class MonitorService : Service() {
 
     companion object {
         private const val TICK_MS = 1500L
+
+        /** Inside the last minute before a limit; see scheduleNextTick. */
+        private const val FAST_TICK_MS = 250L
+        private const val NEAR_LIMIT_SECONDS = 60
 
         /** How often the screen is re-locked while the guard is off. */
         private const val GUARD_LOCK_MS = 1200L

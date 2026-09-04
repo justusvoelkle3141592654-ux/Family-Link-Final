@@ -150,33 +150,35 @@ fun AppsScreen() {
                 val used = perApp[app.packageName] ?: 0
                 val icon = remember(app.packageName) { InstalledApps.iconBitmap(context, app.packageName) }
 
+                // The app's own card radius, not a smaller one of its own: this list used to
+                // be visibly a different age of the app than the pages around it.
                 Box(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(Nova.RadiusCard.dp))
                         .background(Nova.Surface)
                 ) {
                     Row(
-                        Modifier.fillMaxWidth().padding(12.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // App icon
                         Box(
-                            Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(Nova.Fill),
+                            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Nova.Fill),
                             contentAlignment = Alignment.Center
                         ) {
                             if (icon != null) {
                                 Image(
                                     bitmap = icon.asImageBitmap(), contentDescription = null,
-                                    modifier = Modifier.size(38.dp)
+                                    modifier = Modifier.size(36.dp)
                                 )
                             } else {
                                 Text(app.label.take(1), fontSize = 18.sp, color = Nova.Ink)
                             }
                         }
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(16.dp))
 
                         Column(Modifier.weight(1f)) {
-                            Text(app.label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
+                            Text(app.label, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Nova.Ink)
                             val sub = when {
                                 // A keyboard never runs as a foreground app, so there is no time
                                 // to show and no limit to set — say that instead of "0 Min".
@@ -185,7 +187,8 @@ fun AppsScreen() {
                                 used > 0 -> "Heute ${TimeFmt.hm(used)}"
                                 else -> "Heute noch nicht genutzt"
                             }
-                            Text(sub, fontSize = 12.sp, color = Nova.InkMuted)
+                            Spacer(Modifier.height(3.dp))
+                            Text(sub, fontSize = 14.sp, color = Nova.InkMuted, lineHeight = 19.sp)
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
