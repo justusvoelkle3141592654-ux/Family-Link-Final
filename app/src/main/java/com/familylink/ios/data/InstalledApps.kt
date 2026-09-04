@@ -4,10 +4,25 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 
-/** Loads the user-visible launchable apps so the parent can categorise them. */
+/** Loads the apps the parent can categorise: everything launchable, plus the keyboards. */
 object InstalledApps {
 
-    data class Entry(val packageName: String, val label: String)
+    data class Entry(
+        val packageName: String,
+        val label: String,
+        /**
+         * An input method rather than an ordinary app.
+         *
+         * Keyboards have no launcher icon, so they used to be invisible here — and an app that
+         * cannot be listed cannot be categorised or limited. A dictation keyboard could
+         * therefore be used all day without ever appearing anywhere.
+         *
+         * Listing them is honest but limited: a keyboard never runs as a foreground app, so
+         * Android attributes no time to it and a limit is meaningless. What it gives the parent
+         * is the knowledge that it is installed, and a route to switching it off.
+         */
+        val isKeyboard: Boolean = false
+    )
 
     fun load(context: Context): List<Entry> {
         val pm = context.packageManager
@@ -16,15 +31,36 @@ object InstalledApps {
                 .addCategory(android.content.Intent.CATEGORY_LAUNCHER),
             0
         )
-        return launchables
-            .mapNotNull { ri ->
-                val pkg = ri.activityInfo?.packageName ?: return@mapNotNull null
-                if (pkg == LimitEngine.OWN_PACKAGE) return@mapNotNull null
-                Entry(pkg, ri.loadLabel(pm).toString())
-            }
+        val apps = launchables.mapNotNull { ri ->
+            val pkg = ri.activityInfo?.packageName ?: return@mapNotNull null
+            if (pkg == LimitEngine.OWN_PACKAGE) return@mapNotNull null
+            Entry(pkg, ri.loadLabel(pm).toString())
+        }
+        val seen = apps.mapTo(HashSet()) { it.packageName }
+
+        // Keyboards on top, but only those not already listed: some ship a settings activity
+        // with its own icon, and those should stay ordinary apps.
+        val keyboards = keyboardPackages(context)
+            .filterNot { it.packageName in seen || it.packageName == LimitEngine.OWN_PACKAGE }
+
+        return (apps + keyboards)
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
     }
+
+    /** Every installed input method, whether or not it is currently switched on. */
+    fun keyboardPackages(context: Context): List<Entry> = runCatching {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE)
+            as android.view.inputmethod.InputMethodManager
+        imm.inputMethodList.map { info ->
+            Entry(
+                packageName = info.packageName,
+                label = runCatching { info.loadLabel(context.packageManager).toString() }
+                    .getOrDefault(info.packageName),
+                isKeyboard = true
+            )
+        }
+    }.getOrDefault(emptyList())
 
     fun isSystem(info: ApplicationInfo): Boolean =
         (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0

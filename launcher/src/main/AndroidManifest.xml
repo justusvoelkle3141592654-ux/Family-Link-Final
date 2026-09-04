@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The grid needs to see what is installed, and to read their icons and labels. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Reading which apps the guard has locked. Granted only because both APKs share a key. -->
+    <uses-permission android:name="com.familylink.ios.permission.LAUNCHER_BRIDGE" />
+
+    <!--
+      The launcher's own line to the family's database, and the weather.
+
+      Without INTERNET the fallback added in 4.6 could never connect: Sync.get() failed
+      silently, readFirebase() got null, and the launcher could not seal the phone while the
+      guard was stopped — the one thing that whole second connection exists for.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Weather only. Coarse is enough for a city-level forecast and is the milder ask. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <application
+        android:name=".LauncherApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Launcher">
+
+        <!--
+          The home screen.
+          - stateNotNeeded + clearTaskOnLaunch: a launcher must be able to start with no saved
+            state and must always come back to its top screen, never to whatever was open.
+          - excludeFromRecents: the home screen is not a card to swipe back to.
+          - The theme is translucent so the system wallpaper shows through, which is what makes
+            this look like the phone's own launcher rather than an app pretending to be one.
+        -->
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:clearTaskOnLaunch="true"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout"
+            android:theme="@style/Theme.Launcher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The setup wizard and the launcher's own settings.
+
+          The wizard is internal. The settings screen is exported so the Family Link app can
+          offer it as a menu entry, but behind the same signature-level permission the bridge
+          uses — so it is reachable from that app and from nothing else on the phone.
+
+          Neither is behind the family PIN; SetupActivity explains why.
+
+          They are opaque rather than translucent: a settings list over a wallpaper is hard to
+          read, and unlike the home screen these are not meant to feel like part of the desk.
+        -->
+        <activity
+            android:name=".SetupActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout"
+            android:theme="@style/Theme.Launcher.Solid"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout"
+            android:permission="com.familylink.ios.permission.LAUNCHER_BRIDGE"
+            android:theme="@style/Theme.Launcher.Solid">
+            <intent-filter>
+                <action android:name="com.familylink.launcher.SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

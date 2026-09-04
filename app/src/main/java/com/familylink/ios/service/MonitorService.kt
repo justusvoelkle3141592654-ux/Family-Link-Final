@@ -64,6 +64,11 @@ class MonitorService : Service() {
     private var lastHardCapCountAt = 0L
     private var lastHardCapLockAt = 0L
     private var lastScreenLockAt = 0L
+
+    // Guard watchdog: when the last lock fired, and whether this outage was already reported.
+    private var lastGuardLockAt = 0L
+    private val startedAt = android.os.SystemClock.uptimeMillis()
+    private var guardMissingReported = false
     private var statusBarBlocked: Boolean? = null
 
     /** Toggle the status bar only when the state actually changes — it is a policy call. */
@@ -73,11 +78,27 @@ class MonitorService : Service() {
         runCatching { com.familylink.ios.admin.DeviceOwner.setStatusBarDisabled(this, blocked) }
     }
 
+    /**
+     * How long to wait before looking again — set at the end of each tick.
+     *
+     * A fixed 1.5s was both too often and not often enough: it ran all day for nothing, and
+     * still let an app carry on for up to a second and a half after the time was up. Now the
+     * loop watches the clock: far from any limit it looks every 1.5s, and inside the last
+     * minute it looks four times a second, so the block lands within a quarter second of the
+     * limit actually being reached.
+     */
+    @Volatile private var tickDelayMs = TICK_MS
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
-            worker.postDelayed(this, TICK_MS)
+            worker.postDelayed(this, tickDelayMs)
         }
+    }
+
+    /** Look often when a limit is seconds away, rarely when it is not. */
+    private fun scheduleNextTick(secondsLeft: Int) {
+        tickDelayMs = if (secondsLeft <= NEAR_LIMIT_SECONDS) FAST_TICK_MS else TICK_MS
     }
 
     override fun onCreate() {
@@ -156,12 +177,75 @@ class MonitorService : Service() {
         return launchable
     }
 
+    /**
+     * The answer to switching the guard off.
+     *
+     * Until now the only response was the overlay, and that response is invisible exactly where
+     * it matters: from Android 12 the system hides every overlay window while the accessibility
+     * and device-admin settings pages are open, as a defence against malware. So the child saw
+     * nothing at all, and had all the time in the world to carry on to the admin page and the
+     * uninstall button.
+     *
+     * A screen lock is not a window and cannot be hidden. Locking on every tick means the child
+     * is thrown back to the phone's own lock screen a second and a half after switching the
+     * guard off, and again each time they get back in — which is not enough time to walk to
+     * "Geräteadministratoren" and confirm a deactivation dialog.
+     *
+     * Two ways out, both deliberate:
+     *  - the repair window the parent opens with the PIN (see the lock screen's own button),
+     *    during which nothing is locked so the permission can actually be granted again,
+     *  - the device admin being gone as well, in which case lockNow() no longer works and the
+     *    only thing left is to tell the parent.
+     */
+    private fun enforceGuardMissing() {
+        // The parent's repair window: never lock while it is open, otherwise granting the
+        // permission back would be impossible — the lock would fire between every tap.
+        if (prefs.settingsUnlocked() ||
+            prefs.lockEscapeAllowsAny(com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES)
+        ) return
+
+        // Installing an update can drop the accessibility service on some Android versions, and
+        // the service comes straight back up afterwards. Without a moment's grace the parent who
+        // just installed the update would be met by a phone locking itself every second, with
+        // the repair window not yet open. Far too short to be useful to a child, who would have
+        // to already be standing in the settings page when the service starts.
+        if (android.os.SystemClock.uptimeMillis() - startedAt < GUARD_GRACE_MS) return
+
+        val now = android.os.SystemClock.uptimeMillis()
+
+        // Tell the parent once per outage, not once per tick.
+        if (!guardMissingReported) {
+            guardMissingReported = true
+            runCatching {
+                prefs.addEvent(
+                    "guard",
+                    "Schutz wurde abgeschaltet",
+                    "Die Bedienungshilfe oder die Nutzungsdaten wurden deaktiviert. " +
+                        "Das Handy ist gesperrt, bis der Schutz wieder an ist."
+                )
+            }
+            prefs.guardMissingSince = System.currentTimeMillis()
+            // Straight out over the wire, rather than waiting for the next scheduled push.
+            runCatching { com.familylink.ios.sync.SyncService.pushNow(this) }
+        }
+
+        // Lock, and keep locking. Rate-limited only enough to avoid fighting the unlock
+        // animation; anything slower gives room to reach the deactivation dialog.
+        if (now - lastGuardLockAt >= GUARD_LOCK_MS) {
+            lastGuardLockAt = now
+            runCatching { com.familylink.ios.util.ScreenLock.lockNow(this) }
+        }
+    }
+
     private fun tick() {
+        // Back to the slow cadence unless this tick finds a limit close by. Set here so the
+        // early exits below (screen lock, missing guard, a parent's phone) all leave it right.
+        tickDelayMs = TICK_MS
+
         // The guard only ever runs on the supervised (child) device. A parent phone must never
         // lock itself, no matter how the service got started (boot, accessibility, self-heal).
         if (prefs.isParentDevice) {
-            LockState.update(lockActive = false, hardLock = false, bedtime = false)
-            com.familylink.ios.util.LockOverlay.hide(this)
+            LockEnforcer.clear(this)
             setStatusBarBlocked(false)
             stopSelf()
             return
@@ -170,20 +254,55 @@ class MonitorService : Service() {
         // enabling the admin during setup is never interrupted).
         if (!prefs.setupDone) return
 
+        // ---- one decision, one place ----
+        //
+        // The restart seal, a switched-off permission and every rule about time all resolve in
+        // [LockEnforcer], which the accessibility service also calls the instant an app comes to
+        // the front. The timer's remaining job is the half only a timer can do: notice that a
+        // deadline passed while nothing else was happening, and re-assert a window the system
+        // took away.
+        val sealing = LockEnforcer.evaluate(this, ForegroundTracker.currentPackage)
+        LockEnforcer.ensureStillUp(this)
+        if (sealing is LockEnforcer.Reason.Booting || sealing is LockEnforcer.Reason.GuardMissing) {
+            setStatusBarBlocked(sealing is LockEnforcer.Reason.Booting)
+            // A missing permission has to leave Settings reachable — that is where it is granted
+            // again — while the restart seal leaves nothing reachable at all.
+            val hide = sealing is LockEnforcer.Reason.Booting
+            if (lastSettingsHidden != hide) {
+                lastSettingsHidden = hide
+                runCatching { com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, hide) }
+            }
+            if (sealing is LockEnforcer.Reason.GuardMissing) enforceGuardMissing()
+            return
+        }
+
+        // The guard is evidently back (we got past the block above): arm the report again and
+        // note the recovery, so a second outage is announced like the first.
+        if (guardMissingReported) {
+            guardMissingReported = false
+            prefs.guardMissingSince = 0L
+            runCatching { prefs.addEvent("guard", "Schutz wieder aktiv", "Der Schutz läuft wieder.") }
+            runCatching { com.familylink.ios.sync.SyncService.pushNow(this) }
+        }
+
         if (ticksSincePkgRefresh++ >= 10) {
             ticksSincePkgRefresh = 0
             refreshManagedPackages()
             prefs.networkAvailable = hasWorkingInternet()
         }
 
+        // Pay out what a self-started lock has earned so far. Cheap, and doing it on every tick
+        // means the bonus is already credited by the time the lock ends.
+        runCatching { prefs.settleOwnLockReward() }
+
         // A running screen lock outranks everything: the display itself goes off and every
         // unlock puts it straight back, until the timer expires on its own.
         if (prefs.screenLockActive()) {
-            com.familylink.ios.util.LockOverlay.hide(this)
+            LockEnforcer.clear(this)
             val now = SystemClock.uptimeMillis()
             if (now - lastScreenLockAt >= SCREEN_LOCK_REPEAT_MS) {
                 lastScreenLockAt = now
-                runCatching { com.familylink.ios.admin.DeviceAdmin.lockNow(this) }
+                runCatching { com.familylink.ios.util.ScreenLock.lockNow(this) }
             }
             return
         }
@@ -200,6 +319,10 @@ class MonitorService : Service() {
         // days plus today, so today's number has to survive the rollover into the week total.
         prefs.totalDeviceSecondsToday = engine.computeTotalDeviceSeconds(usage)
 
+        // How soon does something run out? Inside the last minute the loop speeds up, so the
+        // app is closed as the limit is reached rather than up to a second and a half later.
+        scheduleNextTick(runCatching { engine.secondsUntilLimit(pkg, usage) }.getOrDefault(Int.MAX_VALUE))
+
         // Report upward from here as well (every ~9s). The monitor is the component that
         // always runs on the child and holds the freshest numbers, so the parent no longer
         // depends on SyncService alone to see live usage.
@@ -209,20 +332,15 @@ class MonitorService : Service() {
             runCatching { syncManager.pushStatus() }
         }
 
-        // ---- the sealed lock, decided by the state and not by what is on top of it ----
+        // ---- the sealed lock ----
         //
-        // The overlay used to come and go with the decision for the current app. Opening the
-        // phone (always exempt) therefore took it off screen, and from there anything could be
-        // reached — a cloned app included. Now it stays up for as long as the state lasts, and
-        // only the short window opened by its own phone/portal buttons hides it.
+        // [LockEnforcer] already decided this and already put it on screen, at the top of the
+        // tick and again on every foreground change. What is left here is what only the monitor
+        // can do: measure, close the offending app, and escalate the ceiling.
         val sealedReason = engine.sealedReason(usage)
         if (sealedReason != null) {
-            if (prefs.lockEscapeAllows(pkg)) {
-                com.familylink.ios.util.LockOverlay.hide(this)
-            } else {
-                prefs.clearLockEscape()
-                val bedtimeNow = sealedReason is LockDecision.Bedtime
-                LockState.update(lockActive = true, hardLock = true, bedtime = bedtimeNow)
+            val escaping = prefs.lockEscapeAllows(pkg)
+            if (!escaping) {
                 setStatusBarBlocked(true)
                 // The overlay only covers the screen — the app behind it keeps running, and
                 // YouTube drops into picture-in-picture and plays on over everything. Suspending
@@ -232,32 +350,17 @@ class MonitorService : Service() {
                     prefs.recordBlocked(pkg)
                     if (sealedReason is LockDecision.HardCapReached) enforceHardCap()
                 }
-                val (t, d) = messageFor(sealedReason)
-                if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
-                    showSealedOverlay(t, d, bedtimeNow, sealedReason is LockDecision.OfflineLock)
-                } else {
-                    // No overlay permission: fall back to the pinned activity.
-                    val now = SystemClock.uptimeMillis()
-                    if (now - lastBlockLaunchAt >= RELAUNCH_COOLDOWN_MS) {
-                        lastBlockLaunchAt = now
-                        // Without the overlay the block screen is an Activity. Pinning it is
-                        // right for every lock except the offline one — pinning that would
-                        // leave no way to reach the connection settings at all.
-                        val pin = sealedReason !is LockDecision.OfflineLock
-                        main.post { BlockActivity.launch(this, t, d, bedtimeNow, true, pin) }
-                    }
-                }
             }
             // The connection button on the offline lock leads into the system's internet panel,
             // and that panel lives in the settings app — which is hidden while the phone is
             // locked. Reveal it for exactly as long as the window that button opened lasts, and
             // hide it again the moment the window closes.
-            val revealForInternet = sealedReason is LockDecision.OfflineLock &&
+            val revealSettings = escaping &&
                 prefs.lockEscapeAllowsAny(com.familylink.ios.admin.DeviceOwner.SETTINGS_PACKAGES)
-            if (lastSettingsHidden != !revealForInternet) {
-                lastSettingsHidden = !revealForInternet
+            if (lastSettingsHidden != !revealSettings) {
+                lastSettingsHidden = !revealSettings
                 runCatching {
-                    com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, !revealForInternet)
+                    com.familylink.ios.admin.DeviceOwner.setSettingsHidden(this, !revealSettings)
                 }
             }
 
@@ -311,7 +414,7 @@ class MonitorService : Service() {
         // Whatever happens below, the overlay must disappear the moment nothing seals the
         // device any more — otherwise it would outlive the lock that raised it.
         if (!engine.sealsDevice(decision)) {
-            com.familylink.ios.util.LockOverlay.hide(this)
+            LockEnforcer.clear(this)
             setStatusBarBlocked(false)
         }
 
@@ -331,8 +434,16 @@ class MonitorService : Service() {
             when (decision) {
                 // Settings is blocked directly (it is not a "managed" launchable app).
                 is LockDecision.SettingsBlocked -> { /* fall through to block */ }
+                // Once the day's budget is gone, "we have never seen this package" is not a
+                // reason to let it run. A cloned app arrives under a name no category knows and
+                // its minutes never reach the counter, so the only honest answer is to block it
+                // with everything else. Home screen and the exempt list are still spared.
+                is LockDecision.GlobalLimitReached -> {
+                    if (engine.isForegroundExempt(pkg)) return
+                    if (pkg in homePackages) return
+                }
                 else -> {
-                    // Daytime limit blocks: launcher stays free and only real launchable apps
+                    // Other daytime blocks: launcher stays free and only real launchable apps
                     // count. "Launchable" is checked live as well as from the cached list —
                     // a cloned app appears under a package we have never seen, and skipping
                     // everything unknown let exactly those through.
@@ -359,61 +470,64 @@ class MonitorService : Service() {
             else -> {}
         }
 
-        // Actually CLOSE the offending app. Raising the block screen only puts a window on
-        // top; the app behind keeps running, and YouTube in particular drops into
-        // picture-in-picture and carries on playing over everything — including over the block
-        // screen. Suspending the package terminates it and takes the PiP window with it.
-        suspendBlocked(pkg, decision)
-
-        // Debounce so we never relaunch in a tight loop (no flicker).
+        // Say why FIRST, close afterwards.
+        //
+        // The other way round is what made the app look broken: the app was closed, the screen
+        // meant to explain it was refused in the background, and all the child saw was their app
+        // vanishing for no stated reason. Nothing is closed now unless the reason is on screen —
+        // suspending is exempt because a suspended app shows Android's own "app is paused"
+        // dialogue, which is an explanation in itself.
+        val (title, detail) = messageFor(decision)
         val now = SystemClock.uptimeMillis()
         if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
         lastBlockLaunchAt = now
-
-        // Anything reaching here is a per-app block, never a sealed state: the day limit, a
-        // single app's limit, a blocked app or the settings. Those stay dismissible screens.
-        val (title, detail) = messageFor(decision)
-        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false) }
-    }
-
-    /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
-    private fun showSealedOverlay(
-        title: String,
-        detail: String,
-        bedtime: Boolean,
-        offline: Boolean = false
-    ) {
-        // The shade would otherwise slide down over the overlay and hand the child quick
-        // settings. Only possible as device owner; without it the overlay still covers the
-        // screen, the shade just remains reachable.
-        setStatusBarBlocked(true)
-        com.familylink.ios.util.LockOverlay.show(this, key = "$title|$detail|$bedtime|$offline") {
-            com.familylink.ios.ui.screens.LockOverlayContent(
-                title = title,
-                detail = detail,
-                bedtime = bedtime,
-                offline = offline,
-                onOpenPortal = { com.familylink.ios.ui.screens.openParentPortal(this) }
-            )
+        // Only a single app's own limit reaches here — every hard lock was already put on the
+        // overlay by [LockEnforcer] before this tick got anywhere near a decision. This one
+        // stays a dismissible screen: the rest of the phone still works, and an overlay would
+        // be saying otherwise.
+        main.post {
+            BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false)
         }
+        val shown = if (com.familylink.ios.util.Permissions.hasOverlay(this)) true
+        else BlockNotifier.show(this, title, detail, bedtime, hardLock)
+
+        // Raising the block screen only puts a window on top; the app behind keeps running, and
+        // YouTube in particular drops into picture-in-picture and carries on playing over
+        // everything. Suspending the package terminates it and takes the PiP window with it.
+        suspendBlocked(pkg, decision, mayGoHome = shown)
     }
 
     /**
      * Suspend the package that just got blocked, so it stops running rather than merely being
      * covered. Only real, launchable apps — never the launcher, the phone or our own screens.
      */
-    private fun suspendBlocked(pkg: String, decision: LockDecision) {
+    private fun suspendBlocked(pkg: String, decision: LockDecision, mayGoHome: Boolean = true) {
         if (decision is LockDecision.SettingsBlocked) return   // settings is hidden, not suspended
         if (engine.isForegroundExempt(pkg)) return
+        if (pkg in homePackages) return
         // Live check, not just the cached list: a cloned app carries a package name we have
         // never categorised, and testing against the cache alone let exactly those keep running.
-        if (!isBlockableApp(pkg)) return
+        // Once the budget itself is gone that check is dropped entirely — an app nobody can
+        // identify is exactly the one that must not survive the limit.
+        val budgetGone = decision is LockDecision.GlobalLimitReached ||
+            decision is LockDecision.HardCapReached
+        if (!budgetGone && !isBlockableApp(pkg)) return
         if (pkg in prefs.suspendedPackages) return
 
         val done = runCatching {
             com.familylink.ios.admin.DeviceOwner.setPackagesSuspended(this, listOf(pkg), true)
         }.getOrDefault(emptySet())
-        if (done.isNotEmpty()) prefs.suspendedPackages = prefs.suspendedPackages + done
+        if (done.isNotEmpty()) {
+            prefs.suspendedPackages = prefs.suspendedPackages + done
+            return
+        }
+        // Not device owner, so the app cannot be suspended — but it must still stop being on
+        // screen right now. Going Home leaves it immediately; the overlay or block screen then
+        // lands on the launcher instead of on top of a still-running app.
+        //
+        // Only when the reason is actually on screen. Sending the child Home out of an app with
+        // nothing to explain it is worse than letting the app run one more tick.
+        if (mayGoHome) runCatching { AppAccessibilityService.instance?.goHome() }
     }
 
     /** Un-suspend every package the engine would now allow again. */
@@ -454,7 +568,7 @@ class MonitorService : Service() {
         val cooldown = if (persistent) HARDCAP_LOCK_PERSISTENT_MS else HARDCAP_LOCK_GRACE_MS
         if (now - lastHardCapLockAt < cooldown) return
         lastHardCapLockAt = now
-        runCatching { com.familylink.ios.admin.DeviceAdmin.lockNow(this) }
+        runCatching { com.familylink.ios.util.ScreenLock.lockNow(this) }
     }
 
     /**
@@ -532,7 +646,9 @@ class MonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        com.familylink.ios.util.LockOverlay.hide(this)
+        // The overlay deliberately stays. A service that is being restarted must not blink the
+        // lock away on its way out — the guard is meant to be up the whole time, and the next
+        // tick re-asserts it anyway.
         setStatusBarBlocked(false)
         worker.removeCallbacks(tickRunnable)
         workerThread.quitSafely()
@@ -564,6 +680,16 @@ class MonitorService : Service() {
 
     companion object {
         private const val TICK_MS = 1500L
+
+        /** Inside the last minute before a limit; see scheduleNextTick. */
+        private const val FAST_TICK_MS = 250L
+        private const val NEAR_LIMIT_SECONDS = 60
+
+        /** How often the screen is re-locked while the guard is off. */
+        private const val GUARD_LOCK_MS = 1200L
+
+        /** Grace after the service starts, so an app update is not met by a locking loop. */
+        private const val GUARD_GRACE_MS = 20_000L
         private const val RELAUNCH_COOLDOWN_MS = 2500L
         /** One counted attempt per this window, so ticks do not inflate the counter. */
         private const val HARDCAP_ATTEMPT_MS = 15_000L

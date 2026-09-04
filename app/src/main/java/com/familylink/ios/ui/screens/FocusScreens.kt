@@ -148,15 +148,23 @@ fun FocusScreen(onBack: () -> Unit) {
             // --- presets ---
             Text("Vorlage", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.InkMuted)
             Spacer(Modifier.height(8.dp))
+            // The long sessions are rationed by the week. A focus the parent pushes takes the
+            // phone away and only they can end it early, so it stays a decision rather than a
+            // reflex. A spent one is left visible and says why it cannot be picked.
+            val left = { m: Int -> prefs.focusSessionsLeft(m) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 FocusSession.PRESETS.take(2).forEach { (name, mins) ->
-                    PresetChip(name, mins, label == name, Modifier.weight(1f)) { label = name; minutes = mins }
+                    PresetChip(name, mins, label == name, Modifier.weight(1f), left(mins)) {
+                        label = name; minutes = mins
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 FocusSession.PRESETS.drop(2).forEach { (name, mins) ->
-                    PresetChip(name, mins, label == name, Modifier.weight(1f)) { label = name; minutes = mins }
+                    PresetChip(name, mins, label == name, Modifier.weight(1f), left(mins)) {
+                        label = name; minutes = mins
+                    }
                 }
             }
 
@@ -194,9 +202,8 @@ fun FocusScreen(onBack: () -> Unit) {
                 )
             }
             if (prefs.isParentDevice && apps.isEmpty()) {
-                Text(
-                    "Noch keine App-Liste vom Kinder-Gerät empfangen.",
-                    fontSize = 12.sp, color = Nova.Warning
+                com.familylink.ios.ui.components.NovaNote(
+                    "Noch keine App-Liste vom Kinder-Gerät empfangen."
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -225,7 +232,14 @@ fun FocusScreen(onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(20.dp))
-            NovaButton(text = "Fokus starten ($minutes Min)", color = Nova.Focus) {
+            NovaButton(
+                text = "Fokus starten ($minutes Min)",
+                color = Nova.Focus,
+                enabled = prefs.focusSessionsLeft(minutes) > 0
+            ) {
+                // Book it against the week before starting, so a spent allowance cannot be
+                // sidestepped by tapping fast.
+                if (!prefs.useFocusSession(minutes)) return@NovaButton
                 sync.startFocus(label, minutes, allowed.toList())
                 SyncService.pushNow(context)
                 session = prefs.focusSession()
@@ -303,6 +317,13 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                         fontSize = 13.sp, color = Nova.InkMuted, textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(16.dp))
+                    // A focus session blocks the apps but leaves the screen on. Putting the
+                    // phone away properly means the display going dark too, so that is its own
+                    // button here rather than something only the parent can trigger.
+                    NovaButtonTonal(text = "Display jetzt sperren") {
+                        com.familylink.ios.util.ScreenLock.lockNow(context)
+                    }
+                    Spacer(Modifier.height(8.dp))
                     if (fromParent) {
                         Text(
                             "Diese Fokus-Zeit haben deine Eltern gestartet. Sie endet automatisch.",
@@ -334,6 +355,9 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                 "Eine Stunde" to 60,
                 "Zwei Stunden" to 120
             )
+            // Unrationed on purpose: a child choosing to put their own phone away should never
+            // be told they have used that up. The weekly allowance belongs to the parent's
+            // focus, which takes the phone away rather than being handed it.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 choices.take(2).forEach { (name, m) ->
                     PresetChip(name, m, minutes == m, Modifier.weight(1f)) { minutes = m }
@@ -385,6 +409,9 @@ fun ChildFocusScreen(onBack: () -> Unit, onRequestEnd: () -> Unit) {
                 com.familylink.ios.service.MonitorService.recheck(context)
                 SyncService.pushNow(context)
                 session = prefs.effectiveFocusSession()
+                // "Put the phone away" means the screen goes off, not just that apps stop
+                // opening — otherwise the phone stays lit in your hand.
+                com.familylink.ios.util.ScreenLock.lockNow(context)
             }
         }
 
@@ -415,20 +442,45 @@ private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, onClic
     }
 }
 
+/**
+ * @param left how many sessions of this length are left this week; [Int.MAX_VALUE] means the
+ *        length is not rationed at all.
+ */
 @Composable
-private fun PresetChip(name: String, mins: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun PresetChip(
+    name: String,
+    mins: Int,
+    selected: Boolean,
+    modifier: Modifier,
+    left: Int = Int.MAX_VALUE,
+    onClick: () -> Unit
+) {
+    val spent = left <= 0
     Box(
         modifier
             .clip(RoundedCornerShape(Nova.RadiusControl.dp))
             .background(if (selected) Nova.Focus.copy(alpha = 0.15f) else Nova.Surface)
-            .clickable { onClick() }
+            .clickable(enabled = !spent) { onClick() }
             .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                color = if (selected) Nova.Focus else Nova.Ink)
-            Text("$mins Min", fontSize = 11.sp, color = Nova.InkMuted)
+            Text(
+                name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = when {
+                    spent -> Nova.InkFaint
+                    selected -> Nova.Focus
+                    else -> Nova.Ink
+                }
+            )
+            Text(
+                when {
+                    spent -> "diese Woche aufgebraucht"
+                    left != Int.MAX_VALUE -> "$mins Min · noch ${left}×"
+                    else -> "$mins Min"
+                },
+                fontSize = 11.sp, color = Nova.InkMuted
+            )
         }
     }
 }

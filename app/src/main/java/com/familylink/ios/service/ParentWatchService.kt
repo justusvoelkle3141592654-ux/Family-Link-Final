@@ -121,6 +121,20 @@ class ParentWatchService : Service() {
             ParentNotifications.hardCapReached(this, name)
         }
 
+        // --- the protection on the child's phone was switched off ---
+        //
+        // Announced on the edge, not on every poll, and deliberately not behind one of the
+        // notify* switches: a parent who turned notifications down still needs to hear that
+        // the thing doing the supervising has stopped.
+        if (status.guardMissingSince > 0L) {
+            if (prefs.notifiedGuardAt != status.guardMissingSince) {
+                prefs.notifiedGuardAt = status.guardMissingSince
+                ParentNotifications.guardOff(this, name)
+            }
+        } else if (prefs.notifiedGuardAt != 0L) {
+            prefs.notifiedGuardAt = 0L
+        }
+
         maybeReportOffline(status.ageSeconds())
     }
 

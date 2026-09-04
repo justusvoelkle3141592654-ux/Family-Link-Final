@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +34,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreTime
@@ -80,6 +82,7 @@ import com.familylink.ios.ui.components.NovaSwitch
 import com.familylink.ios.ui.components.SectionHeader
 import com.familylink.ios.ui.theme.Nova
 import com.familylink.ios.ui.theme.ThemeMode
+import com.familylink.ios.util.LauncherGuard
 import com.familylink.ios.util.TimeFmt
 import kotlinx.coroutines.delay
 import kotlin.concurrent.thread
@@ -190,7 +193,7 @@ fun ParentPortalScreen(
      * a settings area returns to the settings list, the detail page to the overview, and any
      * tab to the first one. Only from the overview does back close the portal.
      */
-    androidx.activity.compose.BackHandler(enabled = prefs.isParentDevice) {
+    androidx.activity.compose.BackHandler {
         when {
             showEvents -> showEvents = false
             settingsGroup != null -> { settingsGroup = null; showSettings = false; tab = groupCameFrom }
@@ -230,6 +233,21 @@ fun ParentPortalScreen(
         }
     }
 
+    // ---- the supervised phone's parent area ----
+    //
+    // Reached with the PIN from the child portal. It has no dashboard — the numbers are on the
+    // child's own overview — but it gets the same menu the parent app has, so it is a list of
+    // areas to step into rather than one page carrying every setting the app owns.
+    if (!prefs.isParentDevice && settingsGroup == null) {
+        SettingsList(
+            title = "Eltern-Bereich",
+            entries = MENU_ENTRIES.filter { it.key !in PARENT_DEVICE_ONLY_GROUPS },
+            onPick = { settingsGroup = it },
+            onClose = onExit
+        )
+        return
+    }
+
     // ---- the parent app's shell: three tabs along the bottom, as in the reference ----
     if (prefs.isParentDevice && !showDetails && settingsGroup == null) {
         Box(Modifier.fillMaxSize().background(Nova.Canvas)) {
@@ -256,10 +274,11 @@ fun ParentPortalScreen(
                         v++
                     },
                     onLockFor = { minutes -> sync.lockForMinutes(minutes); v++ },
+                    onFocusFor = { minutes -> sync.startFocus("Fokus", minutes, prefs.plusPackages()); v++ },
                     onLockNow = { sync.lockDevice(); v++ },
                     onUnlock = { sync.unlockDevice(); sync.stopFocus(); v++ },
-                    onLockScreen = { minutes -> sync.lockScreenForMinutes(minutes); v++ },
-                    onReleaseScreen = { sync.releaseScreenLock(); v++ },
+                    onLockScreen = { minutes -> startScreenLock(context, sync, minutes); v++ },
+                    onReleaseScreen = { releaseScreenLock(context, sync); v++ },
                     onApproveChore = { id ->
                         thread(isDaemon = true) { sync.approveChore(id) }
                         v++
@@ -302,11 +321,11 @@ fun ParentPortalScreen(
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Both devices arrive here with one area picked from the menu, so the heading is
+            // that area — never the whole word "Einstellungen" over an endless page.
             Text(
-                if (prefs.isParentDevice) settingsGroup?.let { GROUP_TITLES[it] } ?: "Einstellungen"
-                else "Eltern-Portal",
-                fontSize = if (prefs.isParentDevice) 26.sp else 34.sp,
-                fontWeight = FontWeight.Bold, color = Nova.Ink
+                settingsGroup?.let { GROUP_TITLES[it] } ?: "Einstellungen",
+                fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Nova.Ink
             )
             Spacer(Modifier.weight(1f))
             if (prefs.syncConfigured) {
@@ -629,45 +648,6 @@ fun ParentPortalScreen(
 
         }
 
-        // ---- streak: its own area, reached from its own row in the menu ----
-        if (showGroup("streak")) {
-        SectionHeader("Serie im Limit")
-        NovaCard {
-            NovaRow(
-                title = "Serie zählen",
-                subtitle = "Jeder Tag im Tageslimit zählt weiter. Bei den Stufen " +
-                    com.familylink.ios.data.StreakLogic.MILESTONES.joinToString(", ") {
-                        "${it.first} Tage +${it.second} Min"
-                    } + " gibt es die Zeit einmalig für diesen Tag dazu."
-            ) {
-                NovaSwitch(checked = prefs.streakEnabled) { prefs.streakEnabled = it; v++ }
-            }
-            if (prefs.streakEnabled) {
-                NovaRow(
-                    title = "Abzug nach einem Fehltag",
-                    subtitle = "Wird nur am Tag nach dem überschrittenen Limit abgezogen. " +
-                        "Ein Tag mit Aus-Knopf zählt nicht als Fehltag."
-                ) {
-                    Stepper(
-                        value = "${prefs.streakPenaltyMinutes} Min",
-                        onMinus = { prefs.streakPenaltyMinutes = prefs.streakPenaltyMinutes - 5; v++ },
-                        onPlus = { prefs.streakPenaltyMinutes = prefs.streakPenaltyMinutes + 5; v++ }
-                    )
-                }
-                if (!prefs.isParentDevice) {
-                    val st = prefs.streakState()
-                    NovaRow(title = "Aktuell", subtitle = "Bestwert ${st.longest} Tage") {
-                        NovaPill(
-                            "${st.current} Tage",
-                            if (st.current > 0) Nova.Success else Nova.InkMuted
-                        )
-                    }
-                }
-            }
-        }
-
-        }
-
         // ---- schedules: the reference keeps them apart from the limits ----
         if (showGroup("plaene")) {
         // ---- school time, the reference's second schedule ----
@@ -854,9 +834,76 @@ fun ParentPortalScreen(
         SectionHeader("Sperren")
         NovaCard {
             val focus = prefs.focusSession()
-            // Manual lock: no end time, stays until it is lifted.
+            val timedRunning = focus.isRunning() && focus.allowed.isEmpty()
+            val screenLeft = prefs.screenLockRemainingSeconds()
+            val canLock = !prefs.isParentDevice || prefs.syncConfigured
+
+            // Timed device lock: everything sealed but the phone, for a fixed stretch. Short
+            // lengths only and no ration — this is the everyday reaction.
+            if (timedRunning) {
+                NovaRow(
+                    title = "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}",
+                    subtitle = "Tippe zum Freigeben"
+                ) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(Nova.Success.copy(alpha = 0.15f))
+                            .clickable { sync.stopFocus(); v++ }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text("Freigeben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
+                    }
+                }
+            } else {
+                // Full width, not a trailing slot: four chips do not fit beside a title.
+                LockChipRow("Gerät sperren", "Nur Telefon und Notruf, endet von selbst") {
+                    Prefs.PARENT_LOCK_MINUTES.forEach { m ->
+                        LockChip("$m Min", null, Nova.Danger, enabled = true) {
+                            sync.lockForMinutes(m); v++
+                        }
+                    }
+                }
+            }
+            NovaDivider()
+
+            // Display lock: the screen itself goes dark and re-locks on every unlock. This is
+            // where the rationed lengths live, because it is the one that runs longest.
+            if (screenLeft > 0) {
+                NovaRow(
+                    title = "Display gesperrt — noch ${TimeFmt.hm(screenLeft)}",
+                    subtitle = "Tippe zum Aufheben"
+                ) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(Nova.Success.copy(alpha = 0.15f))
+                            .clickable { releaseScreenLock(context, sync); v++ }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text("Aufheben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
+                    }
+                }
+            } else {
+                LockChipRow("Display sperren", "Bildschirm aus, endet von selbst") {
+                    Prefs.SCREEN_LOCK_MINUTES.forEach { m ->
+                        val left = prefs.screenLocksLeft(m)
+                        val period = prefs.screenLockPeriodLabel(m)
+                        LockChip(
+                            label = if (m >= 60) "${m / 60} Std" else "$m Min",
+                            note = period?.let { if (left > 0) it else "aufgebraucht" },
+                            tint = Nova.Primary,
+                            enabled = canLock && left > 0
+                        ) {
+                            // Book it first: a refused booking must not lock.
+                            if (prefs.useScreenLock(m)) { startScreenLock(context, sync, m); v++ }
+                        }
+                    }
+                }
+            }
+            NovaDivider()
+
+            // Last, and deliberately open-ended: stays sealed until it is lifted again.
             NovaRow(
-                title = "Gerät komplett sperren",
+                title = "Sperren",
                 subtitle = if (prefs.manualLockEnabled) "Gesperrt — tippe zum Aufheben"
                 else "Ohne Zeitende. Telefon und Notruf bleiben erreichbar."
             ) {
@@ -866,39 +913,39 @@ fun ParentPortalScreen(
                     v++
                 }
             }
-            // Timed lock: nothing but phone and emergency for a fixed stretch.
+            NovaDivider()
+
+            // The child's side of locking: they can lock their own phone from their portal, and
+            // time served that way buys screen time back. This is the knob for how generous it
+            // is — and the switch that turns the whole idea off.
             NovaRow(
-                title = if (focus.isRunning() && focus.allowed.isEmpty())
-                    "Gesperrt auf Zeit — noch ${TimeFmt.hm(focus.remainingSeconds())}"
-                else "Sperren auf Zeit",
-                subtitle = "30 Min · 1 Std · 2 Std"
+                title = "Bonus fürs Weglegen",
+                subtitle = "Sperrt das Kind sein Handy selbst, bekommt es Bildschirmzeit " +
+                    "zurück — nur für Zeit, die es wirklich durchhält, und höchstens " +
+                    "${Prefs.OWN_LOCK_REWARD_MAX_PER_DAY} Min. am Tag."
             ) {
-                if (focus.isRunning() && focus.allowed.isEmpty()) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(10.dp))
-                            .background(Nova.Success.copy(alpha = 0.15f))
-                            .clickable { sync.stopFocus(); v++ }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Text("Freigeben", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Success)
-                    }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(30, 60, 120).forEach { m ->
-                            Box(
-                                Modifier.clip(RoundedCornerShape(9.dp))
-                                    .background(Nova.Danger.copy(alpha = 0.13f))
-                                    .clickable { sync.lockForMinutes(m); v++ }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    if (m >= 60) "${m / 60}h" else "${m}m",
-                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Nova.Danger
-                                )
-                            }
-                        }
-                    }
+                NovaSwitch(checked = prefs.ownLockRewardEnabled) {
+                    prefs.ownLockRewardEnabled = it; v++
                 }
+            }
+            if (prefs.ownLockRewardEnabled) {
+                NovaRow(title = "Pro durchgehaltener Stunde") {
+                    Stepper(
+                        value = "${prefs.ownLockRewardPerHour} Min",
+                        onMinus = { prefs.ownLockRewardPerHour = prefs.ownLockRewardPerHour - 5; v++ },
+                        onPlus = { prefs.ownLockRewardPerHour = prefs.ownLockRewardPerHour + 5; v++ }
+                    )
+                }
+            }
+            // Without the accessibility service (or, on Android 8, the device admin) the OS
+            // gives no app any way to switch the display off — say so instead of offering a
+            // button that quietly does nothing.
+            if (!prefs.isParentDevice && !com.familylink.ios.util.ScreenLock.available(context)) {
+                com.familylink.ios.ui.components.NovaNote(
+                    "Zum Sperren des Displays wird die Bedienungshilfe (oder auf Android 8 der " +
+                        "Geräteadministrator) benötigt. Bitte unter Berechtigungen erteilen.",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
             }
             // Focus keeps its own entry: unlike a lock it leaves chosen apps usable.
             NovaRow(
@@ -948,6 +995,72 @@ fun ParentPortalScreen(
         if (!prefs.isParentDevice) {
         }
         if (showGroup("schutz")) {
+        // Only meaningful on the phone being supervised: these two are about that device's own
+        // home screen and icon, which a parent phone has no business changing.
+        if (!prefs.isParentDevice) {
+            SectionHeader("Manipulationsschutz")
+            NovaCard {
+                val installed = LauncherGuard.isLauncherInstalled(context)
+                val isHome = LauncherGuard.isLauncherActive(context)
+                NovaRow(
+                    title = when {
+                        isHome -> "Startbildschirm ist aktiv"
+                        installed -> "Startbildschirm einrichten"
+                        else -> "Startbildschirm-App fehlt"
+                    },
+                    subtitle = when {
+                        isHome ->
+                            "Der Startbildschirm l\u00e4uft als eigene App. Wird die Kindersicherung " +
+                                "beendet, startet er sie innerhalb einer Sekunde wieder."
+                        installed ->
+                            "Android fragt, welche App der Startbildschirm sein soll \u2014 w\u00e4hle " +
+                                "dort \u201eV\u00f6lkle Start\u201c."
+                        else ->
+                            "Installiere zus\u00e4tzlich die zweite APK \u201eV\u00f6lkle Start\u201c. Sie " +
+                                "ist der Startbildschirm und h\u00e4lt den Schutz am Leben."
+                    },
+                    onClick = if (installed) {
+                        { LauncherGuard.openHomeChooser(context) }
+                    } else null
+                ) {
+                    NovaPill(
+                        if (isHome) "Aktiv" else if (installed) "Einrichten" else "Fehlt",
+                        if (isHome) Nova.Success else Nova.Warning
+                    )
+                }
+                NovaDivider()
+                NovaRow(
+                    title = "App-Symbol ausblenden",
+                    subtitle = if (isHome)
+                        "Ohne Symbol f\u00fchrt kein Langdruck mehr zu \u201eApp-Info\u201c und damit zu " +
+                            "\u201eBeenden erzwingen\u201c. Die Kindersicherung bleibt \u00fcber das " +
+                            "Schild-Symbol im Startbildschirm erreichbar."
+                    else
+                        "Erst m\u00f6glich, wenn der eigene Startbildschirm aktiv ist \u2014 sonst g\u00e4be " +
+                            "es keinen Weg mehr in die App hinein."
+                ) {
+                    NovaSwitch(checked = LauncherGuard.isIconHidden(context)) { want ->
+                        // Refused while the launcher is not the home screen; the switch simply
+                        // stays off, and the subtitle above already says why.
+                        LauncherGuard.setIconHidden(context, want)
+                        v++
+                    }
+                }
+                if (installed) {
+                    NovaDivider()
+                    NovaRow(
+                        title = "Startbildschirm einrichten",
+                        subtitle = "Assistent und Einstellungen von \u201eV\u00f6lkle Start\u201c: " +
+                            "welche Apps auf dem Startbildschirm liegen, die Leiste unten, " +
+                            "Hintergrundbild. Ohne PIN — welche Symbole wo liegen, darf das " +
+                            "Kind selbst bestimmen.",
+                        onClick = { LauncherGuard.openLauncherSettings(context) }
+                    ) {
+                        NovaPill("\u00d6ffnen", Nova.Primary)
+                    }
+                }
+            }
+        }
         SectionHeader("Verbindung")
         NovaCard {
             NovaRow(
@@ -1078,10 +1191,9 @@ fun ParentPortalScreen(
                     NovaSwitch(checked = prefs.notifyOffline) { prefs.notifyOffline = it; v++ }
                 }
                 if (!notificationsAllowed) {
-                    Text(
+                    com.familylink.ios.ui.components.NovaNote(
                         "Android erlaubt der App noch keine Benachrichtigungen. Bitte in den " +
                             "Systemeinstellungen für Völkle Link freigeben.",
-                        fontSize = 12.sp, color = Nova.Warning,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                     )
                 }
@@ -1370,7 +1482,6 @@ private fun ScopePicker(current: LimitScope, onPick: (LimitScope) -> Unit) {
 private val GROUP_TITLES = mapOf(
     "zeit" to "Zeitlimits",
     "plaene" to "Zeitpläne",
-    "streak" to "Serie im Limit",
     "apps" to "Apps",
     "sperren" to "Sperren & Fokus",
     "verwaltung" to "Verwaltung",
@@ -1486,7 +1597,6 @@ private data class MenuEntry(
 private val MENU_ENTRIES = listOf(
     MenuEntry("zeit", "Zeitlimits", "Tageslimit, Wochenlimit und Gesamtlimit", Icons.Filled.HourglassBottom),
     MenuEntry("plaene", "Zeitpläne", "Ruhezeit und Schulzeit", Icons.Filled.CalendarMonth),
-    MenuEntry("streak", "Serie im Limit", "Tage in Folge, Stufen und Abzug", Icons.Filled.LocalFireDepartment),
     MenuEntry("apps", "Apps", "Gesperrte Apps und Freigaben für heute", Icons.Filled.Apps),
     MenuEntry("sperren", "Sperren & Fokus", "Gerät sperren, auf Zeit sperren, Fokus", Icons.Filled.Lock),
     MenuEntry("verwaltung", "Verwaltung", "Kategorien, Aufgaben, Bericht, Geräte", Icons.Filled.Tune),
@@ -1501,7 +1611,12 @@ private val MENU_ENTRIES = listOf(
  * single endless settings list, and neither do we.
  */
 @Composable
-private fun SettingsList(onPick: (String) -> Unit) {
+private fun SettingsList(
+    onPick: (String) -> Unit,
+    title: String = "Einstellungen",
+    entries: List<MenuEntry> = MENU_ENTRIES,
+    onClose: (() -> Unit)? = null
+) {
     Column(
         Modifier.fillMaxSize()
             .background(Nova.Canvas)
@@ -1509,10 +1624,10 @@ private fun SettingsList(onPick: (String) -> Unit) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("Einstellungen", fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
+        Text(title, fontSize = 30.sp, fontWeight = FontWeight.Normal, color = Nova.Ink)
         Spacer(Modifier.height(16.dp))
         NovaCard {
-            MENU_ENTRIES.forEachIndexed { i, e ->
+            entries.forEachIndexed { i, e ->
                 if (i > 0) NovaDivider()
                 // No chevron: the reference's lists carry the glyph, the title and the line
                 // beneath it, and nothing on the right at all.
@@ -1524,9 +1639,23 @@ private fun SettingsList(onPick: (String) -> Unit) {
                 )
             }
         }
+        // The supervised phone has no bottom bar to leave by, so the way out is a row.
+        if (onClose != null) {
+            Spacer(Modifier.height(16.dp))
+            NovaCard {
+                NovaRow(
+                    title = "Zurück zum Kinder-Portal",
+                    icon = Icons.Filled.ChevronRight,
+                    onClick = onClose
+                )
+            }
+        }
         Spacer(Modifier.height(100.dp))
     }
 }
+
+/** Areas that only make sense on the parent's own phone. */
+private val PARENT_DEVICE_ONLY_GROUPS = setOf("meldungen")
 /**
  * The parent's start page.
  *
@@ -1551,6 +1680,8 @@ private fun ParentDashboard(
     onGrant: (Int, Boolean) -> Unit,
     onDecideRequest: (TimeRequest, Boolean) -> Unit,
     onLockFor: (Int) -> Unit,
+    /** Start a focus session of this length: the allowed apps stay usable. */
+    onFocusFor: (Int) -> Unit,
     onLockNow: () -> Unit,
     onUnlock: () -> Unit,
     onLockScreen: (Int) -> Unit,
@@ -1874,6 +2005,7 @@ private fun ParentDashboard(
             onDismiss = { lockSheet = false },
             onLockNow = { onLockNow(); lockSheet = false },
             onLockFor = { onLockFor(it); lockSheet = false },
+            onFocusFor = { onFocusFor(it); lockSheet = false },
             onLockScreen = { onLockScreen(it); lockSheet = false },
             onUnlock = { onUnlock(); lockSheet = false },
             onReleaseScreen = { onReleaseScreen(); lockSheet = false }
@@ -1991,6 +2123,93 @@ private fun BonusSheet(
     }
 }
 
+/**
+ * Start a timed display lock.
+ *
+ * On the parent's phone this is only a rule that travels to the child with the next config
+ * push. On the supervised phone itself — the portal is reachable there with the PIN — the
+ * screen has to go off now rather than on the next monitor tick, so it is locked directly and
+ * the monitor is nudged to take over keeping it locked.
+ */
+private fun startScreenLock(context: android.content.Context, sync: SyncManager, minutes: Int) {
+    sync.lockScreenForMinutes(minutes)
+    if (!Prefs.get(context).isParentDevice) {
+        com.familylink.ios.util.ScreenLock.lockNow(context)
+        com.familylink.ios.service.MonitorService.recheck(context)
+    }
+}
+
+private fun releaseScreenLock(context: android.content.Context, sync: SyncManager) {
+    sync.releaseScreenLock()
+    if (!Prefs.get(context).isParentDevice) {
+        com.familylink.ios.service.MonitorService.recheck(context)
+    }
+}
+
+/**
+ * One chip in the sheet's two option rows.
+ *
+ * [note] carries what the choice costs — the remaining allowance for a rationed lock — so the
+ * price is visible before the tap rather than in a refusal afterwards. A spent chip stays on
+ * screen, greyed and inert, because a row that loses buttons as the week goes on is harder to
+ * read than one whose counters simply reach nought.
+ */
+@Composable
+private fun LockChip(
+    label: String,
+    note: String?,
+    tint: Color,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val shade = if (enabled) tint else Nova.InkFaint
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(shade.copy(alpha = if (enabled) 0.12f else 0.07f))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = shade)
+        if (note != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(note, fontSize = 11.sp, color = shade.copy(alpha = 0.85f))
+        }
+    }
+}
+
+/**
+ * A labelled row of chips, used for the focus lengths and both kinds of lock.
+ *
+ * The chip row scrolls sideways rather than squeezing: four chips that each carry a counter do
+ * not fit across a narrow phone, and a clipped last option is worse than one the parent swipes
+ * to. The label keeps its padding while the row itself runs to the card's edge, so a scrollable
+ * row visibly continues instead of ending in whitespace.
+ */
+@Composable
+private fun LockChipRow(title: String, subtitle: String, content: @Composable RowScope.() -> Unit) {
+    Column(Modifier.padding(vertical = 12.dp)) {
+        Text(
+            title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            subtitle, fontSize = 13.sp, color = Nova.InkMuted,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = content
+        )
+    }
+}
+
 /** Everything about locking, in one sheet, so the card itself stays a single button. */
 @Composable
 private fun LockSheet(
@@ -2000,10 +2219,13 @@ private fun LockSheet(
     onDismiss: () -> Unit,
     onLockNow: () -> Unit,
     onLockFor: (Int) -> Unit,
+    onFocusFor: (Int) -> Unit,
     onLockScreen: (Int) -> Unit,
     onUnlock: () -> Unit,
     onReleaseScreen: () -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = remember { Prefs.get(context) }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Box(
             Modifier.fillMaxWidth()
@@ -2012,7 +2234,7 @@ private fun LockSheet(
         ) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(
-                    "Gerät sperren",
+                    "Sperren & Fokus",
                     fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Nova.Ink,
                     modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 6.dp)
                 )
@@ -2025,29 +2247,26 @@ private fun LockSheet(
                     )
                     NovaDivider()
                 }
-                if (!lockedNow) {
-                    NovaRow(
-                        title = "Jetzt sperren",
-                        subtitle = "Bleibt gesperrt, bis du es aufhebst",
-                        icon = Icons.Filled.Lock,
-                        onClick = onLockNow
-                    )
-                    NovaDivider()
+
+                // Focus: the allowed apps stay usable, so these are free to reach for.
+                LockChipRow("Fokus", "Nur zugelassene Apps, endet von selbst") {
+                    listOf(15 to "15 Min", 30 to "30 Min", 60 to "1 Std").forEach { (m, label) ->
+                        LockChip(label, null, Nova.Focus, enabled = true) { onFocusFor(m) }
+                    }
                 }
-                NovaRow(
-                    title = "Für 30 Minuten",
-                    subtitle = "Endet von selbst",
-                    icon = Icons.Filled.HourglassBottom,
-                    onClick = { onLockFor(30) }
-                )
                 NovaDivider()
-                NovaRow(
-                    title = "Für 60 Minuten",
-                    subtitle = "Endet von selbst",
-                    icon = Icons.Filled.HourglassBottom,
-                    onClick = { onLockFor(60) }
-                )
+
+                // Timed device lock: everything sealed but the phone. Short lengths, no ration —
+                // this is the everyday reaction, and the open-ended lock below covers the rest.
+                LockChipRow("Gerät sperren", "Nur Telefon und Notruf, endet von selbst") {
+                    Prefs.PARENT_LOCK_MINUTES.forEach { m ->
+                        LockChip("$m Min", null, Nova.Danger, enabled = true) { onLockFor(m) }
+                    }
+                }
                 NovaDivider()
+
+                // Display lock: the screen itself goes dark. Runs longest, so this is where the
+                // rationed lengths live; the booking happens here so a refused one never starts.
                 if (screenLockLeft > 0) {
                     NovaRow(
                         title = "Display-Sperre aufheben",
@@ -2055,12 +2274,33 @@ private fun LockSheet(
                         icon = Icons.Filled.PhoneAndroid,
                         onClick = onReleaseScreen
                     )
+                    NovaDivider()
                 } else {
+                    LockChipRow("Display sperren", "Bildschirm aus, endet von selbst") {
+                        Prefs.SCREEN_LOCK_MINUTES.forEach { m ->
+                            val left = prefs.screenLocksLeft(m)
+                            val period = prefs.screenLockPeriodLabel(m)
+                            LockChip(
+                                label = if (m >= 60) "${m / 60} Std" else "$m Min",
+                                note = period?.let { if (left > 0) it else "aufgebraucht" },
+                                tint = Nova.Primary,
+                                enabled = left > 0
+                            ) {
+                                if (prefs.useScreenLock(m)) onLockScreen(m)
+                            }
+                        }
+                    }
+                    NovaDivider()
+                }
+
+                // Last, and deliberately open-ended: press it and the phone stays sealed until
+                // the parent lifts it again. No length, no allowance.
+                if (!lockedNow) {
                     NovaRow(
-                        title = "Display sperren",
-                        subtitle = "Bildschirm aus, maximal ${Prefs.MAX_SCREEN_LOCK_MIN} Minuten",
-                        icon = Icons.Filled.PhoneAndroid,
-                        onClick = { onLockScreen(Prefs.MAX_SCREEN_LOCK_MIN) }
+                        title = "Sperren",
+                        subtitle = "Bleibt gesperrt, bis du es aufhebst",
+                        icon = Icons.Filled.Lock,
+                        onClick = onLockNow
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -2126,7 +2366,7 @@ private fun ProgressBar(fraction: Float) {
             .fillMaxWidth()
             .height(8.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(Color(0x22000000))
+            .background(Nova.InkFaint.copy(alpha = 0.25f))
     ) {
         Box(
             Modifier
@@ -2152,7 +2392,7 @@ private fun StepBtn(label: String, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0x11000000))
+            .background(Nova.Fill)
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center

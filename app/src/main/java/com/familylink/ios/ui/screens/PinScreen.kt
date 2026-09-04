@@ -10,10 +10,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.familylink.ios.data.Prefs
 import com.familylink.ios.ui.components.PinPad
+import com.familylink.ios.ui.theme.Nova
 
 enum class PinMode { VERIFY, SET }
 
@@ -73,7 +73,7 @@ fun PinScreen(
     }
 
     Box(
-        Modifier.fillMaxSize().background(Color(0xFFF2F2F7)),
+        Modifier.fillMaxSize().background(Nova.Canvas),
         contentAlignment = Alignment.Center
     ) {
         PinPad(

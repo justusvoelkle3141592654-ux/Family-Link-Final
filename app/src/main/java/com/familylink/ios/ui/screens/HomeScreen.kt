@@ -70,7 +70,7 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
         Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Nova.Canvas))
+                Brush.verticalGradient(listOf(Nova.Surface, Nova.Canvas))
             )
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -89,7 +89,7 @@ fun HomeScreen(onOpenParentPortal: () -> Unit, onExtendTime: () -> Unit) {
                 val arcSize = Size(size.width - stroke, size.height - stroke)
                 val topLeft = Offset(inset, inset)
                 drawArc(
-                    color = Color(0x14000000),
+                    color = Nova.Line,
                     startAngle = 0f, sweepAngle = 360f, useCenter = false,
                     topLeft = topLeft, size = arcSize, style = Stroke(stroke, cap = StrokeCap.Round)
                 )

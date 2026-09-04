@@ -35,31 +35,67 @@ object UsageStatsTracker {
      * Foreground seconds per package since midnight, aggregated from foreground/background
      * events so the numbers are precise.
      */
+    // ---- incremental scan ---------------------------------------------------
+    //
+    // Re-reading every event since midnight on every tick is fine at one tick per 1.5s and
+    // hopeless at four per second — and four per second is what "the app closes the moment the
+    // time is up" actually requires. So the scan is kept: closed sessions are added up once,
+    // and each later call reads only the events that arrived since.
+    //
+    // Only the open sessions are recomputed each time, because their length depends on the
+    // clock rather than on any event. That is the part that has to be exact.
+
+    private val closedMs = HashMap<String, Long>()
+    private val openSince = HashMap<String, Long>()
+    private var scannedTo = 0L
+    private var scannedDay = 0L
+
+    /**
+     * Foreground seconds per package since midnight, aggregated from foreground/background
+     * events so the numbers are precise.
+     *
+     * Safe to call several times a second: the events are only read once each.
+     */
+    @Synchronized
     fun todayUsageSeconds(context: Context): Map<String, Int> {
         val usm = manager(context) ?: return emptyMap()
         val start = midnightMillis()
         val now = System.currentTimeMillis()
 
-        val events = usm.queryEvents(start, now)
-        val lastForegroundAt = HashMap<String, Long>()
-        val totalsMs = HashMap<String, Long>()
-        val e = UsageEvents.Event()
+        // A new day, or the first call: start over. Anything else would carry yesterday's
+        // minutes into today, which is the one error a day limit must never make.
+        if (scannedDay != start) {
+            closedMs.clear()
+            openSince.clear()
+            scannedDay = start
+            scannedTo = start
+        }
 
-        while (events.hasNextEvent()) {
-            events.getNextEvent(e)
-            val pkg = e.packageName ?: continue
-            when (e.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> lastForegroundAt[pkg] = e.timeStamp
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    val from = lastForegroundAt.remove(pkg)
-                    if (from != null && e.timeStamp > from) {
-                        totalsMs[pkg] = (totalsMs[pkg] ?: 0L) + (e.timeStamp - from)
+        if (now > scannedTo) {
+            // One millisecond of overlap rather than none: an event exactly on the boundary
+            // would otherwise fall between two scans and its time would simply vanish.
+            val events = usm.queryEvents((scannedTo - 1).coerceAtLeast(start), now)
+            val e = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                if (e.timeStamp < scannedTo) continue
+                val pkg = e.packageName ?: continue
+                when (e.eventType) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> openSince[pkg] = e.timeStamp
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        val from = openSince.remove(pkg)
+                        if (from != null && e.timeStamp > from) {
+                            closedMs[pkg] = (closedMs[pkg] ?: 0L) + (e.timeStamp - from)
+                        }
                     }
                 }
             }
+            scannedTo = now
         }
+
+        val totalsMs = HashMap<String, Long>(closedMs)
         // Apps still in the foreground right now (no closing event yet).
-        for ((pkg, from) in lastForegroundAt) {
+        for ((pkg, from) in openSince) {
             if (now > from) totalsMs[pkg] = (totalsMs[pkg] ?: 0L) + (now - from)
         }
 

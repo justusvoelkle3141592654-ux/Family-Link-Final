@@ -27,6 +27,15 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!--
+      The channel to the separate launcher app. Signature level: only an app signed with the
+      same key may read it, which is why both modules share one keystore. No other app on the
+      phone can see what this one is enforcing.
+    -->
+    <permission
+        android:name="com.familylink.ios.permission.LAUNCHER_BRIDGE"
+        android:protectionLevel="signature" />
+
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -36,17 +45,37 @@
         android:theme="@style/Theme.FamilyLinkIOS"
         tools:targetApi="34">
 
+        <!--
+          Not a home screen. Making this activity the launcher was the first attempt at closing
+          the restart gap, and it worked in the wrong way: pressing home opened the parent
+          portal, which is a settings screen, not somewhere to live. The home screen is now the
+          separate launcher app, which also survives this one being force-stopped.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-            android:theme="@style/Theme.FamilyLinkIOS">
+            android:theme="@style/Theme.FamilyLinkIOS" />
+
+        <!--
+          The launcher icon lives on an alias rather than on the activity itself, so it can be
+          switched off without disabling the activity every other entry point needs. Removing
+          the icon removes the long-press route to "App-Info" and its "Beenden erzwingen",
+          which is the one action that stops the guard outright. Only offered once the app is
+          the home screen, so it can never leave the parent without a way in.
+        -->
+        <activity-alias
+            android:name=".Launcher"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <!-- Block list screen (Listen-Ansicht). Not a screen lock: leavable, single task. -->
         <activity
@@ -55,6 +84,23 @@
             android:launchMode="singleTask"
             android:excludeFromRecents="true"
             android:taskAffinity=".block"
+            android:resizeableActivity="false"
+            android:supportsPictureInPicture="false"
+            android:showOnLockScreen="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:theme="@style/Theme.FamilyLinkIOS" />
+
+        <!--
+          The PIN in front of the system settings, raised by the accessibility service.
+          Its own task and kept out of Recents: it must not become a card the child can swipe
+          back to, and it must not drag the portal up behind it.
+        -->
+        <activity
+            android:name=".PinVerificationActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:taskAffinity=".pinguard"
             android:resizeableActivity="false"
             android:supportsPictureInPicture="false"
             android:showOnLockScreen="true"
@@ -111,14 +157,44 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!--
+          directBootAware: without it this receiver only wakes once the user has unlocked, which
+          is exactly the gap someone used to slip into Settings through. Direct boot delivers
+          LOCKED_BOOT_COMPLETED before the lock screen is even answered.
+        -->
         <receiver
             android:name=".service.BootReceiver"
+            android:directBootAware="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <!--
+                  The launcher's revive call. This is what brings the guard back after a force
+                  stop: a stopped app receives nothing on its own, but the launcher is a running
+                  process and can wake it.
+
+                  Deliberately NOT behind the signature permission, unlike the bridge: a
+                  permission here would apply to every action in this filter, and the system
+                  sends BOOT_COMPLETED under the platform signature, not ours — it would be
+                  turned away and the guard would never start after a restart. Leaving the
+                  action open costs nothing, because the only thing it can do is start the
+                  protection, which is the opposite of a bypass.
+                -->
+                <action android:name="com.familylink.ios.RESTART" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Read-only state for the launcher: which packages are locked right now, and whether
+          everything is sealed. The launcher runs in its own process precisely so that force
+          stopping this app cannot take the home screen with it.
+        -->
+        <provider
+            android:name=".sync.LauncherBridge"
+            android:authorities="com.familylink.ios.launcherbridge"
+            android:exported="true"
+            android:readPermission="com.familylink.ios.permission.LAUNCHER_BRIDGE" />
 
     </application>
 </manifest>

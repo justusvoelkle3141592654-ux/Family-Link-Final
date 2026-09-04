@@ -35,6 +35,9 @@ class BlockActivity : ComponentActivity() {
         val bedtime = intent.getBooleanExtra(EXTRA_BEDTIME, false)
         val hardLock = intent.getBooleanExtra(EXTRA_HARD_LOCK, false)
         val sealedLock = intent.getBooleanExtra(EXTRA_SEALED, false)
+        // A guard was switched off. The overlay permission may be the one that is gone, which
+        // is why this screen exists at all — so it carries the repair UI itself.
+        val repair = intent.getBooleanExtra(EXTRA_REPAIR, false)
 
         // Device owner only: pin this screen so HOME and Recents stop working during a hard
         // lock. This is the piece that makes bedtime / day-limit genuinely unescapable.
@@ -52,8 +55,15 @@ class BlockActivity : ComponentActivity() {
                 if (hardLock || sealedLock) BackHandler(enabled = true) { /* swallow */ }
 
                 var screen by remember { mutableStateOf("block") }
-                when (screen) {
-                    "extend" -> ExtendTimeScreen(onClose = { screen = "block" })
+                when {
+                    repair -> com.familylink.ios.ui.screens.LockOverlayContent(
+                        title = title,
+                        detail = detail,
+                        bedtime = false,
+                        repair = true,
+                        onOpenPortal = { openPortal() }
+                    )
+                    screen == "extend" -> ExtendTimeScreen(onClose = { screen = "block" })
                     else -> BlockListScreen(
                         reasonTitle = title,
                         reasonDetail = detail,
@@ -110,6 +120,7 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_BEDTIME = "bedtime"
         const val EXTRA_HARD_LOCK = "hard_lock"
         const val EXTRA_SEALED = "sealed"
+        const val EXTRA_REPAIR = "repair"
 
         fun launch(
             context: Context,
@@ -117,7 +128,8 @@ class BlockActivity : ComponentActivity() {
             detail: String,
             bedtime: Boolean,
             hardLock: Boolean,
-            sealed: Boolean = false
+            sealed: Boolean = false,
+            repair: Boolean = false
         ) {
             val i = Intent(context, BlockActivity::class.java).apply {
                 putExtra(EXTRA_TITLE, title)
@@ -125,6 +137,7 @@ class BlockActivity : ComponentActivity() {
                 putExtra(EXTRA_BEDTIME, bedtime)
                 putExtra(EXTRA_HARD_LOCK, hardLock)
                 putExtra(EXTRA_SEALED, sealed)
+                putExtra(EXTRA_REPAIR, repair)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or

@@ -50,6 +50,27 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         private const val K_WEEK_TOTAL = "week_total_sec"
         // streak: days in a row inside the daily budget
         private const val K_STREAK_ON = "streak_enabled"
+
+        // The child's allowance for long self-started focus sessions, per calendar week.
+        private const val K_OWN_LOCK_WEEK = "own_lock_week"
+        private const val K_FOCUS_USED_60 = "focus_used_60"
+        private const val K_FOCUS_USED_120 = "focus_used_120"
+
+        // The allowance for the long display locks. Short ones are free; the long ones are
+        // rationed so reaching for them stays a decision. The hour rolls over daily, the
+        // six-hour lock weekly, so each is counted against the stretch it is meant to shape.
+        private const val K_SCREEN_LOCK_DAY = "screen_lock_day"
+        private const val K_SCREEN_LOCK_WEEK = "screen_lock_week"
+        private const val K_SCREEN_LOCK_USED_60 = "screen_lock_used_60"
+        private const val K_SCREEN_LOCK_USED_360 = "screen_lock_used_360"
+
+        // The reward for keeping a self-started lock running: what is owed, and what has
+        // already been paid out today.
+        private const val K_OWN_LOCK_REWARD_FROM = "own_lock_reward_from"
+        private const val K_OWN_LOCK_REWARD_TO = "own_lock_reward_to"
+        private const val K_OWN_LOCK_EARNED_DAY = "own_lock_earned_day"
+        private const val K_OWN_LOCK_EARNED_MIN = "own_lock_earned_min"
+        private const val K_OWN_LOCK_REWARD_PAID = "own_lock_reward_paid"
         private const val K_STREAK_PENALTY = "streak_penalty_min"
         private const val K_STREAK_CUR = "streak_current"
         private const val K_STREAK_BEST = "streak_longest"
@@ -78,8 +99,57 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         const val MAX_WEEK_HARDCAP_MIN = 35 * 60
         const val MIN_WEEK_MIN = 60
 
-        /** Hard ceiling on the manual screen lock, so it can never strand the child. */
-        const val MAX_SCREEN_LOCK_MIN = 15
+        /**
+         * Hard ceiling on any manual screen lock. A day, because the child's own menu offers a
+         * lock for the rest of the day — nothing may ever run past the next midnight.
+         */
+        const val MAX_SCREEN_LOCK_MIN = 24 * 60
+
+        /**
+         * How often per week the child may start a long focus session. Locking the display is
+         * free and unrationed — it costs them screen time, so there is nothing to guard against
+         * — but a focus session hides apps and is the one the parent PIN has to end, so the
+         * long ones stay a decision rather than a habit.
+         */
+        const val FOCUS_60_PER_WEEK = 3
+        const val FOCUS_120_PER_WEEK = 1
+
+        /**
+         * Timed device lock: everything is sealed but the phone and the emergency call. Short
+         * lengths only and no ration at all — this is the ordinary reaction, and the parent can
+         * always reach for the open-ended lock instead.
+         */
+        val PARENT_LOCK_MINUTES = listOf(5, 10, 15, 30)
+
+        /**
+         * Display lock: the screen itself goes dark. Runs longer than the device lock, so the
+         * long lengths are the ones that carry a ration.
+         */
+        val SCREEN_LOCK_MINUTES = listOf(15, 30, 60, 360)
+
+        /** Short display locks are unlimited; the hour is daily, the six-hour lock weekly. */
+        const val SCREEN_LOCK_60_PER_DAY = 1
+        const val SCREEN_LOCK_360_PER_WEEK = 1
+
+        /** Bounds for the duration the child types in themselves. */
+        const val MIN_OWN_LOCK_MIN = 1
+
+        /**
+         * How long the phone is sealed after every boot and every unlock that follows one.
+         *
+         * The gap right after a restart was the way around everything: the guard needs a moment
+         * to come up, and in that moment Settings was reachable and the permissions could be
+         * switched off one by one. Nothing works during this window — not the launcher, not an
+         * app, not Settings — so there is no moment to use.
+         */
+        const val BOOT_LOCK_MS = 30_000L
+
+        /** Bonus minutes earned per full hour the child keeps their own lock running. */
+        const val DEFAULT_OWN_LOCK_REWARD_PER_HOUR = 10
+        const val MAX_OWN_LOCK_REWARD_PER_HOUR = 60
+
+        /** Ceiling on what self-locking can earn in one day, so it cannot be farmed. */
+        const val OWN_LOCK_REWARD_MAX_PER_DAY = 60
 
         /** How long the phone may be out of touch with the family before it seals. */
         const val DEFAULT_OFFLINE_LOCK_MIN = 60
@@ -502,6 +572,19 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getStringSet("suspended_pkgs", emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet("suspended_pkgs", HashSet(v)).apply()
 
+    /** Parent side: the outage already announced, so one outage rings once. */
+    var notifiedGuardAt: Long
+        get() = sp.getLong("notified_guard_at", 0L)
+        set(value) = sp.edit().putLong("notified_guard_at", value).apply()
+
+    /**
+     * When the guard was found switched off, or 0 while it is running. Persisted so the parent
+     * still learns about an outage that started while the two phones could not reach each other.
+     */
+    var guardMissingSince: Long
+        get() = sp.getLong("guard_missing_since", 0L)
+        set(value) = sp.edit().putLong("guard_missing_since", value).apply()
+
     // ---- Escape window from a sealed lock ----------------------------------
     //
     // The lock covers everything, but the phone and the parent entry have to stay usable. Rather
@@ -543,18 +626,278 @@ class Prefs private constructor(private val sp: SharedPreferences) {
         get() = sp.getLong("screen_lock_until", 0)
         set(v) = sp.edit().putLong("screen_lock_until", v).apply()
 
-    fun screenLockActive(now: Long = System.currentTimeMillis()): Boolean = now < screenLockUntil
+    /**
+     * The lock the child started on themselves, kept apart from [screenLockUntil] on purpose:
+     * that one is the parent's rule and travels with every config push, so a shared field would
+     * see the child's own lock wiped by the next sync.
+     */
+    var ownLockUntil: Long
+        get() = sp.getLong("own_lock_until", 0)
+        set(v) = sp.edit().putLong("own_lock_until", v).apply()
+
+    /**
+     * A sealed lock is one nobody lifts — not the child who started it, not the parent. Only the
+     * clock ends it, which is the whole point of the "rest of the day" option: a promise you
+     * cannot talk yourself out of ten minutes later.
+     *
+     * Reads false as soon as the lock expires, so the flag can never outlive its lock.
+     */
+    var ownLockSealed: Boolean
+        get() = sp.getBoolean("own_lock_sealed", false) &&
+            System.currentTimeMillis() < ownLockUntil
+        set(v) = sp.edit().putBoolean("own_lock_sealed", v).apply()
+
+    fun screenLockActive(now: Long = System.currentTimeMillis()): Boolean =
+        now < screenLockUntil || now < ownLockUntil
 
     fun screenLockRemainingSeconds(now: Long = System.currentTimeMillis()): Int =
-        ((screenLockUntil - now) / 1000L).toInt().coerceAtLeast(0)
+        ((maxOf(screenLockUntil, ownLockUntil) - now) / 1000L).toInt().coerceAtLeast(0)
 
-    /** Lock the display for [minutes], clamped to the maximum. */
+    /** Minutes from now until the next midnight — the length of a "rest of the day" lock. */
+    fun minutesUntilMidnight(): Int {
+        val c = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return ((c.timeInMillis - System.currentTimeMillis()) / 60_000L).toInt().coerceAtLeast(1)
+    }
+
+    // ---- The window right after a restart ---------------------------------
+    //
+    // Measured against the time since boot and nothing else. An earlier version also armed this
+    // from a broadcast, including ACTION_USER_UNLOCKED — which fires on every single unlock, so
+    // the phone sealed itself for half a minute every time it was picked up. The clock below
+    // cannot be re-armed by anything the child does, needs no storage, and survives the app
+    // being killed, which is everything the seal actually needed.
+
+    fun bootLockActive(): Boolean =
+        android.os.SystemClock.elapsedRealtime() < BOOT_LOCK_MS
+
+    /** Seconds left on the post-restart seal, for the countdown on the lock screen. */
+    fun bootLockRemainingSeconds(): Int =
+        ((BOOT_LOCK_MS - android.os.SystemClock.elapsedRealtime()) / 1000L)
+            .toInt().coerceAtLeast(0)
+
+    /** Lock the display for [minutes] on the parent's behalf, clamped to the maximum. */
     fun startScreenLock(minutes: Int) {
         val m = minutes.coerceIn(1, MAX_SCREEN_LOCK_MIN)
         screenLockUntil = System.currentTimeMillis() + m * 60_000L
     }
 
-    fun stopScreenLock() { screenLockUntil = 0 }
+    /** Start a fresh week's allowance the moment the calendar week turns over. */
+    private fun ensureFocusWeek() {
+        val week = weekMarker()
+        if (sp.getInt(K_OWN_LOCK_WEEK, 0) == week) return
+        sp.edit()
+            .putInt(K_OWN_LOCK_WEEK, week)
+            .putInt(K_FOCUS_USED_60, 0)
+            .putInt(K_FOCUS_USED_120, 0)
+            .apply()
+    }
+
+    private fun focusQuotaKey(minutes: Int): String? = when {
+        minutes >= 120 -> K_FOCUS_USED_120
+        minutes >= 60 -> K_FOCUS_USED_60
+        else -> null
+    }
+
+    /**
+     * How many self-started focus sessions of this length are left this week. The short ones are
+     * not rationed, so they always report [Int.MAX_VALUE].
+     */
+    fun focusSessionsLeft(minutes: Int): Int {
+        val key = focusQuotaKey(minutes) ?: return Int.MAX_VALUE
+        ensureFocusWeek()
+        val cap = if (key == K_FOCUS_USED_120) FOCUS_120_PER_WEEK else FOCUS_60_PER_WEEK
+        return (cap - sp.getInt(key, 0)).coerceAtLeast(0)
+    }
+
+    /** Book one long focus session against this week's allowance. */
+    fun useFocusSession(minutes: Int): Boolean {
+        if (focusSessionsLeft(minutes) <= 0) return false
+        focusQuotaKey(minutes)?.let { key ->
+            sp.edit().putInt(key, sp.getInt(key, 0) + 1).apply()
+        }
+        return true
+    }
+
+    // ---- The display lock, and what it costs ------------------------------
+    //
+    // Only the long display locks are counted. A quarter or half hour stays unlimited, because
+    // those are the ones meant to be reached for; an hour is allowed once a day and six hours
+    // once a week, so neither can quietly become the default answer. The plain device lock and
+    // the open-ended one are deliberately free: they are the ordinary reaction.
+
+    private fun screenLockQuotaKey(minutes: Int): String? = when {
+        minutes >= 360 -> K_SCREEN_LOCK_USED_360
+        minutes >= 60 -> K_SCREEN_LOCK_USED_60
+        else -> null
+    }
+
+    private fun screenLockCap(key: String): Int =
+        if (key == K_SCREEN_LOCK_USED_360) SCREEN_LOCK_360_PER_WEEK else SCREEN_LOCK_60_PER_DAY
+
+    /**
+     * Roll each allowance over on its own schedule: the hour with the day, the six-hour lock
+     * with the calendar week. Kept in one call so every read of a counter refreshes both.
+     */
+    private fun ensureScreenLockPeriod() {
+        val day = dayMarker()
+        if (sp.getInt(K_SCREEN_LOCK_DAY, 0) != day) {
+            sp.edit().putInt(K_SCREEN_LOCK_DAY, day).putInt(K_SCREEN_LOCK_USED_60, 0).apply()
+        }
+        val week = weekMarker()
+        if (sp.getInt(K_SCREEN_LOCK_WEEK, 0) != week) {
+            sp.edit().putInt(K_SCREEN_LOCK_WEEK, week).putInt(K_SCREEN_LOCK_USED_360, 0).apply()
+        }
+    }
+
+    /**
+     * How many display locks of this length are left in the current period — today for the
+     * hour, this week for the six-hour one. Short lengths are not rationed and report
+     * [Int.MAX_VALUE].
+     */
+    fun screenLocksLeft(minutes: Int): Int {
+        val key = screenLockQuotaKey(minutes) ?: return Int.MAX_VALUE
+        ensureScreenLockPeriod()
+        return (screenLockCap(key) - sp.getInt(key, 0)).coerceAtLeast(0)
+    }
+
+    /** How the counter reads under a chip: "1×/Tag" or "1×/Woche"; null when unlimited. */
+    fun screenLockPeriodLabel(minutes: Int): String? = when (screenLockQuotaKey(minutes)) {
+        K_SCREEN_LOCK_USED_360 -> "1×/Woche"
+        K_SCREEN_LOCK_USED_60 -> "1×/Tag"
+        else -> null
+    }
+
+    /**
+     * Book one display lock against the allowance for its length.
+     *
+     * @return false when the allowance for this length is used up — the caller must then not
+     *         start the lock.
+     */
+    fun useScreenLock(minutes: Int): Boolean {
+        if (screenLocksLeft(minutes) <= 0) return false
+        screenLockQuotaKey(minutes)?.let { key ->
+            sp.edit().putInt(key, sp.getInt(key, 0) + 1).apply()
+        }
+        return true
+    }
+
+    /**
+     * The child locking their own phone. Any length between [MIN_OWN_LOCK_MIN] and the maximum,
+     * as often as they like — the lock costs them screen time, so nothing needs rationing here.
+     *
+     * A sealed lock can only be extended, never cut short — not even by starting a shorter one.
+     *
+     * @return false when a sealed lock is already running longer than the one asked for.
+     */
+    fun startOwnLock(minutes: Int, sealed: Boolean = false): Boolean {
+        val m = minutes.coerceIn(MIN_OWN_LOCK_MIN, MAX_SCREEN_LOCK_MIN)
+        val now = System.currentTimeMillis()
+        val until = now + m * 60_000L
+        if (ownLockSealed && until <= ownLockUntil) return false
+
+        // Settle whatever an earlier lock already earned before this one overwrites the window.
+        settleOwnLockReward()
+        ownLockUntil = until
+        ownLockSealed = sealed
+        sp.edit()
+            .putLong(K_OWN_LOCK_REWARD_FROM, now)
+            .putLong(K_OWN_LOCK_REWARD_TO, until)
+            .apply()
+        return true
+    }
+
+    /**
+     * Lift every lock that may be lifted. The parent's own always goes; the child's goes too
+     * unless it was sealed, which is the one lock nothing but time ends.
+     *
+     * @return true if nothing is left running.
+     */
+    fun stopScreenLock(): Boolean {
+        screenLockUntil = 0
+        if (ownLockSealed) return false
+        ownLockUntil = 0
+        ownLockSealed = false
+        // Ending early still pays for the time actually served.
+        settleOwnLockReward()
+        return true
+    }
+
+    // ---- Reward for putting the phone away -------------------------------
+    //
+    // Locking the phone yourself buys screen time back: every full hour served is worth
+    // [ownLockRewardPerHour] bonus minutes, capped per day so it cannot be farmed. It is paid
+    // for time actually served, not time promised — a lock the parent lifts after ten minutes
+    // pays for ten minutes, and starting a six-hour lock earns nothing until it has run.
+
+    var ownLockRewardEnabled: Boolean
+        get() = sp.getBoolean("own_lock_reward_on", true)
+        set(v) = sp.edit().putBoolean("own_lock_reward_on", v).apply()
+
+    var ownLockRewardPerHour: Int
+        get() = sp.getInt("own_lock_reward_per_hour", DEFAULT_OWN_LOCK_REWARD_PER_HOUR)
+        set(v) = sp.edit()
+            .putInt("own_lock_reward_per_hour", v.coerceIn(0, MAX_OWN_LOCK_REWARD_PER_HOUR))
+            .apply()
+
+    /** Bonus minutes this reward has already paid out today. */
+    fun ownLockEarnedToday(): Int {
+        if (sp.getInt(K_OWN_LOCK_EARNED_DAY, -1) != dayMarker()) return 0
+        return sp.getInt(K_OWN_LOCK_EARNED_MIN, 0)
+    }
+
+    /**
+     * Pay out what the running or just-finished self-lock has earned so far, and remember the
+     * point it was paid up to. Safe to call as often as anything likes — it only ever credits
+     * time that has actually passed, and never twice.
+     *
+     * @return the minutes credited by this call.
+     */
+    fun settleOwnLockReward(): Int {
+        val from = sp.getLong(K_OWN_LOCK_REWARD_FROM, 0)
+        val to = sp.getLong(K_OWN_LOCK_REWARD_TO, 0)
+        if (from <= 0 || to <= from) return 0
+
+        val now = System.currentTimeMillis()
+        // A lock the parent lifted stops earning at the moment it stopped running.
+        val servedUntil = minOf(now, to, maxOf(ownLockUntil, from))
+        val servedMinutes = ((servedUntil - from) / 60_000L).toInt()
+        val finished = now >= to || !screenLockActive(now)
+
+        if (!ownLockRewardEnabled) {
+            if (finished) clearOwnLockRewardWindow()
+            return 0
+        }
+
+        val due = servedMinutes * ownLockRewardPerHour / 60
+        val alreadyPaid = ownLockEarnedToday()
+        val room = (OWN_LOCK_REWARD_MAX_PER_DAY - alreadyPaid).coerceAtLeast(0)
+        val payable = (due - sp.getInt(K_OWN_LOCK_REWARD_PAID, 0)).coerceIn(0, room)
+
+        if (payable > 0) {
+            addBonusMinutes(payable)
+            sp.edit()
+                .putInt(K_OWN_LOCK_EARNED_DAY, dayMarker())
+                .putInt(K_OWN_LOCK_EARNED_MIN, alreadyPaid + payable)
+                .putInt(K_OWN_LOCK_REWARD_PAID, sp.getInt(K_OWN_LOCK_REWARD_PAID, 0) + payable)
+                .apply()
+        }
+        if (finished) clearOwnLockRewardWindow()
+        return payable
+    }
+
+    private fun clearOwnLockRewardWindow() {
+        sp.edit()
+            .remove(K_OWN_LOCK_REWARD_FROM)
+            .remove(K_OWN_LOCK_REWARD_TO)
+            .remove(K_OWN_LOCK_REWARD_PAID)
+            .apply()
+    }
 
     // ---- Weekly limits -----------------------------------------------------
     //
@@ -748,8 +1091,11 @@ class Prefs private constructor(private val sp: SharedPreferences) {
     // therefore the one part of the limit machinery with real unit tests. The evaluation runs
     // exactly once per day, from the rollover in ensureToday(), and writes its result here.
 
+    // Off by default and no longer switchable from either portal: the streak was taken out of
+    // the UI, and a bonus nobody can see or turn off is worse than no bonus at all. The rules
+    // themselves stay — they are the one unit-tested part of the limit machinery.
     var streakEnabled: Boolean
-        get() = sp.getBoolean(K_STREAK_ON, true)
+        get() = sp.getBoolean(K_STREAK_ON, false)
         set(v) = sp.edit().putBoolean(K_STREAK_ON, v).apply()
 
     /** What breaking the streak costs the following day. */
@@ -973,6 +1319,14 @@ class Prefs private constructor(private val sp: SharedPreferences) {
 
     fun categoryOf(pkg: String): AppCategory =
         getCategories()[pkg]?.first ?: AppCategory.STANDARD
+
+    /**
+     * The always-allowed apps, which is what a focus session started from the overview leaves
+     * usable. Read from the categories themselves rather than the installed list, so it works
+     * on the parent's phone too — where the child's apps are not installed to enumerate.
+     */
+    fun plusPackages(): List<String> =
+        getCategories().filterValues { it.first == AppCategory.PLUS }.keys.toList()
 
     fun limitMinutesOf(pkg: String): Int =
         getCategories()[pkg]?.second ?: 30
