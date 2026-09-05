@@ -29,10 +29,24 @@ class AppAccessibilityService : AccessibilityService() {
     private var lastIntrusionStreakAt = 0L
     private var settingsAttempts = 0
 
+    /** Debounce for bouncing a blocked app out of the foreground. */
+    private var lastBlockedBounceAt = 0L
+
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         prefs = Prefs.get(this)
         if (!prefs.isParentDevice) MonitorService.start(this)
+    }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        if (instance === this) instance = null
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -46,6 +60,20 @@ class AppAccessibilityService : AccessibilityService() {
         // (including the App-Info page reached via long-press), so the child never gets far
         // enough to toggle "display over other apps" or deactivate the admin.
         if (handleSettingsIntrusion(pkg)) return
+
+        // 2b — an app that ran into its limit is closed the moment it comes back to the
+        // front. The monitor would need up to a whole tick to notice, which is long enough
+        // for a video to start playing again; the window change arrives here instantly.
+        if (pkg == LockState.blockedPackage) {
+            val now = android.os.SystemClock.uptimeMillis()
+            // Content events arrive in bursts; one reaction per burst is enough.
+            if (now - lastBlockedBounceAt >= 500) {
+                lastBlockedBounceAt = now
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                MonitorService.recheck(this)
+            }
+            return
+        }
 
         // 3 — anti-bypass surfaces.
         if (handlePotentialBypass(pkg, event)) return
@@ -175,8 +203,27 @@ class AppAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() { /* no-op */ }
 
-    private companion object {
+    companion object {
         /** Screen locking is the last resort — only after this many rapid Settings attempts. */
-        const val LOCK_AFTER_ATTEMPTS = 3
+        private const val LOCK_AFTER_ATTEMPTS = 3
+
+        /** The running service, so the monitor can use its global actions. */
+        @Volatile private var instance: AppAccessibilityService? = null
+
+        /**
+         * Leave whatever app is in front, right now.
+         *
+         * This is how a blocked app is actually closed on a device that is not device owner:
+         * HOME through the accessibility service takes the app off screen immediately, with no
+         * activity start and no delay. Returns false when the service is not running, so the
+         * caller can fall back to starting the home screen itself.
+         */
+        fun goHome(): Boolean {
+            val service = instance ?: return false
+            return runCatching {
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            }
+                .getOrDefault(false)
+        }
     }
 }

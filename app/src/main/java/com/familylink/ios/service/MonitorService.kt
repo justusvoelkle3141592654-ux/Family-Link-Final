@@ -26,13 +26,21 @@ import com.familylink.ios.util.TimeFmt
 import com.familylink.ios.util.UsageStatsTracker
 
 /**
- * Always-on guard. Every ~1.5s it reads real usage from the OS, decides whether the current
- * foreground app is blocked, and — if so — brings up the block list screen (Listen-Ansicht).
+ * Always-on guard. It reads real usage from the OS, decides whether the current foreground app
+ * is blocked, and — if so — closes that app and states why.
  *
- * The block screen is a normal, leavable Activity, not a screen-locking overlay:
- *  - no full-screen lock, the child can always go Home and use PLUS apps,
- *  - single surface, and it does not flicker because we only (re)launch it when a *blocked*
- *    app is actually in the foreground and not more than once per cooldown window.
+ * Three things make a limit actually land:
+ *  - the cadence follows the clock: normally every ~1.5s, but from twenty seconds before a
+ *    limit runs out it looks every ~0.35s, so the app closes when the time is up,
+ *  - the app is CLOSED, not merely covered: HOME through the accessibility service, its
+ *    background processes stopped, and suspended on top where we are device owner,
+ *  - the reason appears as a system overlay, which is on screen the instant it is added and
+ *    stays there until the child acknowledges it. Going to the home screen does not make it
+ *    vanish, and it does not lose a race against the app being closed the way an activity can.
+ *
+ * A single app running out of time is not a screen lock: after "Verstanden" the home screen and
+ * every other app carry on as normal — only the blocked app stays shut, and the accessibility
+ * service closes it again immediately if it is re-opened.
  */
 class MonitorService : Service() {
 
@@ -45,7 +53,23 @@ class MonitorService : Service() {
 
     private var lastBlockLaunchAt = 0L
     private var lastSettingsHidden: Boolean? = null
-    private var ticksSinceStatusPush = 0
+
+    // A block that covers a single app — its own limit, the day budget, a blocked app — is
+    // latched here. The app itself is closed at once, and the overlay stating why stays on
+    // screen until the child acknowledges it: going to the home screen must not make the
+    // reason disappear before it has been read. Written from the worker thread, read from the
+    // overlay's own (main) thread, hence volatile.
+    @Volatile private var softLockPkg: String? = null
+    @Volatile private var softLockTitle = ""
+    @Volatile private var softLockDetail = ""
+    @Volatile private var softLockBedtime = false
+    @Volatile private var softLockExtendable = false
+    /** Just acknowledged: do not raise the same overlay again inside this window. */
+    @Volatile private var softLockMutedUntil = 0L
+
+    /** How long until the next check — shortened while a limit is seconds away. */
+    @Volatile private var nextTickMs = TICK_MS
+    private var lastStatusPushAt = 0L
     private val syncManager by lazy { com.familylink.ios.sync.SyncManager(this) }
 
     // Only real, user-launchable apps are ever blocked. Everything else (keyboards, ad SDKs,
@@ -76,7 +100,7 @@ class MonitorService : Service() {
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
-            worker.postDelayed(this, TICK_MS)
+            worker.postDelayed(this, nextTickMs)
         }
     }
 
@@ -161,6 +185,8 @@ class MonitorService : Service() {
         // lock itself, no matter how the service got started (boot, accessibility, self-heal).
         if (prefs.isParentDevice) {
             LockState.update(lockActive = false, hardLock = false, bedtime = false)
+            LockState.setBlockedPackage(null)
+            softLockPkg = null
             com.familylink.ios.util.LockOverlay.hide(this)
             setStatusBarBlocked(false)
             stopSelf()
@@ -200,12 +226,15 @@ class MonitorService : Service() {
         // days plus today, so today's number has to survive the rollover into the week total.
         prefs.totalDeviceSecondsToday = engine.computeTotalDeviceSeconds(usage)
 
-        // Report upward from here as well (every ~9s). The monitor is the component that
-        // always runs on the child and holds the freshest numbers, so the parent no longer
-        // depends on SyncService alone to see live usage.
-        // ~4.5s cadence: fast enough that the parent portal feels live.
-        if (prefs.syncConfigured && ticksSinceStatusPush++ >= 3) {
-            ticksSinceStatusPush = 0
+        // Report upward from here as well. The monitor is the component that always runs on
+        // the child and holds the freshest numbers, so the parent no longer depends on
+        // SyncService alone to see live usage — every ~4.5s, fast enough to feel live.
+        //
+        // Timed rather than counted: the tick cadence changes with how close a limit is, and
+        // counting ticks would turn the fast cadence into a flood of reports.
+        val nowUptime = SystemClock.uptimeMillis()
+        if (prefs.syncConfigured && nowUptime - lastStatusPushAt >= STATUS_PUSH_MS) {
+            lastStatusPushAt = nowUptime
             runCatching { syncManager.pushStatus() }
         }
 
@@ -217,6 +246,10 @@ class MonitorService : Service() {
         // only the short window opened by its own phone/portal buttons hides it.
         val sealedReason = engine.sealedReason(usage)
         if (sealedReason != null) {
+            // The sealed overlay owns the window from here on; a latched single-app block is
+            // dropped without hiding anything, otherwise the two would fight over it.
+            softLockPkg = null
+            nextTickMs = TICK_MS
             if (prefs.lockEscapeAllows(pkg)) {
                 com.familylink.ios.util.LockOverlay.hide(this)
             } else {
@@ -228,6 +261,11 @@ class MonitorService : Service() {
                 // YouTube drops into picture-in-picture and plays on over everything. Suspending
                 // it terminates it and takes the PiP window with it.
                 if (pkg != null && !engine.isForegroundExempt(pkg) && isBlockableApp(pkg)) {
+                    // Close it, whether or not we are device owner: suspending terminates the
+                    // app but is a device-owner power, and on a normal install the app used to
+                    // simply keep running behind the overlay.
+                    com.familylink.ios.util.AppCloser.close(this, pkg)
+                    LockState.setBlockedPackage(pkg)
                     suspendBlocked(pkg, sealedReason)
                     prefs.recordBlocked(pkg)
                     if (sealedReason is LockDecision.HardCapReached) enforceHardCap()
@@ -270,6 +308,19 @@ class MonitorService : Service() {
 
         val decision = engine.decide(pkg, usage)
 
+        // How close is the app in front to its limit? While the answer is "a few seconds", the
+        // guard stops strolling and starts watching: the app is then closed at the moment the
+        // time is actually up, not up to a tick and a half afterwards.
+        // Only while the app is still allowed: once it is blocked there is nothing left to
+        // catch, and staying at the fast cadence would burn battery for no reason.
+        val margin = if (decision is LockDecision.Allowed) {
+            engine.secondsUntilLimit(pkg, usage)
+        } else {
+            null
+        }
+        nextTickMs =
+            if (margin != null && margin <= FAST_TICK_FROM_SECONDS) FAST_TICK_MS else TICK_MS
+
         val isBedtimeNow = decision is LockDecision.Bedtime
         // Only a single app's own limit may be dismissed; day limit, bedtime, the absolute
         // ceiling and an active focus session are hard locks.
@@ -308,19 +359,40 @@ class MonitorService : Service() {
         // over, ceiling reset). Without this a suspended app would stay dead for good.
         releaseExpiredSuspensions(usage)
 
-        // Whatever happens below, the overlay must disappear the moment nothing seals the
-        // device any more — otherwise it would outlive the lock that raised it.
-        if (!engine.sealsDevice(decision)) {
-            com.familylink.ios.util.LockOverlay.hide(this)
-            setStatusBarBlocked(false)
+        // A closed app whose block has expired must stop being bounced out of, and a latched
+        // reason nobody has to read any more can go with it.
+        LockState.blockedPackage?.let {
+            if (engine.decide(it, usage) is LockDecision.Allowed) {
+                LockState.setBlockedPackage(null)
+                com.familylink.ios.util.AppCloser.reset()
+            }
+        }
+        softLockPkg?.let {
+            if (engine.decide(it, usage) is LockDecision.Allowed) clearSoftLock()
         }
 
+        // Close whatever is blocked and latch the reason, then settle the overlay. The two are
+        // split so the overlay is dealt with however the block evaluation exits.
+        applyBlock(pkg, decision)
+        renderSoftLock(pkg)
+    }
+
+    /**
+     * The app in front is not allowed: record it, CLOSE it, and latch the reason.
+     *
+     * Closing is the point. Raising a screen over the app leaves it running underneath — the
+     * video plays on, YouTube slips into picture-in-picture and covers the block screen itself,
+     * and one press of HOME puts the child straight back into it. So the app is left (via the
+     * accessibility service), stopped in the background, and suspended on top of that where we
+     * are device owner.
+     */
+    private fun applyBlock(pkg: String?, decision: LockDecision) {
         if (decision is LockDecision.Allowed) return
         if (pkg == null) return
         // Phone / system / our own screens are never blocked (even during bedtime).
         if (engine.isAlwaysExempt(pkg)) return
 
-        val bedtime = isBedtimeNow
+        val bedtime = decision is LockDecision.Bedtime
         // Bedtime and the absolute ceiling block literally everything, launcher included — at
         // that point the phone is simply done. A focus session is different: it must leave the
         // home screen usable, otherwise the child can never reach the apps the session allows.
@@ -341,7 +413,6 @@ class MonitorService : Service() {
                 }
             }
         }
-        // Bedtime: block EVERYTHING that is not always-exempt (launcher, PLUS apps, settings, …).
 
         // Record for the parent portal.
         when (decision) {
@@ -359,21 +430,127 @@ class MonitorService : Service() {
             else -> {}
         }
 
-        // Actually CLOSE the offending app. Raising the block screen only puts a window on
-        // top; the app behind keeps running, and YouTube in particular drops into
-        // picture-in-picture and carries on playing over everything — including over the block
-        // screen. Suspending the package terminates it and takes the PiP window with it.
+        // ---- close it, right now ----
+        if (decision !is LockDecision.SettingsBlocked &&
+            !engine.isForegroundExempt(pkg) && isBlockableApp(pkg)
+        ) {
+            com.familylink.ios.util.AppCloser.close(this, pkg)
+            // The accessibility service bounces it on sight from here on, so re-opening it
+            // does not get a free tick's worth of playback.
+            LockState.setBlockedPackage(pkg)
+        }
         suspendBlocked(pkg, decision)
 
-        // Debounce so we never relaunch in a tight loop (no flicker).
+        val (title, detail) = messageFor(decision)
+        setSoftLock(
+            pkg = pkg,
+            title = title,
+            detail = detail,
+            bedtime = bedtime,
+            // Asking for more time only makes sense when it is time that ran out.
+            extendable = decision is LockDecision.AppLimitReached ||
+                decision is LockDecision.GlobalLimitReached
+        )
+    }
+
+    /**
+     * Put the reason on screen for a latched single-app block, or take it down again.
+     *
+     * The overlay rather than the block activity, because an activity is only a window in the
+     * stack: it can lose the race against the app that is being closed, and HOME leaves it. The
+     * overlay is on top the moment it is added and stays until it is acknowledged — which is
+     * exactly the promise here: the app closes, the reason appears, and the child carries on
+     * afterwards.
+     */
+    private fun renderSoftLock(pkg: String?) {
+        val latched = softLockPkg
+        if (latched == null) {
+            com.familylink.ios.util.LockOverlay.hide(this)
+            setStatusBarBlocked(false)
+            return
+        }
+        // The phone and the parent portal are opened from the overlay itself; while one of them
+        // is in front the overlay steps aside and counts as acknowledged.
+        if (prefs.lockEscapeAllows(pkg) || pkg == LimitEngine.OWN_PACKAGE) {
+            clearSoftLock()
+            return
+        }
+        // A single app's limit does not take the phone away, so the status bar stays.
+        setStatusBarBlocked(false)
+
+        if (com.familylink.ios.util.Permissions.hasOverlay(this)) {
+            com.familylink.ios.util.LockOverlay.show(
+                this,
+                key = "soft|$latched|$softLockTitle|$softLockDetail"
+            ) {
+                com.familylink.ios.ui.screens.LockOverlayContent(
+                    title = softLockTitle,
+                    detail = softLockDetail,
+                    bedtime = softLockBedtime,
+                    onOpenPortal = {
+                        clearSoftLock()
+                        com.familylink.ios.ui.screens.openParentPortal(this)
+                    },
+                    onDismiss = { dismissSoftLock() },
+                    onExtend = if (softLockExtendable) ({ openExtendRequest() }) else null
+                )
+            }
+            return
+        }
+
+        // No permission to draw over other apps: the block screen as an activity, debounced so
+        // it can never relaunch in a loop.
         val now = SystemClock.uptimeMillis()
         if (now - lastBlockLaunchAt < RELAUNCH_COOLDOWN_MS) return
         lastBlockLaunchAt = now
+        val title = softLockTitle
+        val detail = softLockDetail
+        val bedtime = softLockBedtime
+        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock = false, sealed = false) }
+    }
 
-        // Anything reaching here is a per-app block, never a sealed state: the day limit, a
-        // single app's limit, a blocked app or the settings. Those stay dismissible screens.
-        val (title, detail) = messageFor(decision)
-        main.post { BlockActivity.launch(this, title, detail, bedtime, hardLock, sealed = false) }
+    private fun setSoftLock(
+        pkg: String,
+        title: String,
+        detail: String,
+        bedtime: Boolean,
+        extendable: Boolean
+    ) {
+        // Just acknowledged: the usage numbers can lag a moment behind the child leaving the
+        // app, and without this the overlay would come straight back at them.
+        if (SystemClock.uptimeMillis() < softLockMutedUntil) return
+        softLockPkg = pkg
+        softLockTitle = title
+        softLockDetail = detail
+        softLockBedtime = bedtime
+        softLockExtendable = extendable
+    }
+
+    /** The reason has been read, or no longer applies: take the overlay down. */
+    private fun clearSoftLock() {
+        if (softLockPkg == null) return
+        softLockPkg = null
+        com.familylink.ios.util.LockOverlay.hide(this)
+    }
+
+    /** "Verstanden": overlay away, home screen, and the app itself stays closed. */
+    private fun dismissSoftLock() {
+        softLockMutedUntil = SystemClock.uptimeMillis() + SOFT_LOCK_MUTE_MS
+        clearSoftLock()
+        com.familylink.ios.util.AppCloser.goHome(this)
+    }
+
+    /** "Mehr Zeit anfragen": straight into the request, with the overlay out of the way. */
+    private fun openExtendRequest() {
+        val title = softLockTitle
+        val detail = softLockDetail
+        val bedtime = softLockBedtime
+        softLockMutedUntil = SystemClock.uptimeMillis() + SOFT_LOCK_MUTE_MS
+        clearSoftLock()
+        BlockActivity.launch(
+            this, title, detail, bedtime,
+            hardLock = false, sealed = false, extend = true
+        )
     }
 
     /** Put the non-dismissible overlay on screen (or leave it there if it already matches). */
@@ -532,6 +709,8 @@ class MonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        softLockPkg = null
+        LockState.setBlockedPackage(null)
         com.familylink.ios.util.LockOverlay.hide(this)
         setStatusBarBlocked(false)
         worker.removeCallbacks(tickRunnable)
@@ -564,7 +743,15 @@ class MonitorService : Service() {
 
     companion object {
         private const val TICK_MS = 1500L
+        /** Cadence while a limit is about to run out, so the app closes on the second. */
+        private const val FAST_TICK_MS = 350L
+        /** From this many seconds before a limit, the guard switches to the fast cadence. */
+        private const val FAST_TICK_FROM_SECONDS = 20
+        /** After "Verstanden", no new overlay for this long — the usage numbers lag a little. */
+        private const val SOFT_LOCK_MUTE_MS = 2500L
         private const val RELAUNCH_COOLDOWN_MS = 2500L
+        /** How often the child reports its live numbers upward. */
+        private const val STATUS_PUSH_MS = 4_500L
         /** One counted attempt per this window, so ticks do not inflate the counter. */
         private const val HARDCAP_ATTEMPT_MS = 15_000L
         /** Grace between screen locks while the child is still under the attempt threshold. */

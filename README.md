@@ -32,7 +32,16 @@ erreicht.
   `Standard`-Apps.
 - **App-Kategorien:** `Plus` (immer erlaubt, zählt nie) · `Limit` (eigenes Tageslimit) ·
   `Standard` (teilt sich das globale Guthaben).
-- **Präzision:** Der `MonitorService` prüft alle ~1,5 s → Sperre greift binnen ~2 s.
+- **Präzision:** Der `MonitorService` prüft normalerweise alle ~1,5 s und ab **20 s vor
+  Ablauf eines Limits alle ~0,35 s** → die Sperre greift in dem Moment, in dem die Zeit um
+  ist.
+- **Limit erreicht = App wird geschlossen:** Nicht nur überdeckt. Der Wächter geht per
+  Bedienungshilfe auf den Startbildschirm, stoppt die Hintergrundprozesse der App (beendet
+  auch Bild-im-Bild-Wiedergabe) und suspendiert sie zusätzlich, wenn die App Device Owner
+  ist (`util/AppCloser.kt`). Danach erscheint sofort das Overlay mit dem Grund; es bleibt
+  stehen, bis das Kind **„Verstanden"** tippt (oder „Mehr Zeit anfragen" wählt) – erst
+  danach geht es weiter. Wird die gesperrte App erneut geöffnet, schließt die
+  Bedienungshilfe sie sofort wieder (`LockState.blockedPackage`).
 - **Gesperrte Apps:** werden protokolliert und im Eltern-Portal unter „Heute gesperrte Apps"
   mit genutzter Zeit angezeigt.
 - **Ruhezeit (Bedtime):** konfigurierbares Fenster (Standard 20:00–06:00), sperrt komplett;

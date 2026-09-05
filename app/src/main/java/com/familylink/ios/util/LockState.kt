@@ -19,9 +19,24 @@ object LockState {
     @Volatile var bedtime: Boolean = false
         private set
 
+    /**
+     * The package that ran into a limit and is closed right now.
+     *
+     * The monitor needs up to one tick to notice that a blocked app came back to the front —
+     * long enough for a video to start playing again. The accessibility service sees the
+     * window change instantly, so it reads this and bounces the app on sight. The monitor
+     * clears it as soon as the limit no longer applies (new day, granted time, released app).
+     */
+    @Volatile var blockedPackage: String? = null
+        private set
+
     fun update(lockActive: Boolean, hardLock: Boolean, bedtime: Boolean) {
         this.lockActive = lockActive
         this.hardLock = hardLock
         this.bedtime = bedtime
+    }
+
+    fun setBlockedPackage(pkg: String?) {
+        blockedPackage = pkg
     }
 }

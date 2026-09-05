@@ -191,6 +191,55 @@ class LimitEngine(private val prefs: Prefs) {
         return (spent >= pot) to (spent to pot)
     }
 
+    /**
+     * Seconds left before [pkg] runs into whichever limit applies to it first, or null when no
+     * limit is pending at all.
+     *
+     * Only used for pacing: the monitor normally looks once every one and a half seconds, which
+     * is a noticeable amount of a video to keep playing past the limit. When this reports that
+     * the limit is seconds away, the monitor switches to a fast tick so the app is closed the
+     * moment the time is actually up rather than at the next leisurely check.
+     */
+    fun secondsUntilLimit(pkg: String?, usage: Map<String, Int>): Int? {
+        if (pkg == null) return null
+        if (isAlwaysExempt(pkg) || isLauncher(pkg)) return null
+        // Nothing counts down during a manual lock or while granted bonus time is running.
+        if (prefs.manualLockEnabled || prefs.bonusCountdownActive()) return null
+
+        var soonest = Int.MAX_VALUE
+        fun consider(remaining: Int) { if (remaining < soonest) soonest = remaining }
+
+        // The absolute ceiling counts every app, the allowed ones included.
+        if (prefs.hardCapEnabled) {
+            val extension = prefs.bonusSecondsToday
+            if (prefs.hardCapScope != LimitScope.WEEK) {
+                consider(prefs.hardCapMinutes * 60 + extension - computeTotalDeviceSeconds(usage))
+            }
+            if (prefs.hardCapScope != LimitScope.DAY) {
+                consider(prefs.weeklyHardCapMinutes * 60 + extension - prefs.weekTotalSeconds())
+            }
+        }
+
+        // The budget itself only applies to apps that actually spend it.
+        val category = prefs.categoryOf(pkg)
+        if (category != AppCategory.PLUS && category != AppCategory.BLOCKED &&
+            !isSettings(pkg) && !prefs.limitsDisabled()
+        ) {
+            if (prefs.limitScope != LimitScope.WEEK) {
+                consider(globalLimitSeconds() - computeGlobalUsedSeconds(usage))
+            }
+            if (prefs.limitScope != LimitScope.DAY) {
+                val (spent, pot) = weeklyBudgetExhausted().second
+                consider(pot - spent)
+            }
+            if (category == AppCategory.LIMIT) {
+                consider(prefs.limitMinutesOf(pkg) * 60 - (usage[pkg] ?: 0))
+            }
+        }
+
+        return if (soonest == Int.MAX_VALUE) null else soonest.coerceAtLeast(0)
+    }
+
     fun decide(pkg: String?, usage: Map<String, Int>): LockDecision {
         // Bedtime is a HARD lock: it blocks EVERYTHING (PLUS included). The service keeps only
         // phone/system usable and makes it non-dismissible. It outranks the off-button.

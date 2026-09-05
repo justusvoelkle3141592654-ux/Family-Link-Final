@@ -35,6 +35,8 @@ class BlockActivity : ComponentActivity() {
         val bedtime = intent.getBooleanExtra(EXTRA_BEDTIME, false)
         val hardLock = intent.getBooleanExtra(EXTRA_HARD_LOCK, false)
         val sealedLock = intent.getBooleanExtra(EXTRA_SEALED, false)
+        // The lock overlay sends the child straight here when they ask for more time.
+        val startOnExtend = intent.getBooleanExtra(EXTRA_EXTEND, false)
 
         // Device owner only: pin this screen so HOME and Recents stop working during a hard
         // lock. This is the piece that makes bedtime / day-limit genuinely unescapable.
@@ -51,7 +53,7 @@ class BlockActivity : ComponentActivity() {
                 // Hard locks cannot be dismissed with BACK.
                 if (hardLock || sealedLock) BackHandler(enabled = true) { /* swallow */ }
 
-                var screen by remember { mutableStateOf("block") }
+                var screen by remember { mutableStateOf(if (startOnExtend) "extend" else "block") }
                 when (screen) {
                     "extend" -> ExtendTimeScreen(onClose = { screen = "block" })
                     else -> BlockListScreen(
@@ -110,6 +112,7 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_BEDTIME = "bedtime"
         const val EXTRA_HARD_LOCK = "hard_lock"
         const val EXTRA_SEALED = "sealed"
+        const val EXTRA_EXTEND = "extend"
 
         fun launch(
             context: Context,
@@ -117,7 +120,9 @@ class BlockActivity : ComponentActivity() {
             detail: String,
             bedtime: Boolean,
             hardLock: Boolean,
-            sealed: Boolean = false
+            sealed: Boolean = false,
+            /** Open the extension request instead of the block list. */
+            extend: Boolean = false
         ) {
             val i = Intent(context, BlockActivity::class.java).apply {
                 putExtra(EXTRA_TITLE, title)
@@ -125,6 +130,7 @@ class BlockActivity : ComponentActivity() {
                 putExtra(EXTRA_BEDTIME, bedtime)
                 putExtra(EXTRA_HARD_LOCK, hardLock)
                 putExtra(EXTRA_SEALED, sealed)
+                putExtra(EXTRA_EXTEND, extend)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or

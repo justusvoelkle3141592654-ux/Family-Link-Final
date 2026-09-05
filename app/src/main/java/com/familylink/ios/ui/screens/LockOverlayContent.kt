@@ -48,10 +48,15 @@ import kotlinx.coroutines.delay
 /**
  * What the system overlay draws.
  *
- * Deliberately has no close button and no route to the home screen — the whole point is that
- * this cannot be dismissed. Two things stay reachable, because locking a child out of them
- * would be irresponsible: the phone (and with it the emergency dialler) and the PIN-protected
- * parent entry.
+ * A sealed lock (bedtime, the ceiling, a manual lock) has no close button and no route to the
+ * home screen — the whole point is that it cannot be dismissed. Two things stay reachable,
+ * because locking a child out of them would be irresponsible: the phone (and with it the
+ * emergency dialler) and the PIN-protected parent entry.
+ *
+ * A single app running out of time is a different thing: the app is closed and this appears
+ * over it immediately, but the rest of the phone is not forfeit. There [onDismiss] is given,
+ * which draws the acknowledgement button that takes the child back to the home screen — the
+ * blocked app stays closed, everything else carries on.
  *
  * Laid out like the rest of the app now: a flat page, one white card carrying the reason, and
  * Material 3 proportions throughout.
@@ -63,7 +68,14 @@ fun LockOverlayContent(
     bedtime: Boolean,
     onOpenPortal: () -> Unit,
     /** The offline lock adds a way out that the child can use themselves. */
-    offline: Boolean = false
+    offline: Boolean = false,
+    /**
+     * Set for a block that covers one app rather than the phone: draws the acknowledgement
+     * button. Null keeps the overlay sealed, exactly as before.
+     */
+    onDismiss: (() -> Unit)? = null,
+    /** Optional route to the extension request, shown next to the acknowledgement. */
+    onExtend: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val prefs = remember { com.familylink.ios.data.Prefs.get(context) }
@@ -150,6 +162,38 @@ fun LockOverlayContent(
                     Text(
                         "Verbindung einschalten", fontSize = 15.sp,
                         fontWeight = FontWeight.Medium, color = Color.White
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // ---- a block that covers only one app: acknowledge and carry on ----
+            //
+            // The app itself is already closed and stays that way; this is what lets the child
+            // out of the overlay and back to the home screen, so the rest of the phone (the
+            // allowed apps above all) is not taken away along with the one that ran out.
+            if (onDismiss != null) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(accent)
+                        .clickable { onDismiss?.invoke() }
+                        .padding(horizontal = 30.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Verstanden", fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium, color = Color.White
+                    )
+                }
+                if (onExtend != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Mehr Zeit anfragen", fontSize = 14.sp, color = Nova.Primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable { onExtend?.invoke() }
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
                     )
                 }
                 Spacer(Modifier.height(12.dp))
